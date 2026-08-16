@@ -29,8 +29,14 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from .email_utils import send_account_warning, send_email_verification_code
 from .models import AuditLog, EmailVerification, LoginEvent, PhoneVerification
 from .permissions import IsPlatformAdmin, TrustedOrigin
+from .security_queries import (
+    ADMIN_RISK_TIER_ALIASES,
+    ADMIN_RISK_TIER_RANGES,
+    annotate_admin_risk,
+)
 from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
+    AdminUserListSerializer,
     ChangePasswordSerializer,
     ConfirmEmailLinkSerializer,
     ConfirmPasswordResetSerializer,
@@ -1391,9 +1397,23 @@ def _filter_admin_users_advanced(qs, params):
     if tag_filter and tag_filter != 'all':
         qs = qs.filter(admin_tags__icontains=tag_filter)
 
+    # Xavf darajasi bo'yicha filtr. Avval faqat `high` tushunilardi va u
+    # ro'yxatda KO'RSATILADIGAN `risk_tier` bilan bog'liq emas edi (boshqa
+    # shart) — admin "yuqori" ni tanlab "o'rta" deb belgilangan qatorlarni
+    # ko'rardi. Endi filtr ham, ustun ham BITTA `risk_tier_score`
+    # annotatsiyasidan kelib chiqadi.
     risk_filter = params.get('risk', '').strip()
-    if risk_filter == 'high':
-        qs = qs.filter(Q(attempts__disqualified=True) | ~Q(exam_block_reason='')).distinct()
+    if risk_filter and risk_filter != 'all':
+        tier = ADMIN_RISK_TIER_ALIASES.get(risk_filter, risk_filter)
+        bounds = ADMIN_RISK_TIER_RANGES.get(tier)
+        if bounds:
+            # `admin_users_list` annotatsiyani allaqachon qo'ygan bo'lishi
+            # mumkin (funksiya idempotent), CSV eksportida esa yo'q.
+            qs = annotate_admin_risk(qs)
+            low, high = bounds
+            qs = qs.filter(risk_tier_score__gte=low)
+            if high is not None:
+                qs = qs.filter(risk_tier_score__lte=high)
 
     return qs
 
@@ -1488,6 +1508,11 @@ def admin_users_list(request):
     can render an authoritative table without falling back to mock data.
     Pagination majburiy: 10K+ foydalanuvchi bo'lsa to'liq ro'yxat 1+ MB
     response qaytarib brauzerni bog'lab qo'yardi.
+
+    Javob `AdminUserListSerializer` bilan beriladi — `UserSerializer` ustiga
+    faqat platforma admini ko'radigan maydonlar (blok sababi, soft-delete
+    sanasi, Telegram identifikatorlari, `risk_tier`) qo'shilgan. Ular ota
+    serializerga QO'SHILMAYDI: u markaz xodimlariga ham qaytariladi.
     """
     from django.contrib.auth import get_user_model
 
@@ -1530,6 +1555,11 @@ def admin_users_list(request):
         )
         .order_by('-created_at')
     )
+    # Xavf darajasi (`risk_tier`) — bitta SQL ifodasida. `compute_user_risk_profile`
+    # ni har qatorga chaqirish 100 qatorda ~600 so'rov bo'lardi; bu yerda
+    # qo'shimcha JOIN ham yo'q (diskvalifikatsiya hisobi yuqoridagi `attempts`
+    # join'ini qayta ishlatadi).
+    qs = annotate_admin_risk(qs)
     # Ko'p parametrli filtrlash
     qs = _filter_admin_users_advanced(qs, request.query_params)
     # O9: admin paneli uchun katta paginator — default 100 elem, ?page_size=
@@ -1541,8 +1571,10 @@ def admin_users_list(request):
     paginator.page_size = 100
     page = paginator.paginate_queryset(qs, request)
     if page is not None:
-        return paginator.get_paginated_response(UserSerializer(page, many=True, context={'request': request}).data)
-    return Response(UserSerializer(qs, many=True, context={'request': request}).data)
+        return paginator.get_paginated_response(
+            AdminUserListSerializer(page, many=True, context={'request': request}).data
+        )
+    return Response(AdminUserListSerializer(qs, many=True, context={'request': request}).data)
 
 
 # CSV eksportning qator chegarasi. Filtr bo'sh bo'lsa so'rov butun jadvalni
@@ -1552,9 +1584,31 @@ def admin_users_list(request):
 # `X-Export-Truncated: 1` sarlavhasi bilan keladi va panel adminni ogohlantiradi.
 ADMIN_EXPORT_MAX_ROWS = 5000
 
+# Ustunlar `AdminUserListSerializer` bilan BIR XIL to'plamni qamraydi (blok
+# sababi, soft-delete, Telegram tafsiloti), lekin CSV serializer orqali
+# yig'ilmaydi: eksport queryset'ida `prefetch_related` yo'q va 5000 qatorni
+# `AdminUserListSerializer` dan o'tkazish `roles_detail`/`badges`/obuna
+# so'rovlarini har qator uchun qaytadan yugurtirardi (o'n minglab so'rov).
+# Shu sababli maydonlar `.only(...)` bilan bitta so'rovda o'qiladi.
 ADMIN_EXPORT_HEADERS = [
     'ID', "To'liq ism", 'Telefon', 'Rollar', 'Holat', 'Premium', "Ro'yxatdan o'tgan",
+    'Blok sababi', 'Blok muddati', "O'chirilgan", 'Imtihon taqiqi sababi',
+    'Telegram chat ID', 'Telegram user ID', 'Telegram ulangan',
 ]
+
+# `.only(...)` ro'yxati: eksport 5000 qatorgacha o'qiydi, deferred maydonga
+# tegilsa har qator uchun alohida SELECT ketardi.
+ADMIN_EXPORT_ONLY_FIELDS = [
+    'id', 'full_name', 'normalized_phone', 'roles',
+    'is_active', 'is_premium', 'created_at',
+    'block_reason', 'blocked_until', 'deleted_at', 'exam_block_reason',
+    'telegram_chat_id', 'telegram_user_id', 'telegram_linked_at',
+]
+
+
+def _csv_datetime(value):
+    """Sana ustunlari uchun mahalliy vaqt (bo'sh bo'lsa — bo'sh katak)."""
+    return timezone.localtime(value).strftime('%Y-%m-%d %H:%M') if value else ''
 
 
 def _csv_text(value):
@@ -1593,10 +1647,7 @@ def admin_users_export(request):
         .order_by('-created_at')
     )
     qs = _filter_admin_users_advanced(qs, request.query_params)
-    qs = qs.only(
-        'id', 'full_name', 'normalized_phone', 'roles',
-        'is_active', 'is_premium', 'created_at',
-    )
+    qs = qs.only(*ADMIN_EXPORT_ONLY_FIELDS)
     # Chegaradan bitta ko'p o'qiymiz — qo'shimcha COUNT so'rovisiz kesilganini
     # bilish uchun.
     rows = list(qs[:ADMIN_EXPORT_MAX_ROWS + 1])
@@ -1623,9 +1674,20 @@ def admin_users_export(request):
             # farqli — u uzoq saqlanadi, shu sababli u yerda maskalangan).
             _csv_text(u.normalized_phone),
             ', '.join(u.roles or []),
-            'Faol' if u.is_active else 'Bloklangan',
+            # Soft-delete BLOKDAN farqlanadi: ikkalasida ham `is_active=False`,
+            # lekin birinchisini foydalanuvchining O'ZI qilgan (grace ichida
+            # tiklanadi), ikkinchisini admin. Avval CSV ikkalasini ham
+            # "Bloklangan" deb ko'rsatardi.
+            "O'chirilgan" if u.deleted_at else ('Faol' if u.is_active else 'Bloklangan'),
             'Ha' if u.is_premium else "Yo'q",
             timezone.localtime(u.created_at).strftime('%Y-%m-%d') if u.created_at else '',
+            _csv_text(u.block_reason),
+            _csv_datetime(u.blocked_until),
+            _csv_datetime(u.deleted_at),
+            _csv_text(u.exam_block_reason),
+            _csv_text(u.telegram_chat_id),
+            _csv_text(u.telegram_user_id),
+            _csv_datetime(u.telegram_linked_at),
         ])
     return response
 
@@ -1645,6 +1707,11 @@ def admin_user_detail(request, user_id):
     ishlatiladi (centers/views.py) va platforma admini yozgan izoh u yerga
     chiqib ketmasligi kerak. Shu sababli maydonlar faqat shu admin
     endpoint'ida javobga qo'shiladi.
+
+    Javob sezgir (telefon, OTP tarixi, blok sabablari) — shu sababli oxirida
+    `admin_sensitive_data_view` audit yozuvi qoldiriladi: "qaysi admin qachon
+    kimning ma'lumotini KO'RDI" savoliga javob avval umuman yo'q edi (audit
+    jurnali faqat o'zgartirish amallarini yozardi).
     """
     from django.contrib.auth import get_user_model
     from django.db.models import Prefetch, Avg, Max
@@ -1669,6 +1736,17 @@ def admin_user_detail(request, user_id):
     data = UserSerializer(target, context={'request': request}).data
     data['block_reason'] = target.block_reason or None
     data['blocked_until'] = target.blocked_until.isoformat() if target.blocked_until else None
+    # Soft-delete: hisobni foydalanuvchining O'ZI o'chirganmi (grace ichida
+    # tiklash mumkin) yoki admin bloklaganmi — ikkalasida ham `is_active=False`
+    # bo'lgani uchun busiz support xodimi ularni farqlay olmasdi.
+    data['deleted_at'] = target.deleted_at.isoformat() if target.deleted_at else None
+    # `telegram_linked` faqat "ha/yo'q" beradi; support aynan qaysi chat/hisob
+    # ulanganini so'raydi (bot xabarlari yetmayotganini tekshirish uchun).
+    data['telegram_chat_id'] = target.telegram_chat_id or None
+    data['telegram_user_id'] = target.telegram_user_id or None
+    data['telegram_linked_at'] = (
+        target.telegram_linked_at.isoformat() if target.telegram_linked_at else None
+    )
 
     # Antifrod va Risk profile
     risk_info = compute_user_risk_profile(target)
@@ -1739,6 +1817,8 @@ def admin_user_detail(request, user_id):
             'longest_streak': target.longest_streak,
             'subject_levels': target.subject_levels or {},
         }
+    AuditLog.log(request, 'admin_sensitive_data_view', target=target,
+                 extra={'view': 'user_detail'})
     return Response(data)
 
 
@@ -1759,14 +1839,23 @@ def admin_user_login_history(request, user_id):
     `user_id` javobda qaytariladi — panel ochiq modal qaysi foydalanuvchiga
     tegishli ekanini tekshiradi (ketma-ket ochilgan oynalarda eski javob
     ko'rinib qolmasin).
+
+    IP va qurilma satrlari sezgir ma'lumot, shu sababli `admin_user_detail`
+    dagi kabi ko'rish fakti audit jurnaliga yoziladi.
     """
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
-    if not User.objects.filter(pk=user_id).exists():
+    # `.exists()` o'rniga obyektning o'zi: audit yozuvi nishonni
+    # (`target_type='User'`, `target_id`) shu obyektdan oladi. So'rovlar soni
+    # o'zgarmaydi — bitta SELECT, faqat `id` maydoni bilan.
+    target = User.objects.filter(pk=user_id).only('id').first()
+    if not target:
         return Response({'detail': 'Foydalanuvchi topilmadi'},
                         status=status.HTTP_404_NOT_FOUND)
     events = LoginEvent.objects.filter(user_id=user_id).order_by('-created_at')[:20]
+    AuditLog.log(request, 'admin_sensitive_data_view', target=target,
+                 extra={'view': 'login_history'})
     return Response({
         'user_id': int(user_id),
         'events': [{
@@ -3708,6 +3797,15 @@ def admin_user_adjust_coins(request, user_id):
     new_coins = max(0, old_coins + amount)
     target.coins = new_coins
     target.save(update_fields=['coins'])
+
+    from accounts.models import CoinTransaction
+    CoinTransaction.objects.create(
+        user=target,
+        amount=amount,
+        balance_after=new_coins,
+        transaction_type=CoinTransaction.TYPE_ADMIN_ADJUST,
+        description=f"Admin o'zgartirishi: {reason}",
+    )
 
     AuditLog.log(
         request,

@@ -182,6 +182,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     exam_blocked_until = models.DateTimeField(null=True, blank=True, db_index=True)
     exam_block_reason = models.CharField(max_length=255, blank=True, default='')
     admin_tags = models.JSONField(default=list, blank=True)
+    custom_practice_quota = models.PositiveIntegerField(default=0)
+    custom_discount_percent = models.PositiveIntegerField(default=0)
+    custom_discount_until = models.DateTimeField(null=True, blank=True)
+    risk_score = models.PositiveIntegerField(default=0, db_index=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     # Admin panelidagi "Foydalanuvchilar holati" ro'yxati uchun: foydalanuvchi
@@ -1006,6 +1010,25 @@ class AuditLog(models.Model):
         ('admin_user_coins_adjust', "Tangalar balansi o'zgartirildi"),
         ('admin_attempt_retake', "Testni qayta topshirishga ruxsat berildi"),
         ('admin_broadcast_message', "Ommaviy xabarnoma yuborildi"),
+        ('admin_device_ban', "Qurilma (Fingerprint) bloklandi"),
+        ('admin_device_unban', "Qurilma bloki olib tashlandi"),
+        ('admin_transfer_center', "O'quv markazi o'zgartirildi"),
+        ('admin_set_quota', "Individual kvota va chegirma belgilandi"),
+        ('admin_payment_refund', "To'lov qaytarildi (Refund)"),
+        ('admin_send_telegram', "Telegram orqali to'g'ridan-to'g'ri xabar yuborildi"),
+        ('admin_flash_alert', "Shaxsiy modal xabar yuborildi"),
+        ('admin_live_terminate', "Jonli imtihon majburan to'xtatildi"),
+        ('admin_bulk_import_users', "Foydalanuvchilar ommaviy import qilindi"),
+        # Django admin (`/olympy-mgmt-2025/`) orqali qilingan profil tahriri.
+        # API'dagi admin amallari har biri o'z kodiga ega, Django admin esa
+        # hech narsa yozmasdi — ya'ni jurnalda ko'rinmaydigan yagona tahrir
+        # yo'li shu edi. Qaysi maydonlar o'zgargani `extra.changed_fields` da.
+        ('admin_django_admin_user_edit', "Django admin orqali profil tahrirlandi"),
+        # Foydalanuvchining maxfiy ma'lumotlari (IP/qurilma/seans tafsilotlari)
+        # admin tomonidan ochib ko'rilgani. O'qish amali bo'lgani uchun hech
+        # narsani o'zgartirmaydi, lekin "kim kimning izini ko'rdi" savoliga
+        # javob faqat shu yozuv orqali beriladi.
+        ('admin_sensitive_data_view', "Maxfiy ma'lumot ko'rildi"),
     ]
 
     actor = models.ForeignKey(
@@ -1192,4 +1215,122 @@ class UserAdminNote(models.Model):
 
     def __str__(self):
         return f'Note for user {self.user_id} by {self.author_id} @ {self.created_at:%Y-%m-%d %H:%M}'
+
+
+class DeviceFingerprint(models.Model):
+    """Foydalanuvchi qurilmasining apparat/brauzer izi (Browser/Device Fingerprint)."""
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='device_fingerprints',
+    )
+    fingerprint_hash = models.CharField(max_length=64, db_index=True)
+    browser_name = models.CharField(max_length=100, blank=True, default='')
+    os_name = models.CharField(max_length=100, blank=True, default='')
+    screen_resolution = models.CharField(max_length=50, blank=True, default='')
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True, default='')
+    is_banned = models.BooleanField(default=False, db_index=True)
+    ban_reason = models.CharField(max_length=255, blank=True, default='')
+    banned_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-last_seen_at']
+        indexes = [
+            models.Index(fields=['fingerprint_hash']),
+            models.Index(fields=['user', '-last_seen_at']),
+        ]
+
+    def __str__(self):
+        return f"Device {self.fingerprint_hash[:10]} (User {self.user_id}) {'[BANNED]' if self.is_banned else ''}"
+
+
+class CoinTransaction(models.Model):
+    """Tangalar (Coins) hisob-kitob jurnali (Kirim va Chiqim)."""
+    TYPE_STREAK = 'streak'
+    TYPE_DAILY_GOAL = 'daily_goal'
+    TYPE_DAILY_QUESTION = 'daily_question'
+    TYPE_REFERRAL = 'referral'
+    TYPE_SHOP_REDEEM = 'shop_redeem'
+    TYPE_ADMIN_ADJUST = 'admin_adjust'
+    TYPE_OLYMPIAD_REWARD = 'olympiad_reward'
+    TYPE_OTHER = 'other'
+
+    TYPE_CHOICES = [
+        (TYPE_STREAK, 'Streak bonusi'),
+        (TYPE_DAILY_GOAL, 'Kunlik maqsad'),
+        (TYPE_DAILY_QUESTION, 'Kunlik savol'),
+        (TYPE_REFERRAL, 'Referral bonusi'),
+        (TYPE_SHOP_REDEEM, 'Do‘kon xaridi'),
+        (TYPE_ADMIN_ADJUST, 'Admin to‘g‘rilashi'),
+        (TYPE_OLYMPIAD_REWARD, 'Olimpiada mukofoti'),
+        (TYPE_OTHER, 'Boshqa'),
+    ]
+
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='coin_transactions',
+    )
+    amount = models.IntegerField()  # Musbat (kirim) yoki manfiy (chiqim)
+    balance_after = models.PositiveIntegerField(default=0)
+    transaction_type = models.CharField(max_length=32, choices=TYPE_CHOICES, default=TYPE_OTHER, db_index=True)
+    description = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.full_name}: {self.amount:+d} coins ({self.transaction_type}) -> {self.balance_after}"
+
+
+class UserFlashAlert(models.Model):
+    """Admin tomonidan foydalanuvchiga yuborilgan shaxsiy modal xabar/ogohlantirish."""
+    TYPE_INFO = 'info'
+    TYPE_WARNING = 'warning'
+    TYPE_URGENT = 'urgent'
+    TYPE_SUCCESS = 'success'
+
+    TYPE_CHOICES = [
+        (TYPE_INFO, 'Ma‘lumot'),
+        (TYPE_WARNING, 'Ogohlantirish'),
+        (TYPE_URGENT, 'Muhim / Shoshilinch'),
+        (TYPE_SUCCESS, 'Muvaffaqiyat'),
+    ]
+
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='flash_alerts',
+    )
+    title = models.CharField(max_length=150)
+    message = models.TextField()
+    alert_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_INFO)
+    is_active = models.BooleanField(default=True, db_index=True)
+    is_read = models.BooleanField(default=False, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='authored_flash_alerts',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active', 'is_read']),
+        ]
+
+    def __str__(self):
+        return f"FlashAlert to {self.user.full_name}: {self.title} ({self.alert_type})"
+
 

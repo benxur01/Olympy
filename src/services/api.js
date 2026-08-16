@@ -1570,6 +1570,46 @@ export const OlympyApi = {
   ),
   // Segmentlangan / tanlangan ommaviy xabarnoma (Broadcast)
   adminBroadcastNotification: (payload, token) => request('/api/admin/broadcast/', { method: 'POST', body: payload, token }),
+  // ─── Kengaytirilgan Admin Imkoniyatlari ───
+  getAdminUserRiskScore: (userId, token) => request(`/api/admin/users/${userId}/risk-score/`, { token }),
+  getAdminLiveProctoring: (token) => request('/api/admin/security/live-proctoring/', { token }),
+  terminateAdminLiveProctoring: (sessionId, reason, token) => request(
+    `/api/admin/security/live-proctoring/${sessionId}/terminate/`,
+    { method: 'POST', body: { reason }, token },
+  ),
+  getAdminUserDevices: (userId, token) => request(`/api/admin/users/${userId}/devices/`, { token }),
+  banAdminDevice: (payload, token) => request('/api/admin/security/devices/ban/', { method: 'POST', body: payload, token }),
+  unbanAdminDevice: (payload, token) => request('/api/admin/security/devices/unban/', { method: 'POST', body: payload, token }),
+  getAdminUserTimeline: (userId, token) => request(`/api/admin/users/${userId}/timeline/`, { token }),
+  getAdminUserHeatmap: (userId, token) => request(`/api/admin/users/${userId}/heatmap/`, { token }),
+  getAdminUserAiSummary: (userId, token) => request(`/api/admin/users/${userId}/ai-summary/`, { token }),
+  getAdminChurnRiskUsers: (token) => request('/api/admin/users/churn-risk/', { token }),
+  transferAdminUserCenter: (userId, payload, token) => request(
+    `/api/admin/users/${userId}/transfer-center/`,
+    { method: 'POST', body: payload, token },
+  ),
+  setAdminUserQuota: (userId, payload, token) => request(
+    `/api/admin/users/${userId}/set-quota/`,
+    { method: 'POST', body: payload, token },
+  ),
+  getAdminUserCoinTransactions: (userId, token) => request(`/api/admin/users/${userId}/coin-transactions/`, { token }),
+  refundAdminPayment: (transactionId, reason, token) => request(
+    `/api/admin/billing/transactions/${transactionId}/refund/`,
+    { method: 'POST', body: { reason }, token },
+  ),
+  getAdminUserFlashAlerts: (userId, token) => request(`/api/admin/users/${userId}/flash-alerts/`, { token }),
+  createAdminUserFlashAlert: (userId, payload, token) => request(
+    `/api/admin/users/${userId}/flash-alerts/`,
+    { method: 'POST', body: payload, token },
+  ),
+  deleteAdminUserFlashAlert: (alertId, token) => request(`/api/admin/flash-alerts/${alertId}/`, { method: 'DELETE', token }),
+  sendAdminUserTelegram: (userId, message, token) => request(
+    `/api/admin/users/${userId}/send-telegram/`,
+    { method: 'POST', body: { message }, token },
+  ),
+  bulkImportAdminUsers: (payload, token) => request('/api/admin/users/bulk-import/', { method: 'POST', body: payload, token }),
+  getMyFlashAlert: (token) => request('/api/me/flash-alert/', { token }),
+  readMyFlashAlert: (alertId, token) => request(`/api/me/flash-alert/${alertId}/read/`, { method: 'POST', token }),
   // ─── Xavfsizlik tabi ───
   // Bitta IP'dan kirgan turli hisoblar. `minAccounts`/`days` backendda
   // clamp qilinadi va AYNAN qo'llanilgan qiymat javobda qaytadi — panel

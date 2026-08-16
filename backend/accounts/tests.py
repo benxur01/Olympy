@@ -4549,3 +4549,722 @@ class LoginTimingEnumerationTestCase(APITestCase):
         self.assertEqual(unknown.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(wrong.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(json.dumps(unknown.data), json.dumps(wrong.data))
+
+
+class _AdminActionTestCase(APITestCase):
+    """Admin amallari testlari uchun umumiy o'rnatma.
+
+    Har bir test-case bitta platforma admini va bitta oddiy foydalanuvchi
+    bilan boshlanadi; `_as_admin()` / `_as_target()` kim nomidan so'rov
+    ketayotganini bir qatorda ko'rsatadi.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998907880001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save(update_fields=['is_platform_admin'])
+        self.target = User.objects.create_user(
+            phone='+998907880002', password='UserPass123', full_name='Target',
+            roles=['student'],
+        )
+        self._as_admin()
+
+    def _as_admin(self):
+        self.client.force_authenticate(user=self.admin)
+
+    def _as_target(self):
+        self.client.force_authenticate(user=self.target)
+
+    def assertAudited(self, action, target=None):
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action=action,
+                actor=self.admin,
+                target_id=(target or self.target).id,
+            ).exists(),
+            f'{action} uchun AuditLog yozuvi yaratilmadi',
+        )
+
+
+class AdminExamBanTestCase(_AdminActionTestCase):
+    """POST /api/admin/users/<id>/exam-ban/ va .../exam-unban/.
+
+    Olimpiada taqiqi hisobga tegmaydi (login ishlaydi), faqat imtihonga
+    kirishni yopadi — shuning uchun `is_active` bloklashdan alohida
+    maydonlarda (`exam_blocked_until`, `exam_block_reason`) saqlanadi.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.ban_url = reverse('admin-user-exam-ban', args=[self.target.id])
+        self.unban_url = reverse('admin-user-exam-unban', args=[self.target.id])
+
+    def test_ban_without_duration_is_permanent(self):
+        res = self.client.post(self.ban_url, {'reason': 'Ko\'chirmakashlik'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data['is_exam_blocked'])
+        # Muddat berilmasa taqiq MUDDATSIZ: `exam_blocked_until` NULL qoladi.
+        self.assertIsNone(res.data['exam_blocked_until'])
+        self.target.refresh_from_db()
+        self.assertIsNone(self.target.exam_blocked_until)
+        self.assertEqual(self.target.exam_block_reason, 'Ko\'chirmakashlik')
+        self.assertAudited('admin_exam_ban')
+
+    def test_ban_with_duration_sets_expiry(self):
+        res = self.client.post(
+            self.ban_url, {'reason': 'Shubhali xatti-harakat', 'duration_days': 7}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertIsNotNone(self.target.exam_blocked_until)
+        delta = self.target.exam_blocked_until - timezone.now()
+        self.assertGreater(delta, timedelta(days=6, hours=23))
+        self.assertLess(delta, timedelta(days=7, minutes=1))
+
+    def test_ban_ignores_non_positive_duration(self):
+        """`duration_days=0` / manfiy qiymat muddat O'RNATMAYDI.
+
+        `str(-3).isdigit()` False, `'0'.isdigit()` True lekin `> 0` emas —
+        ikkala holatda ham taqiq muddatsiz bo'lib qoladi, xato bermaydi.
+        """
+        for bad in (0, -3, 'abc'):
+            with self.subTest(duration_days=bad):
+                res = self.client.post(
+                    self.ban_url, {'reason': 'Sabab', 'duration_days': bad}, format='json',
+                )
+                self.assertEqual(res.status_code, status.HTTP_200_OK)
+                self.assertIsNone(res.data['exam_blocked_until'])
+
+    def test_ban_requires_reason(self):
+        for bad in ('', '   ', None):
+            with self.subTest(reason=bad):
+                res = self.client.post(self.ban_url, {'reason': bad}, format='json')
+                self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.exam_block_reason, '')
+        self.assertFalse(AuditLog.objects.filter(action='admin_exam_ban').exists())
+
+    def test_ban_platform_admin_is_400(self):
+        other_admin = User.objects.create_user(
+            phone='+998907880003', password='OtherPass123', full_name='Boshqa admin',
+        )
+        other_admin.is_platform_admin = True
+        other_admin.save(update_fields=['is_platform_admin'])
+        res = self.client.post(
+            reverse('admin-user-exam-ban', args=[other_admin.id]),
+            {'reason': 'Sabab'}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        other_admin.refresh_from_db()
+        self.assertEqual(other_admin.exam_block_reason, '')
+
+    def test_ban_self_is_400(self):
+        res = self.client.post(
+            reverse('admin-user-exam-ban', args=[self.admin.id]),
+            {'reason': 'Sabab'}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_ban_unknown_user_is_404(self):
+        res = self.client.post(
+            reverse('admin-user-exam-ban', args=[self.target.id + 9999]),
+            {'reason': 'Sabab'}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unban_clears_ban_and_logs(self):
+        self.client.post(self.ban_url, {'reason': 'Sabab', 'duration_days': 7}, format='json')
+        res = self.client.post(self.unban_url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data['is_exam_blocked'])
+        self.target.refresh_from_db()
+        self.assertIsNone(self.target.exam_blocked_until)
+        self.assertEqual(self.target.exam_block_reason, '')
+        self.assertAudited('admin_exam_unban')
+
+    def test_unban_unknown_user_is_404(self):
+        res = self.client.post(
+            reverse('admin-user-exam-unban', args=[self.target.id + 9999]), {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_admin_is_403(self):
+        self._as_target()
+        for url in (self.ban_url, self.unban_url):
+            with self.subTest(url=url):
+                res = self.client.post(url, {'reason': 'Sabab'}, format='json')
+                self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminAdjustCoinsTestCase(_AdminActionTestCase):
+    """POST /api/admin/users/<id>/adjust-coins/ — balansni to'g'ridan-to'g'ri
+    o'zgartiradi, shuning uchun har bir chaqiruv `CoinTransaction` va
+    `AuditLog` qoldirishi SHART (aks holda tanga "yo'qdan bor" bo'ladi)."""
+
+    def setUp(self):
+        super().setUp()
+        self.target.coins = 100
+        self.target.save(update_fields=['coins'])
+        self.url = reverse('admin-user-adjust-coins', args=[self.target.id])
+
+    def _transactions(self):
+        from accounts.models import CoinTransaction
+        return CoinTransaction.objects.filter(user=self.target)
+
+    def test_credit_increases_balance_and_writes_ledger(self):
+        from accounts.models import CoinTransaction
+
+        res = self.client.post(self.url, {'amount': 50, 'reason': 'Kompensatsiya'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['coins'], 150)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.coins, 150)
+
+        tx = self._transactions().get()
+        self.assertEqual(tx.amount, 50)
+        self.assertEqual(tx.balance_after, 150)
+        self.assertEqual(tx.transaction_type, CoinTransaction.TYPE_ADMIN_ADJUST)
+        self.assertIn('Kompensatsiya', tx.description)
+        self.assertAudited('admin_user_coins_adjust')
+
+    def test_debit_decreases_balance(self):
+        res = self.client.post(self.url, {'amount': -30, 'reason': 'Xato tuzatildi'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.coins, 70)
+
+    def test_debit_below_zero_is_clamped(self):
+        """`coins` — PositiveIntegerField: manfiy balans DB xatosi bo'lardi.
+
+        View `max(0, ...)` qiladi; jurnalda esa SO'RALGAN miqdor (-500) va
+        HAQIQIY yangi balans (0) alohida turishi kerak.
+        """
+        res = self.client.post(self.url, {'amount': -500, 'reason': 'Jarima'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['coins'], 0)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.coins, 0)
+
+        tx = self._transactions().get()
+        self.assertEqual(tx.amount, -500)
+        self.assertEqual(tx.balance_after, 0)
+        entry = AuditLog.objects.get(action='admin_user_coins_adjust')
+        self.assertEqual(entry.extra['old_coins'], 100)
+        self.assertEqual(entry.extra['new_coins'], 0)
+        self.assertEqual(entry.extra['amount'], -500)
+
+    def test_zero_amount_is_400(self):
+        res = self.client.post(self.url, {'amount': 0, 'reason': 'Sabab'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(self._transactions().exists())
+
+    def test_non_numeric_amount_is_400(self):
+        res = self.client.post(self.url, {'amount': 'ko\'p', 'reason': 'Sabab'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(self._transactions().exists())
+
+    def test_missing_reason_is_400(self):
+        res = self.client.post(self.url, {'amount': 50}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.coins, 100)
+        self.assertFalse(self._transactions().exists())
+
+    def test_unknown_user_is_404(self):
+        res = self.client.post(
+            reverse('admin-user-adjust-coins', args=[self.target.id + 9999]),
+            {'amount': 50, 'reason': 'Sabab'}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_admin_is_403(self):
+        self._as_target()
+        res = self.client.post(self.url, {'amount': 1000, 'reason': 'O\'zimga'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.coins, 100)
+
+
+class AdminAttemptRetakeTestCase(_AdminActionTestCase):
+    """POST /api/admin/users/<id>/attempts/<attempt_id>/allow-retake/.
+
+    `TestAttempt` da `unique_user_olympiad` cheklovi bor — qayta topshirish
+    faqat mavjud urinishni O'CHIRISH orqali mumkin. Ya'ni bu amal natijani
+    qaytarib bo'lmaydigan tarzda yo'qotadi, shuning uchun testlar (a) hech
+    kimning boshqa urinishiga tegmasligini va (b) jurnalga tushishini
+    tekshiradi.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from attempts.models import TestAttempt, TestSession
+        from centers.models import EducationCenter
+        from olympiads.models import Olympiad
+
+        self.center = EducationCenter.objects.create(name='Markaz', owner=self.admin)
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Matematika', subject='Matematika',
+            duration_minutes=30, status='active',
+        )
+        self.attempt = TestAttempt.objects.create(
+            user=self.target, olympiad=self.olympiad, score=40, total_questions=10,
+        )
+        self.session = TestSession.objects.create(
+            user=self.target, olympiad=self.olympiad, status=TestSession.STATUS_COMPLETED,
+        )
+        self.url = reverse(
+            'admin-user-attempt-retake', args=[self.target.id, self.attempt.id],
+        )
+
+    def test_retake_deletes_attempt_and_session(self):
+        from attempts.models import TestAttempt, TestSession
+
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(TestAttempt.objects.filter(pk=self.attempt.pk).exists())
+        self.assertFalse(TestSession.objects.filter(pk=self.session.pk).exists())
+        self.assertAudited('admin_attempt_retake')
+        entry = AuditLog.objects.get(action='admin_attempt_retake')
+        self.assertEqual(entry.extra['olympiad_id'], self.olympiad.id)
+        self.assertEqual(entry.extra['attempt_id'], self.attempt.id)
+        self.assertEqual(entry.extra['olympiad_title'], 'Matematika')
+
+    def test_retake_frees_the_unique_constraint(self):
+        """Amalning butun MAQSADI: shundan keyin yangi urinish yaratilishi
+        kerak. Cheklov nomi `unique_user_olympiad` — u tozalanmasa
+        foydalanuvchi testni qayta topshira olmasdi."""
+        from attempts.models import TestAttempt
+
+        self.client.post(self.url, {}, format='json')
+        TestAttempt.objects.create(
+            user=self.target, olympiad=self.olympiad, score=90, total_questions=10,
+        )
+        self.assertEqual(
+            TestAttempt.objects.filter(user=self.target, olympiad=self.olympiad).count(), 1,
+        )
+
+    def test_other_users_attempt_is_404(self):
+        """`attempt_id` boshqa foydalanuvchiniki bo'lsa o'chirilmaydi.
+
+        View `filter(pk=attempt_id, user=target)` qiladi — `user` shartisiz
+        admin `/users/<A>/attempts/<B ning urinishi>/` deb B ning natijasini
+        yo'q qila olardi.
+        """
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+
+        other = User.objects.create_user(
+            phone='+998907880004', password='OtherPass123', full_name='Boshqa',
+        )
+        other_olympiad = Olympiad.objects.create(
+            center=self.center, title='Fizika', subject='Fizika',
+            duration_minutes=30, status='active',
+        )
+        other_attempt = TestAttempt.objects.create(
+            user=other, olympiad=other_olympiad, score=70, total_questions=10,
+        )
+        res = self.client.post(
+            reverse('admin-user-attempt-retake', args=[self.target.id, other_attempt.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(TestAttempt.objects.filter(pk=other_attempt.pk).exists())
+
+    def test_unknown_attempt_is_404(self):
+        res = self.client.post(
+            reverse('admin-user-attempt-retake', args=[self.target.id, self.attempt.id + 9999]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unknown_user_is_404(self):
+        res = self.client.post(
+            reverse('admin-user-attempt-retake', args=[self.target.id + 9999, self.attempt.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_admin_is_403(self):
+        from attempts.models import TestAttempt
+
+        self._as_target()
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(TestAttempt.objects.filter(pk=self.attempt.pk).exists())
+
+
+class AdminBroadcastNotificationTestCase(_AdminActionTestCase):
+    """POST /api/admin/broadcast/ — segmentlangan ommaviy xabarnoma.
+
+    Eng xavfli qismi AUDITORIYANI tanlash: segment mantig'i xato bo'lsa
+    xabar noto'g'ri odamlarga (yoki hammaga) ketadi va ortga qaytarib
+    bo'lmaydi. Shuning uchun testlarning ko'pi aynan kim ro'yxatga
+    TUSHMASLIGINI tekshiradi.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.teacher = User.objects.create_user(
+            phone='+998907880010', password='Pass1234567', full_name='O\'qituvchi',
+            roles=['teacher'],
+        )
+        self.url = reverse('admin-broadcast-notification')
+
+    def _recipients(self):
+        from notifications.models import Notification
+        return set(
+            Notification.objects.filter(type=Notification.TYPE_ADMIN_BROADCAST)
+            .values_list('user_id', flat=True)
+        )
+
+    def _post(self, **payload):
+        payload.setdefault('title', 'Sarlavha')
+        payload.setdefault('message', 'Xabar matni')
+        return self.client.post(self.url, payload, format='json')
+
+    def test_default_segment_is_every_non_admin_user(self):
+        res = self._post(channel='in_app')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['total_recipients'], 2)
+        self.assertEqual(self._recipients(), {self.target.id, self.teacher.id})
+        self.assertTrue(AuditLog.objects.filter(action='admin_broadcast_message').exists())
+
+    def test_platform_admins_are_never_recipients(self):
+        """Adminlar hatto ATAYLAB `user_ids` da ko'rsatilsa ham chiqib
+        ketadi — `exclude(is_platform_admin=True)` filtrdan OLDIN turadi."""
+        res = self._post(channel='in_app', user_ids=[self.admin.id, self.target.id])
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['total_recipients'], 1)
+        self.assertEqual(self._recipients(), {self.target.id})
+
+    def test_inactive_and_deleted_users_are_excluded(self):
+        blocked = User.objects.create_user(
+            phone='+998907880011', password='Pass1234567', full_name='Bloklangan',
+            roles=['student'],
+        )
+        blocked.is_active = False
+        blocked.save(update_fields=['is_active'])
+        removed = User.objects.create_user(
+            phone='+998907880012', password='Pass1234567', full_name='O\'chirilgan',
+            roles=['student'],
+        )
+        removed.deleted_at = timezone.now()
+        removed.save(update_fields=['deleted_at'])
+
+        self._post(channel='in_app')
+        self.assertEqual(self._recipients(), {self.target.id, self.teacher.id})
+
+    def test_role_segment_selects_only_that_role(self):
+        res = self._post(channel='in_app', filter_role='teacher')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['total_recipients'], 1)
+        self.assertEqual(self._recipients(), {self.teacher.id})
+
+    def test_filter_role_all_means_everyone(self):
+        res = self._post(channel='in_app', filter_role='all')
+        self.assertEqual(res.data['total_recipients'], 2)
+        self.assertEqual(self._recipients(), {self.target.id, self.teacher.id})
+
+    def test_explicit_user_ids_win_over_role_segment(self):
+        """`user_ids` va `filter_role` birga kelsa — `elif`, ya'ni ro'yxat
+        ustun. Aks holda ikkalasi AND bo'lib qo'shilib, admin tanlagan
+        odamlarning bir qismi jimgina tushib qolardi."""
+        res = self._post(channel='in_app', user_ids=[self.target.id], filter_role='teacher')
+        self.assertEqual(res.data['total_recipients'], 1)
+        self.assertEqual(self._recipients(), {self.target.id})
+
+    def test_empty_audience_is_400_and_writes_nothing(self):
+        res = self._post(channel='in_app', filter_role='owner')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._recipients(), set())
+        self.assertFalse(AuditLog.objects.filter(action='admin_broadcast_message').exists())
+
+    def test_title_and_message_are_required(self):
+        for payload in ({'title': '', 'message': 'Matn'}, {'title': 'Sarlavha', 'message': '  '}):
+            with self.subTest(payload=payload):
+                res = self.client.post(self.url, payload, format='json')
+                self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._recipients(), set())
+
+    def test_telegram_channel_skips_in_app_and_users_without_chat_id(self):
+        self.target.telegram_chat_id = '111222'
+        self.target.save(update_fields=['telegram_chat_id'])
+
+        with patch('notifications.services.send_telegram_markdown') as send:
+            res = self._post(channel='telegram')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['in_app_created'], 0)
+        self.assertEqual(res.data['telegram_sent'], 1)
+        self.assertEqual(self._recipients(), set())
+        # Telegram'siz `teacher` ga urinib ham ko'rilmaydi.
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(send.call_args.args[0], '111222')
+
+    def test_both_channel_delivers_to_each_side(self):
+        self.target.telegram_chat_id = '111222'
+        self.target.save(update_fields=['telegram_chat_id'])
+
+        with patch('notifications.services.send_telegram_markdown') as send:
+            res = self._post(channel='both')
+
+        self.assertEqual(res.data['in_app_created'], 2)
+        self.assertEqual(res.data['telegram_sent'], 1)
+        self.assertEqual(self._recipients(), {self.target.id, self.teacher.id})
+        self.assertEqual(send.call_count, 1)
+
+    def test_telegram_failure_does_not_abort_the_broadcast(self):
+        """Telegram xatosi in-app yetkazishni buzmasligi kerak — aks holda
+        bitta yaroqsiz chat_id butun ommaviy xabarni to'xtatardi."""
+        self.target.telegram_chat_id = '111222'
+        self.target.save(update_fields=['telegram_chat_id'])
+
+        with patch(
+            'notifications.services.send_telegram_markdown', side_effect=RuntimeError('bot down'),
+        ):
+            res = self._post(channel='both')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['telegram_sent'], 0)
+        self.assertEqual(self._recipients(), {self.target.id, self.teacher.id})
+
+    def test_non_admin_is_403(self):
+        self._as_target()
+        res = self._post(channel='in_app')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._recipients(), set())
+
+
+class DjangoAdminUserGuardrailTestCase(APITestCase):
+    """`/olympy-mgmt-2025/` dagi User sahifasi API guardrail'larini chetlab
+    o'ta olmasligi.
+
+    Django admin API'dan mustaqil IKKINCHI yozish yo'li edi: u orqali
+    `roles`, `is_active`, `is_platform_admin`, `is_premium` va parolni
+    o'zgartirish mumkin bo'lgan, ammo `AuditLog` yozilmasdi va API'dagi
+    tekshiruvlar (majburiy blok sababi, "o'zingni/boshqa adminni bloklay
+    olmaysan", parol tiklashdagi `token_version` bump) umuman ishlamasdi.
+
+    Testlar formani HAQIQATAN to'ldirib yuboradi — faqat `readonly_fields`
+    ro'yxatini tekshirish yetarli emas, chunki asosiy savol POST qilingan
+    qiymat modelga YETIB BORADIMI degani.
+    """
+
+    def setUp(self):
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Permission
+        from django.test import RequestFactory
+
+        self.model_admin = site._registry[User]
+        self.factory = RequestFactory()
+        self.admin = User.objects.create_user(
+            phone='+998907990001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.is_staff = True
+        self.admin.save(update_fields=['is_platform_admin', 'is_staff'])
+        # `ensure_platform_admin` productionda AYNAN shu ikki huquqni beradi
+        # (`is_superuser` o'rniga). Ularsiz `ModelAdmin.get_form` change
+        # formasidagi BARCHA maydonlarni exclude qiladi va test guardrail'ni
+        # emas, huquq yo'qligini tekshirib qo'yardi.
+        self.admin.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label='accounts',
+            codename__in=('view_user', 'change_user'),
+        ))
+        self.target = User.objects.create_user(
+            phone='+998907990002', password='UserPass123', full_name='Target',
+            roles=['student'],
+        )
+
+    def _request(self, data=None):
+        request = self.factory.post('/olympy-mgmt-2025/accounts/user/', data or {})
+        request.user = self.admin
+        return request
+
+    def _submit(self, **overrides):
+        """Admin change-form'ini to'ldirib saqlaydi, formani qaytaradi."""
+        request = self._request()
+        form_class = self.model_admin.get_form(request, self.target, change=True)
+        data = {
+            'full_name': self.target.full_name,
+            'phone': self.target.phone,
+            'email': self.target.email or '',
+            'telegram_chat_id': self.target.telegram_chat_id or '',
+            'telegram_user_id': self.target.telegram_user_id or '',
+        }
+        data.update(overrides)
+        form = form_class(data, instance=self.target)
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        self.model_admin.save_model(self._request(data), form.instance, form, change=True)
+        return form
+
+    def test_guarded_fields_are_readonly(self):
+        readonly = set(self.model_admin.get_readonly_fields(self._request(), self.target))
+        for field in ('roles', 'is_active', 'is_platform_admin', 'is_premium', 'password'):
+            with self.subTest(field=field):
+                self.assertIn(field, readonly)
+
+    def test_list_editable_is_empty(self):
+        # `is_premium` `readonly_fields` da — u `list_editable` da ham qolsa
+        # ro'yxat sahifasining o'zi ochilmasdi.
+        self.assertEqual(tuple(self.model_admin.list_editable), ())
+
+    def test_guarded_fields_are_not_in_the_form(self):
+        form_class = self.model_admin.get_form(self._request(), self.target, change=True)
+        for field in ('roles', 'is_active', 'is_platform_admin', 'is_premium'):
+            with self.subTest(field=field):
+                self.assertNotIn(field, form_class.base_fields)
+
+    def test_posted_roles_and_flags_are_ignored(self):
+        """Asosiy test: qiymatlar POST qilinsa ham modelga yozilmaydi."""
+        self._submit(
+            roles=['admin'], is_active=False, is_platform_admin=True, is_premium=True,
+        )
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.roles, ['student'])
+        self.assertTrue(self.target.is_active)
+        self.assertFalse(self.target.is_platform_admin)
+        self.assertFalse(self.target.is_premium)
+
+    def test_password_hash_is_not_rendered_and_cannot_be_set(self):
+        old_hash = self.target.password
+        self._submit(password='pbkdf2_sha256$fake')
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.password, old_hash)
+        # Parol maydoni fieldset'da ham yo'q — hash ekranga chiqmaydi.
+        fieldset_fields = {
+            field
+            for _, opts in self.model_admin.get_fieldsets(self._request(), self.target)
+            for field in opts['fields']
+        }
+        self.assertNotIn('password', fieldset_fields)
+
+    def test_password_change_view_is_blocked(self):
+        """`<id>/password/` marshruti `readonly_fields` ga qaramaydi —
+        u alohida yopilgan bo'lishi kerak."""
+        from django.core.exceptions import PermissionDenied
+
+        with self.assertRaises(PermissionDenied):
+            self.model_admin.user_change_password(self._request(), str(self.target.id))
+
+    def test_safe_field_edit_is_saved_and_audited(self):
+        self._submit(full_name='Yangi Ism')
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.full_name, 'Yangi Ism')
+
+        entry = AuditLog.objects.get(action='admin_django_admin_user_edit')
+        self.assertEqual(entry.actor_id, self.admin.id)
+        self.assertEqual(entry.target_id, self.target.id)
+        self.assertEqual(entry.target_type, 'User')
+        self.assertIn('full_name', entry.extra['changed_fields'])
+        self.assertFalse(entry.extra['created'])
+
+    def test_no_change_writes_no_audit_entry(self):
+        self._submit()
+        self.assertFalse(AuditLog.objects.filter(action='admin_django_admin_user_edit').exists())
+
+    def test_delete_is_never_permitted(self):
+        request = self._request()
+        self.assertFalse(self.model_admin.has_delete_permission(request))
+        self.assertFalse(self.model_admin.has_delete_permission(request, self.target))
+        # Ro'yxat sahifasidagi "tanlanganlarni o'chirish" ham yo'qoladi.
+        self.assertNotIn('delete_selected', self.model_admin.get_actions(request))
+
+
+class EnsurePlatformAdminCommandTestCase(APITestCase):
+    """`ensure_platform_admin` — bootstrap admin `is_superuser` OLMAYDI.
+
+    `is_superuser=True` bo'lsa `has_perm()` doim True qaytaradi, ya'ni admin
+    Django admin'da ro'yxatdan o'tgan BARCHA modellarni (Olympiad, Question,
+    TestAttempt, PaymentTransaction...) audit yozuvisiz o'chira olardi — bu
+    `UserAdmin` guardrail'lari tuzatgan muammoning aynan o'zi. Uning o'rniga
+    mahsulot UI'siga ega bo'lmagan modellar uchun ANIQ huquqlar beriladi.
+    """
+
+    def _run(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command(
+            'ensure_platform_admin',
+            phone='+998907991001', password='BootstrapPass123', full_name='Bootstrap',
+            stdout=out,
+        )
+        return out.getvalue()
+
+    def test_creates_staff_admin_without_superuser(self):
+        self._run()
+        user = User.objects.get(normalized_phone='+998907991001')
+        self.assertTrue(user.is_platform_admin)
+        # `is_staff` ATAYLAB qoladi: RewardProduct / OTP debug kabi mahsulot
+        # UI'siga ega bo'lmagan modellar faqat Django admin orqali boshqariladi.
+        self.assertTrue(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertIn('admin', user.roles)
+
+    def test_existing_superuser_is_demoted_with_a_warning(self):
+        user = User.objects.create_user(
+            phone='+998907991001', password='OldPass123456', full_name='Eski',
+        )
+        user.is_superuser = True
+        user.is_staff = True
+        user.save(update_fields=['is_superuser', 'is_staff'])
+
+        output = self._run()
+        user.refresh_from_db()
+        self.assertFalse(user.is_superuser)
+        self.assertIn('is_superuser', output)
+
+    def test_granted_permissions_cover_ui_less_models_only(self):
+        self._run()
+        user = User.objects.get(normalized_phone='+998907991001')
+        granted = {
+            f'{p.content_type.app_label}.{p.codename}'
+            for p in user.user_permissions.select_related('content_type')
+        }
+        # Mahsulot UI'si yo'q modellar — to'liq huquq.
+        self.assertIn('accounts.add_rewardproduct', granted)
+        self.assertIn('accounts.delete_rewardproduct', granted)
+        self.assertIn('accounts.view_phoneverification', granted)
+        self.assertIn('billing.change_subscriptionplan', granted)
+        # User sahifasi ochiq, lekin faqat ko'rish/tahrirlash.
+        self.assertIn('accounts.view_user', granted)
+        self.assertIn('accounts.change_user', granted)
+        self.assertNotIn('accounts.delete_user', granted)
+        self.assertNotIn('accounts.add_user', granted)
+        # Audit yozuvli admin paneli orqali boshqariladigan modellar Django
+        # admin'da umuman ochilmaydi.
+        for codename in (
+            'olympiads.delete_olympiad', 'questions.delete_question',
+            'attempts.delete_testattempt', 'billing.change_paymenttransaction',
+            'centers.change_educationcenter',
+        ):
+            with self.subTest(codename=codename):
+                self.assertNotIn(codename, granted)
+
+    def test_manual_permissions_are_not_stripped(self):
+        """Huquqlar QO'SHIMCHA beriladi — operator qo'lda bergani har
+        deploy'da o'chib ketmasligi kerak."""
+        from django.contrib.auth.models import Permission
+
+        self._run()
+        user = User.objects.get(normalized_phone='+998907991001')
+        extra = Permission.objects.get(
+            content_type__app_label='notifications', codename='view_notification',
+        )
+        user.user_permissions.add(extra)
+
+        self._run()
+        self.assertTrue(user.user_permissions.filter(pk=extra.pk).exists())
+
+    def test_rerun_does_not_bump_token_version(self):
+        self._run()
+        user = User.objects.get(normalized_phone='+998907991001')
+        version = user.token_version
+        self._run()
+        user.refresh_from_db()
+        self.assertEqual(user.token_version, version)

@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -717,3 +718,131 @@ class AttemptTaskOnCommitTestCase(TestCase):
             self.assertEqual(
                 mock_run.call_args.kwargs, {'submission_id': submission.id},
             )
+
+
+class LiveFrameConsentTestCase(APITestCase):
+    """`session_live_frame` POST — proktoring roziligi SERVERDA tekshiriladi.
+
+    Ilgari rozilik faqat frontend oqimida talab qilinardi: o'zgartirilgan
+    klient yoki UI bug'i uni chetlab o'tib kadr/audio yuborsa, ular keshga
+    yozilib kuzatuvchi paneliga chiqardi. Endi proktoring YOQILGAN-u rozilik
+    BERILMAGAN kanalning ma'lumoti umuman qabul qilinmaydi — lekin so'rovning
+    o'zi rad etilmaydi, chunki `app_switched`/`tab_escapes` kamera/mikrofonga
+    umuman bog'liq emas va baribir qayd etilishi kerak.
+    """
+
+    FRAME = 'data:image/jpeg;base64,AAAA'
+    SCREEN_FRAME = 'data:image/jpeg;base64,BBBB'
+
+    def setUp(self):
+        # LocMemCache jarayon davomida testlar orasida saqlanib qoladi —
+        # oldingi testning kadri yangisiga sizib o'tmasin.
+        cache.clear()
+        self.student = User.objects.create_user(
+            phone='+998901238001', password='StrongPass123', full_name="O'quvchi",
+        )
+        self.admin = User.objects.create_user(
+            phone='+998901238002', password='StrongPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save(update_fields=['is_platform_admin'])
+        self.center = EducationCenter.objects.create(name='ProSkill', city='Toshkent')
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Matematika Olimpiadasi',
+            subject='Matematika',
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(minutes=10),
+            duration_minutes=60,
+            camera_proctoring_enabled=True,
+            voice_proctoring_enabled=True,
+        )
+        self.session = TestSession.objects.create(
+            user=self.student,
+            olympiad=self.olympiad,
+            status=TestSession.STATUS_ACTIVE,
+        )
+        self.url = reverse('session-live-frame', args=[self.session.id])
+
+    def _send_frame(self):
+        """Student to'liq to'plamni yuboradi (rozilikni tekshirmagan klient)."""
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(self.url, {
+            'frame': self.FRAME,
+            'screen_frame': self.SCREEN_FRAME,
+            'audio_level': 42,
+            'face_detected': False,
+            'speech_detected': True,
+            'app_switched': True,
+            'tab_escapes': 3,
+        }, format='json')
+        # So'rov RAD ETILMAYDI — faqat rozilik yo'q kanal tashlab yuboriladi.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def _watch(self):
+        """Kuzatuvchi (platforma admini) o'sha sessiyani o'qiydi."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def test_media_dropped_without_consent_but_other_signals_kept(self):
+        self._send_frame()
+        data = self._watch()
+
+        self.assertIsNone(data['frame'])
+        self.assertIsNone(data['screen_frame'])
+        self.assertEqual(data['audio_level'], 0)
+        self.assertFalse(data['is_live'])
+        # Kamera/mikrofondan hosil bo'lgan bayroqlar ham neytral qiymatda —
+        # oqim umuman bo'lmagan joyda "yuz aniqlanmadi" signali bo'lmaydi.
+        self.assertTrue(data['face_detected'])
+        self.assertFalse(data['speech_detected'])
+        # Rozilikka bog'liq bo'lmagan signallar esa SAQLANADI.
+        self.assertTrue(data['app_switched'])
+        self.assertEqual(data['tab_escapes'], 3)
+
+    def test_media_stored_after_consent(self):
+        self.session.camera_consent_given = True
+        self.session.microphone_consent_given = True
+        self.session.save(update_fields=[
+            'camera_consent_given', 'microphone_consent_given',
+        ])
+
+        self._send_frame()
+        data = self._watch()
+
+        self.assertEqual(data['frame'], self.FRAME)
+        self.assertEqual(data['screen_frame'], self.SCREEN_FRAME)
+        self.assertEqual(data['audio_level'], 42)
+        self.assertFalse(data['face_detected'])
+        self.assertTrue(data['speech_detected'])
+        self.assertTrue(data['is_live'])
+
+    def test_camera_and_microphone_are_gated_independently(self):
+        """Kamera roziligi bor, mikrofonniki yo'q — faqat audio bloklanadi."""
+        self.session.camera_consent_given = True
+        self.session.save(update_fields=['camera_consent_given'])
+
+        self._send_frame()
+        data = self._watch()
+
+        self.assertEqual(data['frame'], self.FRAME)
+        self.assertFalse(data['face_detected'])
+        self.assertEqual(data['audio_level'], 0)
+        self.assertFalse(data['speech_detected'])
+
+    def test_consent_not_required_when_proctoring_disabled(self):
+        """Olimpiadada proktoring o'chiq — rozilik ekrani umuman ko'rsatilmaydi."""
+        self.olympiad.camera_proctoring_enabled = False
+        self.olympiad.voice_proctoring_enabled = False
+        self.olympiad.save(update_fields=[
+            'camera_proctoring_enabled', 'voice_proctoring_enabled',
+        ])
+
+        self._send_frame()
+        data = self._watch()
+
+        self.assertEqual(data['frame'], self.FRAME)
+        self.assertEqual(data['audio_level'], 42)
