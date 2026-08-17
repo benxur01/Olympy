@@ -1,5 +1,7 @@
 """Kengaytirilgan Admin Foydalanuvchi Nazorati testlari (tests_admin_advanced.py)."""
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -60,6 +62,66 @@ class AdminAdvancedUserControlTestCase(APITestCase):
         self.assertIn('risk_score', response.data)
         self.assertGreaterEqual(response.data['risk_score'], 20)
         self.assertIn('factors', response.data)
+
+    def test_risk_score_get_does_not_write_to_db(self):
+        """GET yon ta'sirsiz bo'lishi kerak.
+
+        Avval bu endpoint `User.risk_score` ustuniga yozardi — admin
+        "Batafsil" oynasini ochishining O'ZI hisobni o'zgartirardi, va o'sha
+        qiymat `UserSerializer` orqali foydalanuvchining o'ziga ochilardi.
+        Ustunning o'zi olib tashlandi (migratsiya 0057), shuning uchun test
+        endi umumiy qoidani qo'riqlaydi: bu GET hech qanday YOZUV so'rovi
+        yubormasin (kelajakda boshqa ustunga yozib qo'yilmasin ham).
+        """
+        TestAttempt.objects.create(
+            user=self.student, olympiad=self.olympiad, score=0, disqualified=True,
+        )
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(f'/api/admin/users/{self.student.id}/risk-score/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreater(response.data['risk_score'], 0)
+        writes = [
+            q['sql'] for q in ctx.captured_queries
+            if q['sql'].lstrip().upper().startswith(('UPDATE', 'INSERT', 'DELETE'))
+        ]
+        self.assertEqual(writes, [], f'GET yozuv so‘rovi yubordi: {writes}')
+
+    def test_risk_score_matches_user_detail(self):
+        """To'rtta formula bitta bo'ldi: `admin_user_risk_score` va
+        `admin_user_detail` bir xil ball va bir xil DARAJA nomini beradi
+        (avval bu endpoint 20/40/70 chegaralari bilan inglizcha yorliq
+        qaytarardi, panel esa ikkalasini bitta ekranda ko'rsatardi)."""
+        TestAttempt.objects.create(
+            user=self.student, olympiad=self.olympiad, score=0, disqualified=True,
+        )
+        DeviceFingerprint.objects.create(
+            user=self.student, fingerprint_hash='e' * 32, is_banned=True,
+        )
+        risk = self.client.get(f'/api/admin/users/{self.student.id}/risk-score/')
+        detail = self.client.get(f'/api/admin/users/{self.student.id}/')
+        self.assertEqual(risk.data['risk_score'], detail.data['risk_score'])
+        self.assertEqual(risk.data['risk_level'], detail.data['risk_level'])
+        # 25 (bitta diskvalifikatsiya) + 35 (bloklangan qurilma) = 60.
+        self.assertEqual(risk.data['risk_score'], 60)
+        self.assertEqual(risk.data['risk_level'], 'yuqori')
+        names = [f['name'] for f in risk.data['factors']]
+        self.assertIn('Bloklangan apparat izi (Banned Device)', names)
+
+    def test_live_proctoring_risk_score_is_computed_not_stale_column(self):
+        """Jonli ro'yxatdagi "xavf" ustuni eskirgan ustundan emas, yagona
+        formuladan keladi — aks holda admin hali ochmagan hisoblarda u har
+        doim 0 bo'lardi (aynan imtihon paytida, xavf eng kerak bo'lganda)."""
+        TestSession.objects.create(
+            user=self.student, olympiad=self.olympiad, status=TestSession.STATUS_ACTIVE,
+        )
+        DeviceFingerprint.objects.create(
+            user=self.student, fingerprint_hash='f' * 32, is_banned=True,
+        )
+        res = self.client.get('/api/admin/security/live-proctoring/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        row = next(r for r in res.data['results'] if r['user']['id'] == self.student.id)
+        self.assertEqual(row['user']['risk_score'], 35)
+        self.assertEqual(row['user']['risk_tier'], "o'rta")
 
     def test_live_proctoring_and_termination(self):
         """Jonli test sessiyasi monitoringi va uni to'xtatish."""

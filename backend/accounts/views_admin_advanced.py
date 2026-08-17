@@ -41,6 +41,7 @@ from accounts.models import (
     UserFlashAlert,
 )
 from accounts.permissions import IsPlatformAdmin
+from accounts.security_queries import annotate_admin_risk, risk_tier_from_score
 from accounts.utils import normalize_phone
 from attempts.models import TestAttempt, TestSession
 from billing.models import PaymentTransaction, UserSubscription
@@ -56,118 +57,36 @@ logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsPlatformAdmin])
 def admin_user_risk_score(request, user_id):
-    """Foydalanuvchining firibgarlik/xavf ko'rsatkichini (Risk Score) hisoblaydi."""
+    """Foydalanuvchining firibgarlik/xavf ko'rsatkichini (Risk Score) qaytaradi.
+
+    Hisob-kitob `accounts.views.compute_user_risk_profile` da — YAGONA
+    formula. Avval bu endpoint o'z nusxasini yuritardi (chegaralar 20/40/70,
+    inglizcha yorliqlar, diskvalifikatsiya `min(40, n*20)`, IP chegarasi
+    `>=3`), shu sababli panel bitta ekranda ikki xil raqam ko'rsatardi:
+    sarlavha `admin_user_detail` dan, pastdagi omillar ro'yxati esa shu
+    yerdan kelardi va ular qo'shilmasdi.
+
+    `risk_level` endi O'ZBEKCHA daraja ('past' | "o'rta" | 'yuqori' |
+    'kritik') — ro'yxatdagi `risk_tier` va "Batafsil" oynasidagi
+    `risk_level` bilan bir xil so'z.
+
+    GET yon ta'siri YO'Q: avval bu yerda `User.risk_score` ustuniga yozilardi
+    (admin "Batafsil" oynasini ochishi hisobni o'zgartirardi). Ustunning o'zi
+    endi yo'q (migratsiya 0057) — ball har safar shu funksiyadan hisoblanadi.
+    """
+    from accounts.views import compute_user_risk_profile
+
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
         return Response({'error': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
 
-    factors = []
-    score = 0
-
-    # 1. Anticheat qoidabuzarliklari
-    disqualified_attempts = TestAttempt.objects.filter(user=user, disqualified=True).count()
-    if disqualified_attempts > 0:
-        pts = min(40, disqualified_attempts * 20)
-        score += pts
-        factors.append({
-            'name': 'Diskvalifikatsiya qilingan testlar',
-            'points': pts,
-            'description': f"{disqualified_attempts} ta testda qoidabuzarlik sababli diskvalifikatsiya olingan.",
-            'severity': 'high' if disqualified_attempts > 1 else 'medium',
-        })
-
-    # TestSession dagi pending yoki DQ holatlar
-    dq_sessions = TestSession.objects.filter(
-        user=user,
-        status__in=[TestSession.STATUS_DISQUALIFIED, TestSession.STATUS_PENDING_REVIEW],
-    ).count()
-    if dq_sessions > 0 and disqualified_attempts == 0:
-        pts = min(30, dq_sessions * 15)
-        score += pts
-        factors.append({
-            'name': 'Shubhali imtihon sessiyalari',
-            'points': pts,
-            'description': f"{dq_sessions} ta imtihon sessiyasida tekshiruv yoki qoidabuzarlik qayd etilgan.",
-            'severity': 'medium',
-        })
-
-    # 2. Bir xil IP dagi boshqa akkauntlar (Multi-accounting)
-    user_ips = list(
-        LoginEvent.objects.filter(user=user).exclude(ip_address__isnull=True).values_list('ip_address', flat=True).distinct()[:10]
-    )
-    shared_accounts_count = 0
-    if user_ips:
-        shared_accounts_count = (
-            LoginEvent.objects.filter(ip_address__in=user_ips)
-            .exclude(user=user)
-            .values('user')
-            .distinct()
-            .count()
-        )
-    if shared_accounts_count >= 3:
-        pts = min(25, shared_accounts_count * 5)
-        score += pts
-        factors.append({
-            'name': 'Bir xil IP dan ko‘p hisoblar (Multi-accounting)',
-            'points': pts,
-            'description': f"Foydalanuvchi IP manzillaridan yana {shared_accounts_count} ta boshqa hisoblar foydalangan.",
-            'severity': 'high' if shared_accounts_count >= 5 else 'medium',
-        })
-
-    # 3. Bloklangan qurilma yoki bir nechta qurilmalar
-    banned_devices = DeviceFingerprint.objects.filter(user=user, is_banned=True).count()
-    if banned_devices > 0:
-        score += 35
-        factors.append({
-            'name': 'Bloklangan apparat izi (Banned Device)',
-            'points': 35,
-            'description': f"Ushbu foydalanuvchida {banned_devices} ta bloklangan qurilma izi aniqlangan.",
-            'severity': 'critical',
-        })
-
-    # 4. Exam-ban yoki doimiy blok holati
-    if user.is_exam_blocked:
-        score += 20
-        factors.append({
-            'name': 'Olimpiadalardan chetlatilgan (Exam Ban)',
-            'points': 20,
-            'description': user.exam_block_reason or 'Imtihonlardan chetlatish muddati faol.',
-            'severity': 'medium',
-        })
-
-    # 5. Ogohlantirishlar
-    warn_count = AuditLog.objects.filter(
-        target_id=user.id,
-        action='admin_user_warn',
-    ).count()
-    if warn_count > 0:
-        pts = min(15, warn_count * 5)
-        score += pts
-        factors.append({
-            'name': 'Admin ogohlantirishlari',
-            'points': pts,
-            'description': f"Foydalanuvchiga {warn_count} marta rasmiy ogohlantirish berilgan.",
-            'severity': 'low' if warn_count == 1 else 'medium',
-        })
-
-    final_score = min(100, score)
-    if final_score != user.risk_score:
-        User.objects.filter(pk=user.pk).update(risk_score=final_score)
-
-    risk_level = 'low'
-    if final_score >= 70:
-        risk_level = 'critical'
-    elif final_score >= 40:
-        risk_level = 'high'
-    elif final_score >= 20:
-        risk_level = 'medium'
-
+    profile = compute_user_risk_profile(user)
     return Response({
         'user_id': user.id,
-        'risk_score': final_score,
-        'risk_level': risk_level,
-        'factors': factors,
+        'risk_score': profile['risk_score'],
+        'risk_level': profile['risk_level'],
+        'factors': profile['factors'],
         'calculated_at': timezone.now().isoformat(),
     })
 
@@ -182,17 +101,28 @@ def admin_live_proctoring_list(request):
     now = timezone.now()
     two_hours_ago = now - timedelta(hours=2)
 
-    active_sessions = (
+    active_sessions = list(
         TestSession.objects.filter(
             started_at__gte=two_hours_ago,
             status__in=[TestSession.STATUS_ACTIVE, TestSession.STATUS_PENDING_REVIEW],
         )
         .select_related('user', 'olympiad')
-        .order_by('-started_at')
+        .order_by('-started_at')[:50]
+    )
+
+    # Xavf ko'rsatkichi — YAGONA formulaning SQL variantidan
+    # (`annotate_admin_risk`), sahifadagi foydalanuvchilar uchun BITTA
+    # qo'shimcha so'rov. Avval bu yerda eskirgan `user.risk_score` USTUNI
+    # o'qilardi: uni faqat "Batafsil" oynasi yozardi, ya'ni admin hali
+    # ochmagan hisoblarda ustun har doim 0 edi va jonli imtihon paytida —
+    # xavf eng kerak bo'lgan payt — ustun ma'nosiz nol ko'rsatardi.
+    risk_scores = dict(
+        annotate_admin_risk(User.objects.filter(pk__in={s.user_id for s in active_sessions}))
+        .values_list('pk', 'risk_tier_score')
     )
 
     results = []
-    for s in active_sessions[:50]:
+    for s in active_sessions:
         elapsed = int((now - s.started_at).total_seconds()) if s.started_at else 0
         total_duration = (s.olympiad.duration_minutes or 30) * 60
         remaining_seconds = max(0, total_duration - elapsed + (s.paused_seconds or 0))
@@ -200,6 +130,7 @@ def admin_live_proctoring_list(request):
         # Test Attempt bormi?
         attempt = TestAttempt.objects.filter(user=s.user, olympiad=s.olympiad).first()
 
+        risk_score = risk_scores.get(s.user_id, 0)
         results.append({
             'session_id': s.id,
             'user': {
@@ -207,7 +138,11 @@ def admin_live_proctoring_list(request):
                 'full_name': s.user.full_name,
                 'phone': s.user.phone,
                 'is_premium': s.user.is_premium_active,
-                'risk_score': getattr(s.user, 'risk_score', 0),
+                'risk_score': risk_score,
+                # Ball ro'yxat annotatsiyasidan (signallarning arzon qismi),
+                # shuning uchun uni to'g'ri o'qish uchun daraja ham beriladi —
+                # panel bir xil so'z bilan ranglashi mumkin bo'lsin.
+                'risk_tier': risk_tier_from_score(risk_score),
             },
             'olympiad': {
                 'id': s.olympiad.id,
@@ -541,7 +476,16 @@ def admin_user_activity_heatmap(request, user_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsPlatformAdmin])
 def admin_user_ai_summary(request, user_id):
-    """Foydalanuvchi profili bo'yicha tahliliy AI xulosasi va tavsiyalar."""
+    """Foydalanuvchi profili bo'yicha tahliliy AI xulosasi va tavsiyalar.
+
+    `risk_level` — YAGONA formuladan (`compute_user_risk_profile`). Avval bu
+    yerda uchinchi mustaqil chegaralar to'plami (40/70) va o'z yorliqlari
+    ('Juda yuqori (Firibgarlik shubhasi)') bor edi, ustiga u eskirgan
+    `User.risk_score` USTUNINI o'qirdi — ya'ni admin "Batafsil" oynasini hech
+    ochmagan hisob uchun daraja har doim 'Past' chiqardi.
+    """
+    from accounts.views import compute_user_risk_profile
+
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
@@ -554,11 +498,7 @@ def admin_user_ai_summary(request, user_id):
     total_spend = PaymentTransaction.objects.filter(user=user, status='success').aggregate(models.Sum('amount'))['amount__sum'] or 0
 
     days_since_seen = (timezone.now() - user.last_seen_at).days if user.last_seen_at else 999
-    risk_level = 'Past'
-    if user.risk_score >= 70 or disqualified_count >= 2:
-        risk_level = 'Juda yuqori (Firibgarlik shubhasi)'
-    elif user.risk_score >= 40 or disqualified_count == 1:
-        risk_level = 'O‘rta darajada'
+    risk_level = compute_user_risk_profile(user)['risk_level']
 
     strengths = []
     weaknesses = []
