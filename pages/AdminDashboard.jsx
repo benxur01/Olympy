@@ -49,7 +49,26 @@ const MODERATION_FLAG_TYPE_OPTIONS = [
   { key: '', label: 'Barcha turlar' },
   { key: 'suspicious_ip', label: 'Shubhali IP' },
   { key: 'question', label: 'Savol' },
+  { key: 'appeal', label: 'Appellyatsiya' },
 ];
+// Appellyatsiya uchun asos bo'lgan holatlar → o'zbekcha yorliq. Kalitlar
+// backend `accounts/views_appeals.py: GROUND_LABELS` bilan AYNAN bir xil;
+// yorliqlar bayroqning `extra` sida saqlanmaydi (u yerda faqat kodlar), shu
+// sababli nusxa panelda turadi. Noma'lum kod xom holda ko'rsatiladi.
+const APPEAL_GROUND_LABELS = {
+  account_block: 'Hisob bloklangan',
+  exam_ban: 'Olimpiadalardan chetlatilgan',
+  disqualified_attempt: 'Diskvalifikatsiya qilingan urinish',
+};
+// E'tiroz qaysi yo'l bilan kelgani. Bugun barcha appellyatsiyalar hisobga
+// kirgan holda yuboriladi, lekin TO'LIQ bloklangan hisob JWT'dan umuman o'ta
+// olmaydi — shuning uchun backendda telefon + OTP orqali yuborish yo'li
+// tayyorlanmoqda. Kanal kodi `extra` da paydo bo'lganda karta uni o'zi
+// ko'rsatadi; hozirgi (maydonsiz) yozuvlarda qator shunchaki chizilmaydi.
+const APPEAL_CHANNEL_LABELS = {
+  authenticated: 'Hisobga kirgan holda',
+  otp: 'Telefon + OTP orqali tasdiqlangan',
+};
 const MODERATION_STATUS_OPTIONS = [
   { key: 'pending', label: 'Kutilmoqda' },
   { key: 'resolved', label: 'Hal qilindi' },
@@ -95,6 +114,51 @@ const CHEATING_STATUS_META = {
 };
 // Bir sahifada nechta qator (backend LargePageNumberPagination `page_size`).
 const CHEATING_PAGE_SIZE = 50;
+// Dalil kadri qaysi lahzada olingan (`EvidenceSnapshot.TRIGGER_CHOICES`) →
+// yorliq va AdminPill rangi. Backend bu ro'yxatda xom kod qaytaradi
+// (`CHEATING_STATUS_META` bilan bir xil qoida).
+const EVIDENCE_TRIGGER_META = {
+  flagged: { pill: 'pending', label: 'Bayroq qo\'yilganda' },
+  disqualified: { pill: 'rejected', label: 'Diskvalifikatsiya lahzasida' },
+};
+// Bitta dalildagi kadr turlari. Bayroq (`has_camera`/`has_screen`) qaysi
+// kadr saqlanganini aytadi — ekranini ulashmagan o'quvchida `screen` bo'lmaydi.
+const EVIDENCE_KINDS = [
+  { key: 'camera', label: 'Kamera', flag: 'has_camera' },
+  { key: 'screen', label: 'Ekran', flag: 'has_screen' },
+];
+
+// "Foydalanuvchilar" jadvalining sahifa hajmi. Jadval endi butun ro'yxatni
+// tortib klientda filtrlamaydi — har sahifa va har filtr serverga boradi
+// (`OlympyApi.getAdminUsersPaged`).
+const USERS_PAGE_SIZE = 50;
+
+// Backend qaytaradigan xavf darajasi (`risk_tier` / detaldagi `risk_level`)
+// → panel yorlig'i va rangi. Kalitlar O'ZBEKCHA, chunki backend aynan
+// shunday qaytaradi (`accounts.security_queries.ADMIN_RISK_TIER_RANGES`).
+// Bu yagona manba: ustun ham, filtr ham, "Batafsil" oynasi ham shu yerdan
+// o'qiydi, shuning uchun uch joyda uch xil chegara paydo bo'lmaydi.
+const RISK_TIER_META = {
+  past: { label: 'Past', pill: 'approved', text: 'text-success', bar: 'bg-success' },
+  "o'rta": { label: "O'rta", pill: 'pending', text: 'text-warning', bar: 'bg-warning' },
+  yuqori: { label: 'Yuqori', pill: 'rejected', text: 'text-error', bar: 'bg-error' },
+  kritik: { label: 'Kritik', pill: 'rejected', text: 'text-error', bar: 'bg-error' },
+};
+
+// "Xavf" filtri variantlari. `kritik` avval ATAYLAB yo'q edi: ro'yxatdagi
+// `risk_tier` signallarning faqat bir qismidan hisoblanardi va eng katta
+// ball 80 bo'lgani uchun 'kritik' hech qachon paydo bo'lmasdi (filtr bo'sh
+// natija berib admin uni buzuq deb o'ylardi). Endi ro'yxat annotatsiyasi
+// bloklangan apparat izini ham hisobga oladi (+35, `annotate_admin_risk`),
+// ya'ni eng katta ball 100 — 'kritik' ro'yxatda ham chiqadi va filtrda
+// bo'lishi SHART: bloklangan qurilmali hisob aynan shu darajaga tushadi.
+const USER_RISK_OPTIONS = [
+  { key: 'all', label: 'Barcha xavf' },
+  { key: 'past', label: 'Past xavf' },
+  { key: "o'rta", label: "O'rta xavf" },
+  { key: 'yuqori', label: 'Yuqori xavf' },
+  { key: 'kritik', label: 'Kritik xavf' },
+];
 
 const formatAdminDate = (value) => {
   if (!value) return '';
@@ -226,6 +290,67 @@ const AdminPill = ({ status, children }) => {
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${meta.cls}`}>
       {children || meta.label}
     </span>
+  );
+};
+
+// Appellyatsiya bayrog'ining navbatdagi kartasi. Admin bayroqni OCHMASDAN
+// nima haqidaligini ko'rishi kerak, shuning uchun e'tiroz matni ham, uning
+// asoslari ham shu yerda.
+//
+// Blok holati AYNAN `extra` dan olinadi, jonli hisobdan emas: muddatli blok
+// admin tekshirguncha tugab, sabab tozalanib ketishi mumkin
+// (`User.release_expired_suspension`) — snapshot esa "nega e'tiroz berilgan
+// edi" degan savolga javob bo'lib qoladi.
+const AppealFlagDetails = ({ extra }) => {
+  if (!extra) return null;
+  const grounds = Array.isArray(extra.grounds) ? extra.grounds : [];
+  // Quyidagi ikkitasi backendda hali qurilmoqda (`APPEAL_CHANNEL_LABELS`
+  // izohi) — yo'q bo'lsa jimgina o'tkazib yuboriladi.
+  const channelLabel = extra.channel
+    ? (APPEAL_CHANNEL_LABELS[extra.channel] || extra.channel)
+    : '';
+  const verifiedPhone = extra.verified_phone || '';
+  // Blok snapshot'ining qatorlari: qiymati bor bo'lgani chiziladi.
+  const blockRows = [
+    { key: 'block', label: 'Hisob bloki', reason: extra.block_reason, until: extra.blocked_until },
+    { key: 'exam', label: 'Olimpiada bloki', reason: extra.exam_block_reason, until: extra.exam_blocked_until },
+  ].filter(r => r.reason || r.until);
+  return (
+    <div className="mt-2 max-w-md space-y-2 rounded-xl border border-edge bg-surface-2 px-3 py-2.5">
+      {(extra.full_name || extra.phone) && (
+        <div className="text-[11px] font-bold text-text-primary">
+          {extra.full_name || "O'quvchi"}
+          {extra.phone ? <span className="ml-1.5 font-mono font-semibold text-text-secondary">{extra.phone}</span> : null}
+        </div>
+      )}
+      {grounds.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {grounds.map(g => (
+            <span key={g} className="rounded-md bg-surface-1 border border-error/45 px-2 py-0.5 text-[10px] font-bold text-error">
+              {APPEAL_GROUND_LABELS[g] || g}
+            </span>
+          ))}
+        </div>
+      )}
+      {extra.message && (
+        <p className="whitespace-pre-wrap text-[11px] font-medium leading-relaxed text-text-secondary">
+          {extra.message}
+        </p>
+      )}
+      {blockRows.map(r => (
+        <div key={r.key} className="text-[10px] font-semibold text-text-secondary">
+          <span className="text-text-primary">{r.label}:</span> {r.reason || '—'}
+          {' · '}
+          {r.until ? `muddat ${formatAdminDateTime(r.until)}` : 'doimiy'}
+        </div>
+      ))}
+      {(channelLabel || verifiedPhone) && (
+        <div className="text-[10px] font-semibold text-text-secondary">
+          <span className="text-text-primary">Yuborilgan yo'l:</span> {channelLabel || '—'}
+          {verifiedPhone ? <span className="ml-1.5 font-mono">{verifiedPhone}</span> : null}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -1034,13 +1159,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [globalSearch, setGlobalSearch] = React.useState('');
   // Foydalanuvchilar sahifasi uchun alohida qidiruv input.
   const [userSearch, setUserSearch] = React.useState('');
-  // Foydalanuvchilar ko'p parametrli filtrlari va tezkor segmentlar
+  // Foydalanuvchilar ko'p parametrli filtrlari va tezkor segmentlar.
+  // Bularning HAMMASI endi SERVERGA yuboriladi (`getAdminUsersPaged`) —
+  // avval klientda `allUsers` ustida filtrlanardi va o'sha ro'yxat 5000
+  // yozuvda kesilgani uchun undan keyingi foydalanuvchilar hech qaysi
+  // filtrda ko'rinmasdi.
   const [userSegment, setUserSegment] = React.useState('all');
   const [userFilterRole, setUserFilterRole] = React.useState('all');
   const [userFilterStatus, setUserFilterStatus] = React.useState('all');
   const [userFilterPlan, setUserFilterPlan] = React.useState('all');
   const [userFilterActivity, setUserFilterActivity] = React.useState('all');
   const [userFilterTag, setUserFilterTag] = React.useState('all');
+  const [userFilterRisk, setUserFilterRisk] = React.useState('all');
+  // Jadvalning server tomon sahifa raqami. Har filtr o'zgarishida 1 ga
+  // qaytadi (firibgarlik ro'yxatidagi bilan bir xil qoida) — aks holda
+  // 5-sahifada turib filtrlansa bo'sh jadval ko'rinardi.
+  const [usersPage, setUsersPage] = React.useState(1);
 
   // Ommaviy xabarnoma (Broadcast)
   const [broadcastModalOpen, setBroadcastModalOpen] = React.useState(false);
@@ -1122,6 +1256,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [cheatingDateTo, setCheatingDateTo] = React.useState('');
   const [cheatingSearch, setCheatingSearch] = React.useState('');
   const [cheatingPage, setCheatingPage] = React.useState(1);
+  // "Dalilni ko'rish" oynasi: qaysi sessiya qatori ochilgan (butun qator —
+  // oynada o'quvchi/olimpiada nomi ham ko'rsatiladi). null — oyna yopiq.
+  const [evidenceSession, setEvidenceSession] = React.useState(null);
+  // Kadrlarning yuklanish holati: `{ '<id>:<kind>': { loading, url, error } }`.
+  // `url` — `blob:` manzil (pastdagi effekt uni o'zi yaratadi va o'zi
+  // bo'shatadi).
+  const [evidenceFrames, setEvidenceFrames] = React.useState({});
   // Qidiruv backendga ketadi — har bosishda so'rov yubormaslik uchun debounce
   // (audit jurnalidagi bilan bir xil).
   const debouncedCheatingSearch = useDebounce(cheatingSearch, 300);
@@ -1143,10 +1284,67 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getNotifications(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // TO'LIQ (sahifalanmagan) ro'yxat — FAQAT global ko'rsatkichlar uchun:
+  // stat kartalari, owner/so'rov egasini ID bo'yicha qidirish, teglar
+  // ro'yxati va broadcast qamrovi. Jadval bunga TAYANMAYDI (pastdagi
+  // `apiUsersPagedRes` ga qarang).
   const apiUsersRes = useApiData(
     () => isApi ? OlympyApi.getAdminUsers(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Jadval qidiruvi: sahifaning o'z inputi yoki topbar global qidiruvi
+  // (qaysi biri to'ldirilgan bo'lsa). Matn endi SERVERGA ketadi.
+  const userTableSearch = (debouncedUserSearch || debouncedGlobalSearch || '').trim();
+  // Tezkor segment ("Onlayn", "Bloklanganlar", "Shubhali xavf" ...) aslida
+  // quyidagi uch server parametridan birining qisqa yo'li. Dropdown aniqroq
+  // tanlov hisoblanadi: u 'all' bo'lmasa, segment o'sha parametrga
+  // tegmaydi (aks holda ikkalasi bitta parametr uchun kurashardi).
+  //
+  // `churn_risk` segmenti bu yerda YO'Q: backendda unga mos filtr yo'q va
+  // u avval ham hech narsani filtrlamasdi (chip faqat sonni ko'rsatadi).
+  const segmentActivity = ['online', 'today', 'inactive_7d'].includes(userSegment) ? userSegment : '';
+  const segmentStatus = (userSegment === 'blocked' || userSegment === 'exam_blocked') ? userSegment : '';
+  // `yuqori+` — "yuqori VA undan yuqori" (backend `parse_risk_filter`).
+  // Oddiy `yuqori` yubormaymiz: bloklangan apparat izi ro'yxat balliga
+  // qo'shilgach 'kritik' ham ro'yxatda chiqadigan bo'ldi, ya'ni bitta
+  // darajali segment aynan ENG XAVFLI hisoblarni tashlab ketardi.
+  // Ochiluvchi ro'yxatdagi "Kritik xavf" varianti esa suffikssiz qoladi —
+  // u aniq bitta darajani ko'rish uchun.
+  const segmentRisk = userSegment === 'high_risk' ? 'yuqori+' : '';
+  const usersQueryRole = userFilterRole;
+  const usersQueryStatus = userFilterStatus !== 'all' ? userFilterStatus : segmentStatus;
+  const usersQueryPlan = userFilterPlan;
+  const usersQueryActivity = userFilterActivity !== 'all' ? userFilterActivity : segmentActivity;
+  const usersQueryTag = userFilterTag;
+  const usersQueryRisk = userFilterRisk !== 'all' ? userFilterRisk : segmentRisk;
+  // JADVAL manbasi — bitta sahifa, filtrlar server tomonda qo'llangan.
+  // Faqat "users" tabi ochiq bo'lganda so'raladi (boshqa tablarda keraksiz
+  // so'rov bo'lmasin — audit/moderatsiya ro'yxatlaridagi bilan bir xil).
+  const apiUsersPagedRes = useApiData(
+    () => (isApi && page === 'users')
+      ? OlympyApi.getAdminUsersPaged(
+          {
+            search: userTableSearch,
+            role: usersQueryRole, status: usersQueryStatus, plan: usersQueryPlan,
+            activity: usersQueryActivity, tag: usersQueryTag, risk: usersQueryRisk,
+            page: usersPage, pageSize: USERS_PAGE_SIZE,
+          },
+          OlympyApi.getToken(),
+        )
+      : Promise.resolve(null),
+    [
+      isApi, page, userTableSearch, usersQueryRole, usersQueryStatus,
+      usersQueryPlan, usersQueryActivity, usersQueryTag, usersQueryRisk, usersPage,
+    ],
+  );
+  // Foydalanuvchi ustidagi amaldan keyin IKKALA manba ham yangilanishi
+  // kerak: jadval (sahifalangan) va global ko'rsatkichlar (to'liq ro'yxat).
+  // Faqat bittasini yangilash jadvalni yoki stat kartalarini eskirgan
+  // holda qoldirardi.
+  const reloadUsers = React.useCallback(() => {
+    apiUsersRes.reload();
+    apiUsersPagedRes.reload();
+  }, [apiUsersRes.reload, apiUsersPagedRes.reload]);
   const apiOlympiadsRes = useApiData(
     () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
@@ -1282,6 +1480,62 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       cheatingDateFrom, cheatingDateTo, debouncedCheatingSearch, cheatingPage,
     ],
   );
+  // Bo'lim almashsa oyna yopiladi. Odatda admin oynani o'zi yopadi (u butun
+  // ekranni to'sadi), lekin brauzerning "orqaga" tugmasi `page`/bo'limni oyna
+  // ochiqligicha o'zgartirishi mumkin — bunda `evidenceSession` qolib ketardi
+  // va u bilan birga kadrlarning blob'lari ham.
+  React.useEffect(() => {
+    if (page !== 'security' || securitySection !== 'cheating') setEvidenceSession(null);
+  }, [page, securitySection]);
+  // Dalil kadrlarini yuklash. `useApiData` bu yerda ishlamaydi: bitta emas,
+  // sessiyadagi HAR bir kadr uchun alohida so'rov ketadi va javob JSON emas,
+  // `blob:` URL (`getAdminEvidenceImageUrl` izohiga qarang).
+  //
+  // Effektning cleanup'i — blob'larni bo'shatadigan YAGONA joy: oyna
+  // yopilganda ham, boshqa sessiya qatoriga o'tilganda ham, komponent
+  // yechilganda ham ishlaydi. `setEvidenceFrames({})` ga tayanib bo'lmaydi —
+  // state tozalansa `blob:` manzil yo'qoladi, brauzerdagi nusxa esa sahifa
+  // yopilgunicha xotirada qolardi.
+  React.useEffect(() => {
+    const items = evidenceSession?.evidence;
+    if (!Array.isArray(items) || items.length === 0) {
+      setEvidenceFrames({});
+      return undefined;
+    }
+    const wanted = [];
+    items.forEach(item => {
+      EVIDENCE_KINDS.forEach(({ key, flag }) => {
+        if (item[flag]) wanted.push({ key: `${item.id}:${key}`, id: item.id, kind: key });
+      });
+    });
+    setEvidenceFrames(Object.fromEntries(wanted.map(w => [w.key, { loading: true }])));
+    let cancelled = false;
+    const created = [];
+    wanted.forEach(({ key, id, kind }) => {
+      OlympyApi.getAdminEvidenceImageUrl(id, kind, OlympyApi.getToken())
+        .then(url => {
+          // Javob cleanup'dan KEYIN keldi: URL `created` ga tushmagan, ya'ni
+          // uni shu yerda bo'shatmasak hech kim bo'shatmaydi.
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          created.push(url);
+          setEvidenceFrames(prev => ({ ...prev, [key]: { loading: false, url } }));
+        })
+        .catch(err => {
+          if (cancelled) return;
+          // 404 (kadr saqlanmagan) — odatiy hol, 403 — ruxsat yo'q. Ikkalasi
+          // ham oq to'rtburchak emas, o'qiladigan xabar bo'lib ko'rinadi.
+          console.warn('getAdminEvidenceImageUrl failed:', err);
+          setEvidenceFrames(prev => ({
+            ...prev,
+            [key]: { loading: false, error: OlympyApi.toUserMessage(err) },
+          }));
+        });
+    });
+    return () => {
+      cancelled = true;
+      created.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [evidenceSession]);
   // "Batafsil" oynasi ochilganda o'sha foydalanuvchining to'liq profili.
   const detailBackendId = detailUser?.backendId
     ?? (typeof detailUser?.id === 'string' && detailUser.id.startsWith('api:') ? Number(detailUser.id.slice(4)) : null);
@@ -1334,11 +1588,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   // Kengaytirilgan boshqaruv ma'lumotlari (Detail Drawer)
   const [detailSubTab, setDetailSubTab] = React.useState('overview');
+  // Faqat "Xavf" sub-tabida — qolgan oltita kengaytirilgan so'rov kabi.
+  // Avval bu bitta so'rov sub-tabga bog'lanmagan edi va "Batafsil" oynasi
+  // HAR ochilganda ketardi; backendda esa u GET yon ta'siri sifatida
+  // `User.risk_score` ustuniga yozardi (ya'ni oynani ochishning o'zi hisobni
+  // o'zgartirardi). Backend tomon tuzatildi, lekin so'rovni ham keraksiz
+  // joyda yubormaymiz: omillar ro'yxati faqat shu sub-tabda chiziladi.
   const apiUserRiskScoreRes = useApiData(
-    () => (isApi && detailBackendId)
+    () => (isApi && detailBackendId && detailSubTab === 'risk')
       ? OlympyApi.getAdminUserRiskScore(detailBackendId, OlympyApi.getToken())
       : Promise.resolve(null),
-    [isApi, detailBackendId],
+    [isApi, detailBackendId, detailSubTab],
   );
   const apiUserTimelineRes = useApiData(
     () => (isApi && detailBackendId && detailSubTab === 'timeline')
@@ -1723,7 +1983,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         { reason, durationDays: blockDuration },
         OlympyApi.getToken(),
       )
-        .then(() => { showToast('Foydalanuvchi holati yangilandi'); apiUsersRes.reload(); })
+        .then(() => { showToast('Foydalanuvchi holati yangilandi'); reloadUsers(); })
         .catch(err => { console.warn('adminSetUserActive failed:', err); showToast(OlympyApi.toUserMessage(err)); })
         .finally(() => { setBlocking(false); setBlockModal(null); });
       return;
@@ -1885,7 +2145,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(() => {
         showToast('Premium holati yangilandi');
         setPremiumUser(null);
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminToggleUserPremium failed:', err);
@@ -1924,7 +2184,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(() => {
         showToast('Rollar yangilandi');
         setRoleModal(null);
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminSetUserRoles failed:', err);
@@ -1952,7 +2212,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast('Telefon raqam yangilandi');
         setPhoneModal(null);
         setPhoneInput('');
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminChangeUserPhone failed:', err);
@@ -1974,7 +2234,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         // Parol faqat shu javobda keladi — darhol ko'rsatamiz (loglamaymiz).
         setNewPasswordInfo({ name: row.name, password: res?.new_password || '' });
         setResetPasswordConfirm(null);
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminResetUserPassword failed:', err);
@@ -2077,7 +2337,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         setDeleteUserModal(null);
         // Hisob endi "Bloklangan" holatida ko'rinadi — ro'yxat ham, ochiq
         // "Batafsil" oynasi ham yangilanishi kerak.
-        apiUsersRes.reload();
+        reloadUsers();
         apiUserDetailRes.reload();
       })
       .catch(err => {
@@ -2087,7 +2347,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setDeleteUserBusy(false));
   };
 
-  const userRows = allUsers.map(u => {
+  // Bitta foydalanuvchi obyektidan jadval qatorini yasaydi. IKKI manba uchun
+  // ishlatiladi — to'liq ro'yxat (`userRows`, ko'rsatkichlar uchun) va
+  // sahifalangan javob (`pagedUserRows`, jadval uchun) — shuning uchun
+  // alohida funksiya: ikkala joyda qator shakli AYNAN bir xil bo'lishi kerak.
+  const mapUserRow = (u) => {
     const approved = getApprovedRoles(u);
     // Avval foydalanuvchi tasdiqlanmagan rollarda bo'lsa, fallback "student"
     // qaytarib jadvalda noto'g'ri "O'quvchi" deb ko'rsatardi. Endi tasdiqlangan
@@ -2123,6 +2387,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       examBlockedUntil: u.examBlockedUntil || null,
       lastSeenAt: u.lastSeenAt || null,
       telegramLinked: !!u.telegramLinked,
+      // Hisobni foydalanuvchining O'ZI o'chirgan (30 kunlik grace) — admin
+      // bloklaganidan FARQLI holat, garchi ikkalasida ham `isActive === false`
+      // bo'lsa ham. Jadval ikkisini alohida belgi bilan ko'rsatadi.
+      deletedAt: u.deletedAt || null,
+      // Blok sababi/muddati endi ro'yxat javobida ham keladi — sababni
+      // ko'rish uchun "Batafsil" oynasini ochish shart emas.
+      blockReason: u.blockReason || '',
+      blockedUntil: u.blockedUntil || null,
+      examBlockReason: u.examBlockReason || '',
+      // Backend hisoblagan xavf darajasi ('past' | "o'rta" | 'yuqori').
+      // Ikkala manba ham AYNAN bir xil endpointdan keladi (`/api/admin/users/`),
+      // ya'ni to'liq ro'yxatda ham bu maydon bor — "Shubhali xavf" chipidagi
+      // son shu sababli filtr natijasi bilan mos tushadi.
+      riskTier: u.riskTier || null,
       // Rol o'zgartirish modali uchun: foydalanuvchidagi xom rol kalitlari va
       // platform admin flag'i (checkboxlarni joriy holat bo'yicha belgilaymiz).
       roleKeys,
@@ -2134,101 +2412,73 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         && !roleKeys.some(r => r === 'student' || r === 'owner'),
       isPlatformAdmin: !!(u.isPlatformAdmin ?? u.is_platform_admin),
     };
-  });
+  };
 
-  // Jadval filtri: qidiruv matni + tezkor segmentlar + ko'p parametrli filtrlar.
-  const userTableSearch = (debouncedUserSearch || debouncedGlobalSearch || '').trim();
-  const userTableQuery = userTableSearch.toLowerCase();
-  const visibleUserRows = userRows.filter(row => {
-    // 1. Matnli qidiruv
-    if (userTableQuery) {
-      const match = (row.name || '').toLowerCase().includes(userTableQuery) ||
-        (row.phone || '').toLowerCase().includes(userTableQuery) ||
-        (row.role || '').toLowerCase().includes(userTableQuery) ||
-        (row.center || '').toLowerCase().includes(userTableQuery) ||
-        (row.email || '').toLowerCase().includes(userTableQuery) ||
-        (row.username || '').toLowerCase().includes(userTableQuery) ||
-        (row.adminTags || []).some(t => String(t).toLowerCase().includes(userTableQuery));
-      if (!match) return false;
-    }
+  // TO'LIQ ro'yxatning qatorlari — jadval uchun EMAS, faqat global
+  // ko'rsatkichlar uchun (segment chiplaridagi sonlar, broadcast qamrovi).
+  const userRows = allUsers.map(mapUserRow);
 
-    // 2. Tezkor segmentlar (Presets)
-    if (userSegment === 'online') {
-      const isOnline = row.lastSeenAt && (Date.now() - new Date(row.lastSeenAt).getTime() < 300000);
-      if (!isOnline) return false;
-    } else if (userSegment === 'today') {
-      const isToday = row.lastSeenAt && (new Date(row.lastSeenAt).toDateString() === new Date().toDateString());
-      if (!isToday) return false;
-    } else if (userSegment === 'inactive_7d') {
-      const isInactive = !row.lastSeenAt || (Date.now() - new Date(row.lastSeenAt).getTime() > 7 * 86400000);
-      if (!isInactive) return false;
-    } else if (userSegment === 'blocked') {
-      if (row.status !== 'Bloklangan') return false;
-    } else if (userSegment === 'exam_blocked') {
-      if (!row.isExamBlocked) return false;
-    } else if (userSegment === 'high_risk') {
-      const isRisk = row.adminTags?.includes('shubhali') || row.isExamBlocked || row.status === 'Bloklangan';
-      if (!isRisk) return false;
-    }
+  // JADVAL QATORLARI — serverdan kelgan bitta sahifa. Qidiruv, segment va
+  // barcha filtrlar ALLAQACHON backend tomonda qo'llangan, shuning uchun bu
+  // yerda hech narsa qayta filtrlanmaydi: aks holda "50 tadan 3 tasi
+  // ko'rindi, lekin sahifalar soni 40 ta" degan chalkash holat chiqardi.
+  //
+  // Javob odatda `{results, count}`, lekin paginator o'chirilgan holatda
+  // yalang'och massiv ham bo'lishi mumkin — `allUsers` shoxidagi bilan bir
+  // xil zaxira (aks holda jadval "foydalanuvchi yo'q" deb qolardi).
+  // Mock (API bo'lmagan) rejimda backend yo'q — o'shanda to'liq ro'yxatning
+  // birinchi sahifasi ko'rsatiladi, panel bo'sh qolmasin.
+  const pagedUserList = !isApi ? null
+    : (Array.isArray(apiUsersPagedRes.data?.results) ? apiUsersPagedRes.data.results
+      : (Array.isArray(apiUsersPagedRes.data) ? apiUsersPagedRes.data : null));
+  const pagedUserRows = pagedUserList
+    ? pagedUserList.map(OlympyApi.mapBackendUser).filter(u => !u.isPlatformAdmin).map(mapUserRow)
+    : (isApi ? [] : userRows.slice(0, USERS_PAGE_SIZE));
+  const pagedUserTotal = isApi
+    ? (typeof apiUsersPagedRes.data?.count === 'number' ? apiUsersPagedRes.data.count : pagedUserRows.length)
+    : userRows.length;
+  const usersLastPage = Math.max(1, Math.ceil(pagedUserTotal / USERS_PAGE_SIZE));
+  // Bo'sh jadval sababini ajratish uchun: qidiruv/filtr bormi yoki umuman
+  // foydalanuvchi yo'qmi.
+  const userFiltersActive = !!userTableSearch || userSegment !== 'all'
+    || userFilterRole !== 'all' || userFilterStatus !== 'all' || userFilterPlan !== 'all'
+    || userFilterActivity !== 'all' || userFilterTag !== 'all' || userFilterRisk !== 'all';
 
-    // 3. Alohida tanlanadigan ko'p parametrli filtrlar
-    if (userFilterRole !== 'all') {
-      if (userFilterRole === 'admin') {
-        if (!row.isPlatformAdmin && !row.roleKeys.includes('admin')) return false;
-      } else {
-        if (!row.roleKeys.includes(userFilterRole)) return false;
-      }
-    }
-
-    if (userFilterStatus !== 'all') {
-      if (userFilterStatus === 'active' && row.status !== 'Faol') return false;
-      if (userFilterStatus === 'blocked' && row.status !== 'Bloklangan') return false;
-      if (userFilterStatus === 'exam_blocked' && !row.isExamBlocked) return false;
-      if (userFilterStatus === 'telegram_linked' && !row.telegramLinked) return false;
-      if (userFilterStatus === 'telegram_unlinked' && row.telegramLinked) return false;
-    }
-
-    if (userFilterPlan !== 'all') {
-      if (userFilterPlan === 'free' && row.isPremium) return false;
-      if (userFilterPlan === 'premium' && !row.isPremium) return false;
-      if (userFilterPlan === 'org_premium' && !row.orgBoundPremium) return false;
-    }
-
-    if (userFilterActivity !== 'all') {
-      if (userFilterActivity === 'online') {
-        const isOnline = row.lastSeenAt && (Date.now() - new Date(row.lastSeenAt).getTime() < 300000);
-        if (!isOnline) return false;
-      } else if (userFilterActivity === 'today') {
-        const isToday = row.lastSeenAt && (new Date(row.lastSeenAt).toDateString() === new Date().toDateString());
-        if (!isToday) return false;
-      } else if (userFilterActivity === 'inactive_7d') {
-        const isInactive = !row.lastSeenAt || (Date.now() - new Date(row.lastSeenAt).getTime() > 7 * 86400000);
-        if (!isInactive) return false;
-      }
-    }
-
-    if (userFilterTag !== 'all') {
-      if (!row.adminTags?.includes(userFilterTag)) return false;
-    }
-
-    return true;
-  });
-
-  // Qidiruv yoki filtrlar o'zgarsa tanlov tozalanadi.
+  // Qidiruv, filtr yoki sahifa o'zgarsa tanlov tozalanadi: tanlangan qator
+  // endi ekranda yo'q bo'lishi mumkin, ommaviy amal esa ko'rinmaydigan
+  // foydalanuvchiga tegib ketardi.
   React.useEffect(() => {
     setSelectedUserIds(prev => (prev.length ? [] : prev));
-  }, [userTableQuery, userSegment, userFilterRole, userFilterStatus, userFilterPlan, userFilterActivity, userFilterTag]);
+  }, [
+    userTableSearch, userSegment, userFilterRole, userFilterStatus,
+    userFilterPlan, userFilterActivity, userFilterTag, userFilterRisk, usersPage,
+  ]);
 
-  const selectedUserRows = visibleUserRows.filter(row => selectedUserIds.includes(row.id));
-  const allVisibleSelected = visibleUserRows.length > 0
-    && visibleUserRows.every(row => selectedUserIds.includes(row.id));
+  // Filtr o'zgarganda birinchi sahifaga qaytamiz. Bu alohida effekt sifatida
+  // yozilgan: filtrlar bir nechta joydan (segment chiplari, 6 ta dropdown,
+  // "Tozalash" tugmasi, topbar qidiruvi) o'zgaradi va har birida qo'lda
+  // `setUsersPage(1)` yozish oson unutiladigan takror bo'lardi.
+  React.useEffect(() => {
+    setUsersPage(1);
+  }, [
+    userTableSearch, userSegment, userFilterRole, userFilterStatus,
+    userFilterPlan, userFilterActivity, userFilterTag, userFilterRisk,
+  ]);
+
+  // Tanlov FAQAT joriy sahifa ustida ishlaydi — "hammasini tanlash" ham shu
+  // sahifadagi qatorlarni belgilaydi. Ommaviy amal ko'rinmaydigan qatorga
+  // tegmasligi kerak, shuning uchun sahifa almashganda tanlov tozalanadi
+  // (yuqoridagi effekt).
+  const selectedUserRows = pagedUserRows.filter(row => selectedUserIds.includes(row.id));
+  const allVisibleSelected = pagedUserRows.length > 0
+    && pagedUserRows.every(row => selectedUserIds.includes(row.id));
 
   const toggleUserSelected = (rowId) => setSelectedUserIds(prev => prev.includes(rowId)
     ? prev.filter(id => id !== rowId)
     : [...prev, rowId]);
 
   const toggleSelectAllVisible = () => setSelectedUserIds(
-    allVisibleSelected ? [] : visibleUserRows.map(row => row.id),
+    allVisibleSelected ? [] : pagedUserRows.map(row => row.id),
   );
 
   // Ommaviy so'rovlar backend (numeric) id bilan ishlaydi — jadval qatorining
@@ -2281,7 +2531,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(res => {
         showBulkResult(res, nextActive ? 'blokdan chiqarildi' : 'bloklandi');
         setSelectedUserIds([]);
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminBulkSetUserActive failed:', err);
@@ -2301,7 +2551,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(res => {
         showBulkResult(res, 'roli yangilandi');
         setSelectedUserIds([]);
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminBulkSetUserRoles failed:', err);
@@ -2378,7 +2628,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(res.detail || "Olimpiadalardan chetlatildi");
         setExamBanModalUser(null);
         setExamBanReason('');
-        apiUsersRes.reload();
+        reloadUsers();
         apiUserDetailRes.reload();
       })
       .catch(err => {
@@ -2398,7 +2648,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     OlympyApi.adminExamUnbanUser(numId, OlympyApi.getToken())
       .then(res => {
         showToast(res.detail || "Olimpiada taqiqi bekor qilindi");
-        apiUsersRes.reload();
+        reloadUsers();
         apiUserDetailRes.reload();
       })
       .catch(err => {
@@ -2428,7 +2678,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(res.detail || "Balans yangilandi");
         setCoinsModalUser(null);
         setCoinsReason('');
-        apiUsersRes.reload();
+        reloadUsers();
         apiUserDetailRes.reload();
       })
       .catch(err => {
@@ -2447,7 +2697,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(res.detail || "Qayta topshirish ruxsati berildi");
         setRetakeConfirm(null);
         apiUserContentRes.reload();
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminAllowRetake failed:', err);
@@ -2497,7 +2747,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(() => {
         showToast("Teglar yangilandi");
         apiUserDetailRes.reload();
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => {
         console.warn('adminUpdateUserTags failed:', err);
@@ -2579,7 +2829,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         setMergeConfirmPhone('');
         // Manba bloklandi, maqsadli hisobning balansi o'zgardi — ikkalasi ham
         // ro'yxatda va ochiq "Batafsil" oynasida yangilanishi kerak.
-        apiUsersRes.reload();
+        reloadUsers();
         apiUserDetailRes.reload();
       })
       .catch(err => {
@@ -3376,7 +3626,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(res?.message || 'Markaz biriktirildi');
         setShowCenterTransferModal(false);
         apiUserDetailRes.reload();
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => showToast(toUserMessage(err, 'Markazga biriktirib bo‘lmadi'), 'error'))
       .finally(() => setTransferLoading(false));
@@ -3444,7 +3694,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(res => {
         setBulkImportResults(res);
         showToast(`${res?.created_count || 0} ta yangi foydalanuvchi yaratildi`);
-        apiUsersRes.reload();
+        reloadUsers();
       })
       .catch(err => showToast(toUserMessage(err, 'Importda xatolik yuz berdi'), 'error'))
       .finally(() => setBulkImportLoading(false));
@@ -3475,8 +3725,41 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       customDiscountPercent: apiUserDetailRes.data?.custom_discount_percent || 0,
       customDiscountUntil: apiUserDetailRes.data?.custom_discount_until || null,
       riskScore: apiUserDetailRes.data?.risk_score ?? 0,
+      // Xavf darajasini BACKEND aytadi (`compute_user_risk_profile`):
+      // 'past' | "o'rta" | 'yuqori' | 'kritik'. Avval panel bu maydonni
+      // umuman o'qimasdan ballni o'zining chegaralari bilan ranglardi —
+      // matn ">50 qizil", chiziq esa ">60 qizil" edi, ya'ni bitta ekranda
+      // ikki xil chegara ishlardi va ikkalasi ham backend darajalariga
+      // (past ≤25, o'rta ≤55, yuqori ≤80, undan yuqorisi kritik) mos
+      // kelmasdi. Endi yagona manba — shu maydon.
+      riskLevel: apiUserDetailRes.data?.risk_level || null,
       coins: apiUserDetailRes.data?.coins ?? detailUser.coins ?? 0,
+      // Telegram tafsiloti — support "botim ishlamayapti" shikoyatini
+      // tekshirganda aynan chat/hisob identifikatori kerak bo'ladi
+      // ("ulangan/ulanmagan" bayrog'i buni ayta olmaydi).
+      telegramChatId: apiUserDetailRes.data?.telegram_chat_id || '',
+      telegramUserId: apiUserDetailRes.data?.telegram_user_id || '',
+      telegramLinkedAt: apiUserDetailRes.data?.telegram_linked_at || null,
     } : null;
+
+    // Daraja nomi → yorliq va rang. Backend darajani bermasa (eski javob)
+    // ballni RISK_TIER_META chegaralariga solishtiramiz — bu chegaralar
+    // backenddagi bilan bir xil, ya'ni fallback ham ziddiyat yaratmaydi.
+    const riskTierKey = info?.riskLevel && RISK_TIER_META[info.riskLevel]
+      ? info.riskLevel
+      : (info ? (info.riskScore <= 25 ? 'past' : info.riskScore <= 55 ? "o'rta" : info.riskScore <= 80 ? 'yuqori' : 'kritik') : 'past');
+    const riskMeta = RISK_TIER_META[riskTierKey];
+
+    // "Xavf" sub-tabidagi sarlavha uchun: `risk-score` endpointi yuklangan
+    // bo'lsa o'shaning qiymati ishlatiladi. Ikkalasi ham BITTA formuladan
+    // (`compute_user_risk_profile`) keladi, farq faqat YANGILIKDA — "Qayta
+    // hisoblash" tugmasi omillar ro'yxatini yangilab, sarlavhadagi foizni
+    // eski holida qoldirmasin.
+    const liveRisk = apiUserRiskScoreRes.data;
+    const riskScoreShown = typeof liveRisk?.risk_score === 'number'
+      ? liveRisk.risk_score
+      : (info?.riskScore ?? 0);
+    const riskMetaShown = RISK_TIER_META[liveRisk?.risk_level] || riskMeta;
 
     const roleEntries = info?.roles ? Object.entries(info.roles) : [];
     const billing = isApi && apiUserBillingRes.data?.user_id === detailBackendId ? apiUserBillingRes.data : null;
@@ -3738,8 +4021,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">Antifrod va Risk Indeksi</div>
-                      <div className="text-sm font-bold text-text-primary mt-0.5">
-                        Xavf darajasi: <span className={info.riskScore > 50 ? 'text-error' : info.riskScore > 20 ? 'text-warning' : 'text-success'}>{info.riskScore}%</span>
+                      <div className="text-sm font-bold text-text-primary mt-0.5 flex items-center gap-2">
+                        <span>Xavf darajasi: <span className={riskMetaShown.text}>{riskScoreShown}%</span></span>
+                        <AdminPill status={riskMetaShown.pill}>{riskMetaShown.label}</AdminPill>
                       </div>
                     </div>
                     <button
@@ -3752,11 +4036,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   </div>
 
                   <div className="h-2.5 w-full rounded-full bg-surface-3 overflow-hidden">
+                    {/* Chiziq rangi ham yuqoridagi YAGONA daraja bilan bir xil
+                        (avval bu yerda alohida chegaralar ishlatilardi). */}
                     <div
-                      className={`h-full transition-all ${
-                        info.riskScore > 60 ? 'bg-error' : info.riskScore > 25 ? 'bg-warning' : 'bg-success'
-                      }`}
-                      style={{ width: `${Math.max(4, info.riskScore)}%` }}
+                      className={`h-full transition-all ${riskMetaShown.bar}`}
+                      style={{ width: `${Math.max(4, riskScoreShown)}%` }}
                     />
                   </div>
 
@@ -4056,7 +4340,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     <div>
                       <div className="text-xs font-bold text-text-primary flex items-center gap-2">
                         <span>Telegram Bot orqali to'g'ridan-to'g'ri xabar</span>
-                        {fresh?.telegram_linked && (
+                        {/* `fresh` — mapBackendUser natijasi, ya'ni maydonlar
+                            camelCase. Bu yerda `telegram_linked` (snake_case)
+                            o'qilardi va u HAR DOIM undefined edi: hisob
+                            ulangan bo'lsa ham "Ulangan" belgisi chiqmasdi. */}
+                        {fresh?.telegramLinked && (
                           <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-600 text-[10px] font-bold">
                             Ulangan
                           </span>
@@ -4074,6 +4362,25 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <Icon name="send" size={13} />
                       Xabar yuborish
                     </button>
+                  </div>
+                  {/* Bog'lanish tafsiloti. "Ulangan/ulanmagan" bayrog'i
+                      support uchun yetarli emas: "botim ishlamayapti"
+                      shikoyatida aynan QAYSI chat/hisob ulangani va qachon
+                      ulangani tekshiriladi (masalan, foydalanuvchi boshqa
+                      Telegram hisobidan yozayotgan bo'lishi mumkin). */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-3 border-t border-edge">
+                    {[
+                      { label: 'Chat ID', value: info.telegramChatId },
+                      { label: 'Telegram user ID', value: info.telegramUserId },
+                      { label: 'Ulangan sana', value: info.telegramLinkedAt ? formatAdminDateTime(info.telegramLinkedAt) : '' },
+                    ].map(f => (
+                      <div key={f.label} className="rounded-xl bg-surface-1 px-3 py-2 border border-edge">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{f.label}</div>
+                        <div className="mt-1 text-xs font-bold text-text-primary font-mono truncate" title={f.value || ''}>
+                          {f.value || '—'}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -4203,7 +4510,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const onlineCount = userRows.filter(r => r.lastSeenAt && (Date.now() - new Date(r.lastSeenAt).getTime() < 300000)).length;
     const examBlockedCount = userRows.filter(r => r.isExamBlocked).length;
     const blockedCount = userRows.filter(r => r.status === 'Bloklangan').length;
-    const riskCount = userRows.filter(r => r.adminTags?.includes('shubhali') || r.isExamBlocked || r.status === 'Bloklangan').length;
+    // Chip soni AYNAN chip bosilganda qo'llanadigan filtr bilan bir xil
+    // shartdan hisoblanadi (`?risk=yuqori+`, ya'ni 'yuqori' VA 'kritik').
+    // Avval bu son o'zining alohida evristikasidan (#shubhali teg / taqiq /
+    // blok) kelardi va bosilganda butunlay boshqa to'plam ochilardi.
+    const riskCount = userRows.filter(
+      r => r.riskTier === 'yuqori' || r.riskTier === 'kritik',
+    ).length;
+    // Broadcast tanlovsiz yuborilganda backend FAQAT `filter_role` ni
+    // qo'llaydi, shuning uchun qamrov soni ham aynan rol bo'yicha to'liq
+    // ro'yxatdan hisoblanadi. Jadvalning joriy sahifasidan (50 ta) olish
+    // adminni "50 kishiga ketadi" deb chalg'itardi.
+    const broadcastRoleCount = userFilterRole === 'all'
+      ? allUsers.length
+      : userRows.filter(r => (userFilterRole === 'admin'
+          ? (r.isPlatformAdmin || r.roleKeys.includes('admin'))
+          : r.roleKeys.includes(userFilterRole))).length;
 
     return (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
@@ -4255,7 +4577,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           { key: 'churn_risk', label: 'Ketish xavfi (Churn)', count: apiChurnRiskRes.data?.total ?? undefined, icon: 'alert-triangle' },
           { key: 'exam_blocked', label: 'Olimpiada taqiqida', count: examBlockedCount, badgeClass: 'text-error' },
           { key: 'blocked', label: 'Bloklanganlar', count: blockedCount, badgeClass: 'text-error' },
-          { key: 'high_risk', label: 'Shubhali xavf', count: riskCount, badgeClass: 'text-warning' },
+          { key: 'high_risk', label: 'Yuqori xavf', count: riskCount, badgeClass: 'text-warning' },
         ].map(seg => {
           const active = userSegment === seg.key;
           return (
@@ -4309,12 +4631,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         >
           <option value="all">Barcha holatlar</option>
           <option value="active">Faol</option>
-          <option value="blocked">Bloklangan</option>
+          <option value="blocked">Bloklangan (admin)</option>
+          {/* Hisobni foydalanuvchining O'ZI o'chirgani — bloklanganidan
+              alohida holat (30 kunlik grace ichida tiklanadi). Ikkalasida
+              ham `is_active=False` bo'lgani uchun avval UI'da farqlanmasdi. */}
+          <option value="soft_deleted">O'chirilgan (o'zi)</option>
           <option value="exam_blocked">Olimpiada taqiqida</option>
           <option value="telegram_linked">Telegram ulangan</option>
           <option value="telegram_unlinked">Telegram ulanmagan</option>
         </select>
 
+        {/* Tarif variantlari backend qabul qiladigan qiymatlar bilan bir xil
+            (`free` / `premium` / `trial`). Avvalgi "Tashkilot obunasi"
+            (`org_premium`) faqat klientda hisoblanadigan tushuncha edi va
+            serverda mos filtr yo'q — yuborilganda backend uni e'tiborsiz
+            qoldirib BARCHA foydalanuvchini qaytarardi, ya'ni filtr
+            ishlayotgandek ko'rinib, aslida hech narsani filtrlamasdi. */}
         <select
           value={userFilterPlan}
           onChange={e => setUserFilterPlan(e.target.value)}
@@ -4322,8 +4654,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         >
           <option value="all">Barcha tariflar</option>
           <option value="free">Bepul (Free)</option>
-          <option value="premium">Shaxsiy Premium</option>
-          <option value="org_premium">Tashkilot obunasi</option>
+          <option value="premium">Premium</option>
+          <option value="trial">Sinov muddatida</option>
         </select>
 
         <select
@@ -4350,7 +4682,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <option value="testchi">#testchi</option>
         </select>
 
-        {(userSegment !== 'all' || userFilterRole !== 'all' || userFilterStatus !== 'all' || userFilterPlan !== 'all' || userFilterActivity !== 'all' || userFilterTag !== 'all') && (
+        <select
+          value={userFilterRisk}
+          onChange={e => setUserFilterRisk(e.target.value)}
+          className="h-8 rounded-lg bg-surface-1 border border-edge px-2.5 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+        >
+          {USER_RISK_OPTIONS.map(opt => (
+            <option key={opt.key} value={opt.key}>{opt.label}</option>
+          ))}
+        </select>
+
+        {userFiltersActive && (
           <button
             type="button"
             onClick={() => {
@@ -4360,6 +4702,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               setUserFilterPlan('all');
               setUserFilterActivity('all');
               setUserFilterTag('all');
+              setUserFilterRisk('all');
+              // Qidiruv ham tozalanadi: u ham jadvalni filtrlaydi, aks holda
+              // "Tozalash" dan keyin ham ro'yxat qisqargan holda qolardi.
+              setUserSearch('');
+              setGlobalSearch('');
             }}
             className="ml-auto inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-text-secondary hover:text-error transition"
           >
@@ -4422,15 +4769,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     {allVisibleSelected && <Icon name="check" size={12} />}
                   </button>
                 </th>
-                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Tangalar', 'Holat', 'Premium', 'Amallar'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Tangalar', 'Holat', 'Xavf', 'Premium', 'Amallar'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-edge">
               {(() => {
-                if (visibleUserRows.length === 0) {
-                  return <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">{userTableQuery ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                if (isApi && apiUsersPagedRes.loading) {
+                  return <tr><td colSpan={10} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>;
                 }
-                return visibleUserRows.map(row => {
+                if (isApi && apiUsersPagedRes.error) {
+                  return <tr><td colSpan={10} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Foydalanuvchilarni yuklab bo'lmadi</td></tr>;
+                }
+                if (pagedUserRows.length === 0) {
+                  return <tr><td colSpan={10} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">{userFiltersActive ? 'Filtrga mos foydalanuvchi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                }
+                return pagedUserRows.map(row => {
                   const isOnline = row.lastSeenAt && (Date.now() - new Date(row.lastSeenAt).getTime() < 300000);
                   return (
                   <tr key={row.id} className="text-xs admin-table-row text-text-primary">
@@ -4492,11 +4845,48 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex flex-col gap-1 items-start">
-                        <AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>{row.status}</AdminPill>
+                        {/* O'chirilgan (foydalanuvchining o'zi, grace ichida) va
+                            BLOKLANGAN (admin qarori) — ikkalasida ham
+                            `isActive === false`, lekin support uchun bu butunlay
+                            boshqa holat. Shuning uchun alohida belgi. */}
+                        {row.deletedAt ? (
+                          <span
+                            title={`Foydalanuvchi hisobini o'zi o'chirgan: ${formatAdminDateTime(row.deletedAt)}`}
+                            className="inline-flex items-center rounded-full bg-surface-3 border border-edge-strong px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                            O'chirilgan
+                          </span>
+                        ) : (
+                          <AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>{row.status}</AdminPill>
+                        )}
+                        {/* Blok sababi endi ro'yxat javobida keladi — "Batafsil"
+                            oynasini ochmasdan ko'rinadi. */}
+                        {!row.deletedAt && row.status === 'Bloklangan' && row.blockReason && (
+                          <span
+                            title={row.blockedUntil
+                              ? `${row.blockReason} (muddat: ${formatAdminDateTime(row.blockedUntil)})`
+                              : `${row.blockReason} (doimiy)`}
+                            className="max-w-[160px] truncate text-[10px] font-semibold text-text-secondary">
+                            {row.blockReason}
+                          </span>
+                        )}
                         {row.isExamBlocked && (
-                          <span className="text-[10px] text-error font-bold">🚫 Test taqiqi</span>
+                          <span
+                            title={row.examBlockReason || 'Olimpiada taqiqi faol'}
+                            className="text-[10px] text-error font-bold">🚫 Test taqiqi</span>
                         )}
                       </div>
+                    </td>
+                    {/* Xavf darajasi — backend hisoblaydi (`risk_tier`), panel
+                        faqat yorliq/rang beradi. Eski ro'yxat javobida maydon
+                        bo'lmasa "—". */}
+                    <td className="px-5 py-4">
+                      {row.riskTier && RISK_TIER_META[row.riskTier] ? (
+                        <AdminPill status={RISK_TIER_META[row.riskTier].pill}>
+                          {RISK_TIER_META[row.riskTier].label}
+                        </AdminPill>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-text-secondary">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       {row.isPremium ? (
@@ -4579,6 +4969,34 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </table>
         </div>
       </section>
+
+      {/* Server tomon paginatsiya. Avval jadval butun ro'yxatni klientda
+          ushlab turardi va u 5000 yozuvda jimgina kesilardi — undan keyingi
+          foydalanuvchilar qidiruvda ham, filtrda ham umuman ko'rinmasdi. */}
+      {isApi && pagedUserTotal > USERS_PAGE_SIZE && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            onClick={() => setUsersPage(p => Math.max(1, p - 1))}
+            disabled={apiUsersPagedRes.loading || usersPage <= 1}
+            className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+          </button>
+          <div className="px-3 py-2 rounded-xl bg-surface-2 text-[11px] font-bold text-text-secondary font-data">
+            {usersPage} / {usersLastPage}
+          </div>
+          <button
+            onClick={() => setUsersPage(p => Math.min(usersLastPage, p + 1))}
+            disabled={apiUsersPagedRes.loading || usersPage >= usersLastPage}
+            className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Keyingisi <Icon name="chevronRight" size={12} />
+          </button>
+          <span className="text-[11px] font-bold text-text-secondary">
+            Jami: {pagedUserTotal.toLocaleString()}
+          </span>
+        </div>
+      )}
 
       {/* Ogohlantirish — bloklashdan oldingi qadam. Hisob holatiga tegmaydi,
           foydalanuvchi faqat xabarnoma oladi. */}
@@ -5324,7 +5742,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             {selectedUserIds.length > 0 ? (
               <span>Tanlangan <strong className="text-text-primary">{selectedUserIds.length} ta</strong> foydalanuvchiga xabar yuboriladi.</span>
             ) : userFilterRole !== 'all' ? (
-              <span>Filtrlangan <strong className="text-text-primary">{userFilterRole}</strong> rolidagi barcha faol foydalanuvchilarga ({visibleUserRows.length} ta) yuboriladi.</span>
+              <span>Filtrlangan <strong className="text-text-primary">{userFilterRole}</strong> rolidagi barcha faol foydalanuvchilarga ({broadcastRoleCount} ta) yuboriladi.</span>
             ) : (
               <span>Platformadagi <strong className="text-text-primary">barcha faol foydalanuvchilarga</strong> ({allUsers.length} ta) yuboriladi.</span>
             )}
@@ -6337,9 +6755,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     && flagResolve?.status === 'resolved'
     && !!flagResolve?.flag.extra?.ip_address;
 
+  // Appellyatsiyani qabul qilish. Yuqoridagi ikkalasidan farqi — bu yerda
+  // taklif qilinadigan yon ta'sir YO'Q: qabul qilish blokni ochmaydi (buni
+  // backend ataylab qilmaydi, `admin_set_user_active` / `admin_user_exam_unban`
+  // o'z tekshiruvlari va audit yozuvi bilan alohida amal). Shu sababli bayroq
+  // "qabul qilindi" bo'lgach admin hisob kartasiga yo'naltiriladi.
+  const isAppealAccept = flagResolve?.flag.flag_type === 'appeal'
+    && flagResolve?.status === 'resolved';
+
   const submitResolveFlag = () => {
     if (!flagResolve || flagResolveBusy) return;
     const blockIp = canBlockFlagIp && flagResolveBlockIp;
+    const appealUserId = isAppealAccept ? flagResolve.flag.target_id : null;
     setFlagResolveBusy(true);
     OlympyApi.adminResolveModerationFlag(
       flagResolve.flag.id,
@@ -6362,9 +6789,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             ? 'Bayroq yopildi, savol arxivlandi'
             : blockIp
               ? "Bayroq hal qilindi, IP bloklanmadi (allaqachon bloklangan yoki o'zingizniki)"
-              : flagResolve.status === 'resolved' ? 'Bayroq hal qilindi' : 'Bayroq rad etildi');
+              // Appellyatsiyada toast AYNAN nima bo'lmaganini ham aytadi:
+              // "qabul qildim, tamom" degan xato taassurot qolmasin.
+              : isAppealAccept
+                ? "E'tiroz qabul qilindi — blok hali kuchda, hisobni qo'lda oching"
+                : flagResolve.status === 'resolved' ? 'Bayroq hal qilindi' : 'Bayroq rad etildi');
         setFlagResolve(null);
         apiModerationRes.reload();
+        // Blokni ochish tugmalari "Batafsil" oynasida — adminni to'g'ridan
+        // to'g'ri o'sha yerga olib boramiz. Hisob ro'yxatda topilmasa
+        // `openUserFromSecurity` o'zi tushuntiruvchi toast beradi.
+        if (appealUserId) openUserFromSecurity(appealUserId);
       })
       .catch(err => {
         console.warn('adminResolveModerationFlag failed:', err);
@@ -6637,6 +7072,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             Bayroqlarni har soatda ishlaydigan avtomatik tekshiruv qo'yadi. Hech qanday
             chora avtomatik ko'rilmaydi: "Hal qilindi" — tekshirib chora ko'rildi,
             "Rad etildi" — yolg'on signal. Yopilgan bayroqni qayta ochib bo'lmaydi.
+            Appellyatsiya bayrog'ini esa tizim emas, chora ko'rilgan foydalanuvchining
+            O'ZI qo'yadi: "Qabul qilish" e'tirozni ko'rib chiqilgan deb belgilaydi,
+            blokni esa ochmaydi — buni hisob kartasidan qo'lda qilasiz.
           </p>
         </section>
         <section className="overflow-hidden admin-card">
@@ -6683,6 +7121,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           )}
                         </div>
                       )}
+                      {/* Appellyatsiyada — e'tiroz matni, uning asoslari va
+                          blokning o'sha paytdagi holati. */}
+                      {flag.flag_type === 'appeal' && <AppealFlagDetails extra={flag.extra} />}
                     </td>
                     <td className="px-5 py-4 font-semibold text-text-secondary">{flag.raised_by}</td>
                     <td className="px-5 py-4">
@@ -6691,27 +7132,40 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       </AdminPill>
                     </td>
                     <td className="px-5 py-4">
-                      {flag.status === 'pending' ? (
-                        <div className="flex gap-2">
+                      <div className="flex flex-col items-start gap-2">
+                        {flag.status === 'pending' ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => askResolveFlag(flag, 'resolved')}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-success border border-success/45 hover:bg-surface-1 transition">
+                              <Icon name="check" size={12} /> {flag.flag_type === 'appeal' ? 'Qabul qilish' : 'Hal qilindi'}
+                            </button>
+                            <button
+                              onClick={() => askResolveFlag(flag, 'dismissed')}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
+                              <Icon name="x" size={12} /> Rad etish
+                            </button>
+                          </div>
+                        ) : (
+                          // Yopilgan qatorda tugma o'rniga qaror izi: kim yopgan
+                          // va qanday izoh qoldirgan.
+                          <div className="text-[11px] font-semibold text-text-secondary">
+                            {flag.resolved_by || '—'}
+                            {flag.resolution_note ? ` · ${flag.resolution_note}` : ''}
+                          </div>
+                        )}
+                        {/* Appellyatsiyani QABUL QILISH hisobni ochmaydi —
+                            blokni olib tashlash alohida amal (o'z tekshiruvlari
+                            va audit yozuvi bilan). Shuning uchun qatorda o'sha
+                            amal turgan joyga — hisob kartasiga — yo'l bor. */}
+                        {flag.flag_type === 'appeal' && !!flag.target_id && (
                           <button
-                            onClick={() => askResolveFlag(flag, 'resolved')}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-success border border-success/45 hover:bg-surface-1 transition">
-                            <Icon name="check" size={12} /> Hal qilindi
+                            onClick={() => openUserFromSecurity(flag.target_id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-accent border border-accent/45 hover:bg-surface-1 transition whitespace-nowrap">
+                            <Icon name="user" size={12} /> Hisob kartasi
                           </button>
-                          <button
-                            onClick={() => askResolveFlag(flag, 'dismissed')}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
-                            <Icon name="x" size={12} /> Rad etish
-                          </button>
-                        </div>
-                      ) : (
-                        // Yopilgan qatorda tugma o'rniga qaror izi: kim yopgan
-                        // va qanday izoh qoldirgan.
-                        <div className="text-[11px] font-semibold text-text-secondary">
-                          {flag.resolved_by || '—'}
-                          {flag.resolution_note ? ` · ${flag.resolution_note}` : ''}
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -6744,14 +7198,37 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <Modal
           open={!!flagResolve}
           onClose={() => !flagResolveBusy && setFlagResolve(null)}
-          title={flagResolve?.status === 'resolved' ? 'Bayroqni yopish' : 'Bayroqni rad etish'}
+          title={flagResolve?.flag.flag_type === 'appeal'
+            ? (flagResolve?.status === 'resolved' ? "E'tirozni qabul qilish" : "E'tirozni rad etish")
+            : (flagResolve?.status === 'resolved' ? 'Bayroqni yopish' : 'Bayroqni rad etish')}
         >
           <div className="mb-5 rounded-xl bg-surface-2 px-4 py-3">
             <div className="text-sm font-bold text-text-primary">{flagResolve?.flag.reason}</div>
             <div className="mt-1 text-[11px] font-semibold text-text-secondary">
               {flagResolve?.flag.flag_type_label} · {formatAdminDateTime(flagResolve?.flag.created_at)}
             </div>
+            {/* E'tirozning to'liq matni qaror qabul qilinayotgan oynada ham
+                ko'rinsin — admin qatorga qaytmasin. */}
+            {flagResolve?.flag.flag_type === 'appeal' && flagResolve?.flag.extra?.message && (
+              <p className="mt-2 whitespace-pre-wrap text-[11px] font-medium leading-relaxed text-text-secondary">
+                {flagResolve.flag.extra.message}
+              </p>
+            )}
           </div>
+          {/* Qabul qilish hisobni AVTOMATIK ochmaydi — bu backendning ataylab
+              qilgan qarori. Ogohlantirish shu sababli tugmadan OLDIN turadi:
+              admin "qabul qildim, tamom" deb ketib qolmasin. */}
+          {isAppealAccept && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-warning/45 bg-warning/10 px-4 py-3">
+              <Icon name="alert-triangle" size={14} className="mt-0.5 shrink-0 text-warning" />
+              <p className="text-[11px] font-semibold leading-relaxed text-text-secondary">
+                Qabul qilish blokni <span className="text-text-primary">ochmaydi</span> — u faqat
+                e'tirozni ko'rib chiqilgan deb belgilaydi. Hisobni ochish yoki chetlatishni bekor
+                qilish alohida amal: tasdiqlagandan keyin hisob kartasi ochiladi, blokni o'sha
+                yerdan olib tashlaysiz.
+              </p>
+            </div>
+          )}
           <div className="mb-5">
             <label className="block text-xs text-text-secondary mb-1.5 font-medium">Izoh (ixtiyoriy)</label>
             <textarea
@@ -7112,18 +7589,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <table className="w-full min-w-[1100px] text-left">
               <thead className="admin-table-hdr">
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-                  {["O'quvchi", 'Olimpiada', 'Markaz', 'Holat', 'Sabab', 'Vaqt', 'Kim qaror qildi', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                  {["O'quvchi", 'Olimpiada', 'Markaz', 'Holat', 'Sabab', 'Vaqt', 'Kim qaror qildi', 'Dalil', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-edge">
                 {!isApi ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                  <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
                 ) : apiCheatingRes.loading ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
+                  <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
                 ) : failed ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
+                  <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Firibgarlik holatlari topilmadi</td></tr>
+                  <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Firibgarlik holatlari topilmadi</td></tr>
                 ) : rows.map(row => {
                   const meta = CHEATING_STATUS_META[row.status];
                   return (
@@ -7154,6 +7631,25 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       </td>
                       <td className="px-5 py-4 font-semibold text-text-secondary">
                         {row.reviewed_by_name || (row.reviewed_at ? 'Tizim' : '—')}
+                      </td>
+                      {/* Saqlangan kadrlar. Dalil BO'LMASLIGI odatiy hol —
+                          jonli kadr keshda atigi 20 soniya turadi, ya'ni
+                          bayroqdan oldingi sessiyalarda hech narsa yo'q.
+                          Shuning uchun bu yerda "xato" emas, bo'sh holat. */}
+                      <td className="px-5 py-4">
+                        {row.evidence_count > 0 ? (
+                          <button
+                            onClick={() => setEvidenceSession(row)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-1 transition whitespace-nowrap">
+                            <Icon name="eye" size={12} /> Dalilni ko'rish ({row.evidence_count})
+                          </button>
+                        ) : (
+                          <span
+                            title="Bu sessiyada kadr saqlanmagan"
+                            className="text-[11px] font-semibold text-text-secondary whitespace-nowrap">
+                            Kadr yo'q
+                          </span>
+                        )}
                       </td>
                       {/* Jonli kuzatuv ekraniga to'g'ridan-to'g'ri havola yo'q:
                           u menejer panelining ichki holati (`liveOlympiadId`),
@@ -7197,6 +7693,85 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </button>
           </div>
         )}
+        {/* Dalil oynasi. Yuklab olish/ulashish tugmasi ATAYLAB yo'q: bu
+            o'quvchining yuz rasmi, ya'ni biometrik ma'lumot — u paneldan
+            tashqariga nusxalanmasligi kerak. Kadr ochilishi backendda audit
+            jurnaliga yoziladi (`admin_sensitive_data_view`), pastdagi eslatma
+            shuni adminning o'ziga ham aytadi. */}
+        <Modal
+          open={!!evidenceSession}
+          onClose={() => setEvidenceSession(null)}
+          title="Proktoring dalili"
+          width="max-w-3xl"
+        >
+          <div className="mb-4 rounded-xl bg-surface-2 px-4 py-3">
+            <div className="text-sm font-bold text-text-primary">{evidenceSession?.student_name}</div>
+            <div className="mt-1 text-[11px] font-semibold text-text-secondary">
+              {evidenceSession?.olympiad_title} · {evidenceSession?.center_name}
+              {evidenceSession?.cheating_reason
+                ? ` · ${cheatingReasonLabel(evidenceSession.cheating_reason)}`
+                : ''}
+            </div>
+          </div>
+          <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-warning/45 bg-warning/10 px-4 py-3">
+            <Icon name="shield" size={14} className="mt-0.5 shrink-0 text-warning" />
+            <p className="text-[11px] font-semibold leading-relaxed text-text-secondary">
+              Kadrda o'quvchining yuzi bor. Faqat tekshiruv uchun ochiladi —
+              nusxalash va tarqatish mumkin emas. <span className="text-text-primary">Kadrni kim
+              va qachon ochgani qayd etiladi.</span>
+            </p>
+          </div>
+          <div className="space-y-5">
+            {(evidenceSession?.evidence || []).map(item => {
+              const trigger = EVIDENCE_TRIGGER_META[item.trigger];
+              return (
+                <div key={item.id} className="rounded-2xl border border-edge p-4">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <AdminPill status={trigger?.pill}>{trigger?.label || item.trigger}</AdminPill>
+                    <span className="text-[11px] font-semibold text-text-secondary">
+                      {formatAdminDateTime(item.captured_at)}
+                    </span>
+                  </div>
+                  {/* Bitta dalilda ikkita kadr bo'lishi mumkin. Ekranini
+                      ulashmagan o'quvchida faqat kamera qoladi — bunda katak
+                      umuman chizilmaydi (bo'sh "yuklanmadi" quti emas). */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {EVIDENCE_KINDS.filter(k => item[k.flag]).map(k => {
+                      const frame = evidenceFrames[`${item.id}:${k.key}`] || {};
+                      return (
+                        <div key={k.key}>
+                          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                            {k.label}
+                          </div>
+                          <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border border-edge bg-black">
+                            {frame.loading ? (
+                              <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                            ) : frame.url ? (
+                              <img
+                                src={frame.url}
+                                alt={`${k.label} kadri`}
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              <p className="px-4 text-center text-[11px] font-semibold text-white/70">
+                                {frame.error || "Kadr yuklanmadi"}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => setEvidenceSession(null)}
+            className="btn-ghost mt-5 w-full rounded-xl py-3 text-xs font-bold">
+            Yopish
+          </button>
+        </Modal>
       </>
     );
   };
