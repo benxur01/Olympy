@@ -5,7 +5,9 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from .models import TestAttempt, AttemptAIAnalysis, CodeSubmission, TestSession
+from .models import (
+    AttemptAIAnalysis, CodeSubmission, EvidenceSnapshot, TestAttempt, TestSession,
+)
 from questions.ai_generation import (
     analyze_attempt_ai, review_code_submission, review_essay_answer,
 )
@@ -15,6 +17,13 @@ logger = logging.getLogger(__name__)
 # Menejer/owner javob bermasa, cheating tekshiruvi shu muddatdan keyin
 # avtomatik "disqualify" (xavfsiz default) sifatida yakunlanadi.
 PENDING_REVIEW_TIMEOUT_MINUTES = 10
+
+# Proktoring dalili (o'quvchining kamera/ekran kadri) shuncha kundan keyin
+# butunlay o'chiriladi. Muddat mahsulot qarori bilan belgilangan: appellyatsiya
+# va qarorni qayta ko'rish uchun yetarli, lekin biometrik ma'lumotni undan
+# uzoq saqlash asossiz. Env orqali sozlanmaydi — retention va'dasi bitta
+# joyda, ko'rinadigan holda tursin.
+EVIDENCE_RETENTION_DAYS = 90
 
 # AI xatolar tahlili task'ining kesh prefiksi (`questions.ai_task_status`).
 EXPLAIN_MISTAKES_TASK_PREFIX = 'explain_mistakes'
@@ -67,6 +76,44 @@ def auto_disqualify_pending_reviews():
                 notify_cheating_confirmed(student, olympiad, reason)
         except Exception:
             logger.exception('auto_disqualify_pending_reviews failed session=%s', session_id)
+
+
+@shared_task
+def cleanup_expired_evidence():
+    """`EVIDENCE_RETENTION_DAYS` dan eski proktoring dalillarini o'chiradi.
+
+    Fayl VA DB qatori — ikkalasi ham. Faylni `attempts.signals.
+    delete_evidence_files` (post_delete) o'chiradi: Django modelni o'chirganda
+    `FileField` faylini diskda QOLDIRADI, ya'ni signalsiz `EVIDENCE_MEDIA_ROOT`
+    cheksiz o'sib VPS diskini to'ldirardi. Signal shu yerda ataylab
+    takrorlanmaydi — u qator o'chishining boshqa yo'llarini ham (sessiya yoki
+    hisob o'chirilishi, CASCADE) qoplaydi va cheklov bitta joyda turadi.
+
+    Xatolik (fayl allaqachon yo'q, ruxsat muammosi) butun sweep'ni to'xtatmaydi
+    — `auto_disqualify_pending_reviews` dagi bilan bir xil naqsh: har element
+    o'z `try` bloki ichida.
+    """
+    cutoff = timezone.now() - timedelta(days=EVIDENCE_RETENTION_DAYS)
+    # Avval id'lar ro'yxati: queryset bo'ylab yurib turib o'sha qatorlarni
+    # o'chirish kursorni buzadi.
+    stale_ids = list(
+        EvidenceSnapshot.objects
+        .filter(captured_at__lt=cutoff)
+        .values_list('id', flat=True)
+    )
+    removed = 0
+    for snapshot_id in stale_ids:
+        try:
+            snapshot = EvidenceSnapshot.objects.filter(pk=snapshot_id).first()
+            if snapshot is None:
+                continue
+            snapshot.delete()
+            removed += 1
+        except Exception:
+            logger.exception('cleanup_expired_evidence failed evidence=%s', snapshot_id)
+    if removed:
+        logger.info('cleanup_expired_evidence: %s ta dalil o\'chirildi', removed)
+    return removed
 
 
 @shared_task

@@ -370,6 +370,28 @@ if not DEBUG and not USE_CLOUDINARY:
             'har deploy\'da yo\'qoladi. Persistent storage sozlang.',
             file=_sys.stderr,
         )
+
+# --- Proktoring dalillari (EvidenceSnapshot) uchun YOPIQ storage ------------
+# Diskvalifikatsiya dalili (o'quvchining kamera/ekran kadri) MEDIA_ROOT ostiga
+# ham, Cloudinary'ga ham TUSHMAYDI. Sabab: nginx `/media/` ni hech qanday
+# autentifikatsiyasiz, to'g'ridan-to'g'ri diskdan beradi (nginx/nginx.conf,
+# `location /media/`) — URL'ni topgan har kim o'quvchining yuzini ko'rardi.
+# Bu biometrik/shaxsiy ma'lumot, shuning uchun fayllar alohida katalogda
+# turadi va FAQAT `attempts/views_evidence.py` dagi platforma-admin endpointi
+# orqali striming qilinadi.
+#
+# Katalog ATAYIN `STATIC_ROOT`/`MEDIA_ROOT` yonida emas: Docker'da bu
+# `/app/evidence_media` bo'lib, `evidence_data` named volume'iga ulanadi va u
+# volume nginx konteyneriga UMUMAN mount qilinmaydi (docker-compose.yml).
+#
+# `FileSystemStorage` instance'i shu yerda EMAS, `attempts/storage.py` da:
+# instance'ni model maydoniga bersak, migratsiya uni o'z ichiga serializatsiya
+# qilib absolyut yo'lni (masalan dev mashinasidagi /home/... ) fayl ichiga
+# qotirib qo'yardi.
+EVIDENCE_MEDIA_ROOT = os.environ.get(
+    'OLYMPY_EVIDENCE_MEDIA_ROOT', os.path.join(BASE_DIR, 'evidence_media'),
+)
+
 PROFILE_IMAGE_MAX_BYTES = int(os.environ.get('PROFILE_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 CENTER_IMAGE_MAX_BYTES = int(os.environ.get('CENTER_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -743,6 +765,16 @@ CELERY_BEAT_SCHEDULE = {
     'auto-disqualify-pending-reviews': {
         'task': 'attempts.tasks.auto_disqualify_pending_reviews',
         'schedule': timedelta(minutes=1),
+    },
+    # Har kuni soat 04:30 UTC — 90 kundan (attempts.tasks.EVIDENCE_RETENTION_DAYS)
+    # eski proktoring dalillari: DISKDAGI RASM ham, DB qatori ham. Kechalik
+    # sweep'lar zanjirining oxirida (`expire-stale-suspensions` 04:05 dan
+    # keyin) va boshqa jadvalga tegadi. Bu task shaxsiy ma'lumot saqlash
+    # muddati bo'yicha va'daning bajarilishi — o'chirilsa dalillar cheksiz
+    # qoladi.
+    'cleanup-expired-evidence': {
+        'task': 'attempts.tasks.cleanup_expired_evidence',
+        'schedule': crontab(hour=4, minute=30, nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
     # Judge0 natijasi kelmay qolgan kod javoblari (CodeSubmission.all_tests_passed
     # = None) — task navbatdan yo'qolgan yoki worker qulagan holat. Har 10

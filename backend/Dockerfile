@@ -60,13 +60,14 @@ RUN pip install --no-cache-dir --require-hashes -r /app/requirements.lock
 COPY . /app
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Non-root foydalanuvchi. staticfiles/ va media/ ATAYIN image ichida oldindan
-# yaratiladi va `app` egaligiga o'tkaziladi: named volume BIRINCHI marta
-# ulanganda Docker shu katalogning egaligini volume'ga ko'chiradi. Aks holda
-# volume root egaligida qolib, collectstatic va media yozish "Permission
-# denied" berardi.
+# Non-root foydalanuvchi. staticfiles/, media/ va evidence_media/ ATAYIN image
+# ichida oldindan yaratiladi va `app` egaligiga o'tkaziladi: named volume
+# BIRINCHI marta ulanganda Docker shu katalogning egaligini volume'ga
+# ko'chiradi. Aks holda volume root egaligida qolib, collectstatic, media va
+# proktoring dalilini yozish "Permission denied" berardi (dalil yozuvi
+# best-effort — xato jimgina log'ga tushib, dalil umuman saqlanmasdi).
 RUN adduser --system --group --no-create-home app \
-    && mkdir -p /app/staticfiles /app/media \
+    && mkdir -p /app/staticfiles /app/media /app/evidence_media \
     && chown -R app:app /app
 USER app
 

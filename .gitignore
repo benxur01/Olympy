@@ -39,6 +39,9 @@ backend/db.sqlite3
 backend/db.sqlite3-journal
 backend/media/
 backend/staticfiles/
+# Proktoring dalillari (o'quvchining kamera/ekran kadrlari) — shaxsiy/biometrik
+# ma'lumot. Repoga TUSHMASLIGI shart.
+backend/evidence_media/
 *.log
 
 # ─── Node / Vite ──────────────────────────────────────────────────────────

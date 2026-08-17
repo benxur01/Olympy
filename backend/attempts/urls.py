@@ -1,11 +1,19 @@
 from django.urls import path
 
-from . import views, views_admin_plagiarism, views_essay
+from . import views, views_admin_plagiarism, views_essay, views_evidence
 
 # Mounted under /api/attempts/
 urlpatterns = [
     # Admin Plagiarism & Cheating Analysis
     path('admin/olympiad/<int:olympiad_id>/plagiarism/', views_admin_plagiarism.admin_olympiad_plagiarism_analysis, name='admin-olympiad-plagiarism'),
+    # Diskvalifikatsiya dalili (kamera/ekran kadri) — faqat platforma admini.
+    # Fayl `/media/` ostida EMAS: nginx u yerni autentifikatsiyasiz beradi,
+    # shuning uchun yagona yo'l shu endpoint (`views_evidence` docstringi).
+    path(
+        'admin/evidence/<int:evidence_id>/',
+        views_evidence.admin_evidence_image,
+        name='admin-evidence-image',
+    ),
 
     path('cheating/', views.report_cheating, name='report-cheating'),
     path('cheating/review/', views.review_cheating_case, name='review-cheating-case'),
