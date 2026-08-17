@@ -16,7 +16,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from attempts.models import TestAttempt, TestSession
+from attempts.models import EvidenceSnapshot, TestAttempt, TestSession
 from attempts.views import _user_can_manage_olympiad
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
@@ -95,6 +95,11 @@ class AdminCheatingOverviewTestCase(APITestCase):
             cheating_reason=reason,
             review_requested_at=self.pending_at,
         )
+
+    def _evidence(self, session, trigger=EvidenceSnapshot.TRIGGER_FLAGGED):
+        """Dalil qatori — fayl YOZILMAYDI (bu yerda faqat ro'yxat ko'rinishi
+        tekshiriladi, fayl oqimi `tests.EvidenceSnapshotTestCase` da)."""
+        return EvidenceSnapshot.objects.create(session=session, trigger=trigger)
 
     def _disqualified_attempt(self, student, olympiad):
         """Diskvalifikatsiya tarixi — `finalize_cheating_disqualification` yozadigan qator."""
@@ -238,21 +243,49 @@ class AdminCheatingOverviewTestCase(APITestCase):
 
         Oldingi diskvalifikatsiya soni har sessiya uchun alohida so'rov bilan
         emas, asosiy queryset ichidagi korrelyatsiyalangan subquery bilan
-        olinadi.
+        olinadi; dalil kadrlari esa bitta `prefetch_related` bilan.
         """
         self.client.force_authenticate(user=self.admin)
         with CaptureQueriesContext(connection) as baseline:
             self.assertEqual(self.client.get(self.url).status_code, status.HTTP_200_OK)
 
-        # Yana 4 ta sessiya, har birida diskvalifikatsiya tarixi ham bor —
-        # aynan shu tarix severity hisobiga kiradi.
+        # Yana 4 ta sessiya, har birida diskvalifikatsiya tarixi ham, dalil
+        # kadri ham bor — ikkalasi ham qator bo'yicha hisoblanadigan ma'lumot.
         for index in range(4):
             session = self._pending_session(f'003{index}', 'no_face_detected')
             self._disqualified_attempt(session.user, self.olympiad_b)
+            self._evidence(session)
 
         with self.assertNumQueries(len(baseline.captured_queries)):
             res = self.client.get(self.url)
         self.assertEqual(len(res.data['results']), 6)
+
+    def test_evidence_is_listed_for_each_session(self):
+        """Qatorda dalil bor-yo'qligi va uning id'lari ko'rinadi.
+
+        Panel havolani aynan shu id bilan quradi
+        (`/api/attempts/admin/evidence/<id>/`); fayl yo'li ATAYIN yuborilmaydi.
+        """
+        flagged = self._evidence(self.dq_session, EvidenceSnapshot.TRIGGER_FLAGGED)
+        confirmed = self._evidence(self.dq_session, EvidenceSnapshot.TRIGGER_DISQUALIFIED)
+
+        row = self._row(self.dq_session.id)
+        self.assertEqual(row['evidence_count'], 2)
+        self.assertEqual(
+            {item['id'] for item in row['evidence']}, {flagged.id, confirmed.id},
+        )
+        self.assertEqual(
+            {item['trigger'] for item in row['evidence']},
+            {EvidenceSnapshot.TRIGGER_FLAGGED, EvidenceSnapshot.TRIGGER_DISQUALIFIED},
+        )
+        for item in row['evidence']:
+            self.assertIsNotNone(item['captured_at'])
+            self.assertNotIn('image', item)
+
+        # Dalilsiz sessiya — bo'sh ro'yxat (kesh TTL'i 20s, bu ODATIY hol).
+        other = self._row(self.pending_session.id)
+        self.assertEqual(other['evidence_count'], 0)
+        self.assertEqual(other['evidence'], [])
 
     def test_active_and_completed_sessions_are_excluded(self):
         TestSession.objects.create(
