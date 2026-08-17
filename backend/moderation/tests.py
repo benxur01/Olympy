@@ -239,6 +239,88 @@ class WarningThresholdFlagTestCase(APITestCase):
         )
 
 
+class UserTargetedFlagRiskScoreTestCase(APITestCase):
+    """Foydalanuvchi nishonli bayroq XAVF BALLIGA tushishi (regressiya himoyasi).
+
+    Bayroqni `moderation` yozadi, `accounts` esa uni IKKI joyda o'qiydi:
+    ro'yxat uchun SQL annotatsiyasi (`annotate_admin_risk`) va "Batafsil"
+    oynasi uchun per-user hisob (`compute_user_risk_profile`). Uchalasi bir xil
+    `target_type` shaklini bilishi shart.
+
+    Avval yozuvchi 'User', ikkala o'quvchi esa kichik harfli 'user' qidirardi:
+    ogohlantirishlar chegarasidan oshgan hisobning bayrog'i xavf ballida
+    umuman ko'rinmasdi. Hech bir test yiqilmasdi, chunki testlar bayroqni
+    o'quvchi kutgan shaklda QO'LDA yaratardi — shu sababli bu yerda qator
+    HAQIQIY yozuvchi (`maybe_flag_warning_threshold`) orqali yaratiladi.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            phone='+998907741001', password='UserPass123', full_name='Ogohlantirilgan',
+        )
+
+    def _warn_to_threshold(self):
+        for _ in range(WARNING_STRIKE_THRESHOLD):
+            Notification.objects.create(
+                user=self.user,
+                type=Notification.TYPE_ACCOUNT_WARNING,
+                title='Ogohlantirish',
+                message='Qoidalarga rioya qiling',
+            )
+
+    def _flag_via_service(self):
+        """Bayroqni haqiqiy yozuvchi qo'yadi (qo'lda `create` EMAS)."""
+        self._warn_to_threshold()
+        flag = maybe_flag_warning_threshold(self.user)
+        self.assertIsNotNone(flag)
+        return flag
+
+    def test_flag_counts_in_list_annotation(self):
+        from accounts.security_queries import annotate_admin_risk
+
+        self._flag_via_service()
+
+        row = annotate_admin_risk(User.objects.filter(pk=self.user.pk)).first()
+        # Boshqa signal yo'q: butun ball aynan bayroqdan keladi.
+        self.assertEqual(row.risk_tier_score, 10)
+
+    def test_flag_counts_in_detail_profile(self):
+        from accounts.views import compute_user_risk_profile
+
+        # "Batafsil" hisobi ogohlantirishlarning O'ZIGA ham ball beradi
+        # (ro'yxat annotatsiyasi bermaydi — u faqat arzon signallarni oladi),
+        # shuning uchun bayroqning hissasi ajratib o'lchanadi: bayroqdan
+        # oldingi va keyingi ball farqi aynan 10 bo'lishi kerak.
+        self._warn_to_threshold()
+        before = compute_user_risk_profile(self.user)['risk_score']
+
+        self.assertIsNotNone(maybe_flag_warning_threshold(self.user))
+
+        after = compute_user_risk_profile(self.user)
+        self.assertEqual(after['risk_score'] - before, 10)
+        self.assertTrue(
+            any('moderatsiya' in factor for factor in after['risk_factors']),
+            msg=f"Bayroq omili ko'rinmadi: {after['risk_factors']}",
+        )
+
+    def test_flag_targeting_another_user_does_not_count(self):
+        """Nishon aniq: boshqa hisobning bayrog'i bu hisobga ball qo'shmaydi."""
+        from accounts.security_queries import annotate_admin_risk
+
+        other = User.objects.create_user(
+            phone='+998907741002', password='UserPass123', full_name='Boshqa',
+        )
+        ModerationFlag.objects.create(
+            flag_type=ModerationFlag.FLAG_TYPE_WARNING_THRESHOLD,
+            target_type='User',
+            target_id=other.id,
+            reason='Boshqa hisob',
+        )
+
+        row = annotate_admin_risk(User.objects.filter(pk=self.user.pk)).first()
+        self.assertEqual(row.risk_tier_score, 0)
+
+
 class AdminModerationQueueTestCase(APITestCase):
     """GET /api/admin/moderation/queue/"""
 

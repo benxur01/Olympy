@@ -7,6 +7,7 @@ from . import export_views
 from . import views
 from . import views_admin_advanced
 from . import views_admin_rewards
+from . import views_appeals
 from . import views_b2b
 from . import views_me_premium
 from . import views_retention
@@ -83,6 +84,16 @@ urlpatterns = [
     # Student Progress Dashboard (premium emas) + oddiy AI tavsiyalar.
     path('me/progress/', views_student.progress_dashboard, name='me-progress'),
     path('me/ai-advice/', views_student.ai_advice, name='me-ai-advice'),
+    # Chora ko'rilgan hisobning rasmiy e'tirozi. Moderatsiya navbatiga
+    # tushadi (`flag_type='appeal'`), ya'ni support chatidan farqli o'laroq
+    # admin uni alohida ish sifatida ko'radi va yopadi.
+    path('me/appeal/', views_appeals.submit_appeal, name='me-appeal'),
+    # BLOKLANGAN hisob uchun o'sha oqimning autentifikatsiyasiz varianti:
+    # `me/...` ostida EMAS, chunki bu yerda hech qanday seans yo'q (bloklangan
+    # foydalanuvchi token ololmaydi) — egalik telefon kodi bilan isbotlanadi.
+    path('appeal/otp/start/', views_appeals.start_appeal_otp, name='appeal-otp-start'),
+    path('appeal/otp/confirm/', views_appeals.submit_appeal_with_otp,
+         name='appeal-otp-confirm'),
     path('me/predictions/', views.get_my_predictions, name='my-predictions'),
     path('me/activity-leaderboard/', views.activity_leaderboard, name='activity-leaderboard'),
     path('me/rewards/', views.list_rewards, name='rewards-list'),
