@@ -152,7 +152,7 @@ const OlympyStore = (() => {
       { id:'r8', type:'center',   userId:'u15', centerId:'c6', status:'pending', date:'2026-04-29' },
     ],
     // Sample subjects (extendable via admin / question creator)
-    subjects: ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
+    subjects: ['Matematika','Ingliz tili','CEFR Mock','IELTS Mock','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
     // Question bank — questions belong to a center
     questions: [
       { id:'q1', centerId:'c1', subject:'Matematika', text:'2x + 5 = 13 tenglamasida x ning qiymatini toping.', options:['x = 2','x = 3','x = 4','x = 5'], correctAnswer:2, score:3, difficulty:"O'rta", source:'manual', createdBy:'u4' },
@@ -194,7 +194,7 @@ const OlympyStore = (() => {
   // "Ali Valiyev" kabi yozuvlar) keltirardi.
   const emptyState = () => ({
     users: [], centers: [], requests: [],
-    subjects: ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
+    subjects: ['Matematika','Ingliz tili','CEFR Mock','IELTS Mock','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
     questions: [], olympiads: [], attempts: [], notifications: [],
   });
 
@@ -384,16 +384,28 @@ const OlympyStore = (() => {
   // ─── Olympiads ───────────────────────────────────────────────────────────
   const createOlympiad = (data) => {
     const id = 'o' + Date.now() + Math.random().toString(36).slice(2,5);
+    let examFormat = data.examFormat || (data.subject === 'CEFR Mock' ? 'cefr' : data.subject === 'IELTS Mock' ? 'ielts' : 'standard');
+    let testLevel = data.testLevel || (data.subject === 'CEFR Mock' ? 'Multi-level' : data.subject === 'IELTS Mock' ? 'Standard' : '');
     const o = {
       id, eventType: 'competition', status: 'draft', questionIds: [], participants: 0, maxScore: 100,
       createdAt: new Date().toISOString().slice(0,10),
       ...data,
+      examFormat,
+      testLevel,
     };
     set(s => ({ ...s, olympiads: [...s.olympiads, o] }));
     return o;
   };
   const updateOlympiad = (id, patch) => {
-    set(s => ({ ...s, olympiads: s.olympiads.map(o => o.id === id ? { ...o, ...patch } : o) }));
+    let extra = {};
+    if (patch.subject === 'CEFR Mock') {
+      extra.examFormat = patch.examFormat || 'cefr';
+      extra.testLevel = patch.testLevel || 'Multi-level';
+    } else if (patch.subject === 'IELTS Mock') {
+      extra.examFormat = patch.examFormat || 'ielts';
+      extra.testLevel = patch.testLevel || 'Standard';
+    }
+    set(s => ({ ...s, olympiads: s.olympiads.map(o => o.id === id ? { ...o, ...patch, ...extra } : o) }));
   };
   const deleteOlympiad = (id) => {
     set(s => ({ ...s, olympiads: s.olympiads.filter(o => o.id !== id) }));

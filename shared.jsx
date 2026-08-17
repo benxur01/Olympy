@@ -1935,6 +1935,8 @@ const MonthBarChart = ({ data = [] }) => {
 const subjectColors = {
   'Matematika': 'border-accent-2/60',
   'Ingliz tili': 'border-success/60',
+  'CEFR Mock': 'border-accent/60',
+  'IELTS Mock': 'border-warning/60',
   'Ona tili': 'border-warning/60',
   'Informatika': 'border-accent/60',
   'Fizika': 'border-error/60',

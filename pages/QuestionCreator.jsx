@@ -1227,7 +1227,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <select className="input-field py-2.5 w-full sm:w-auto sm:flex-1 sm:min-w-[10rem]" value={filterSubject} onChange={e => {
               const newSubj = e.target.value;
               setFilterSubject(newSubj);
-              if (newSubj === 'Ingliz tili') {
+              if (newSubj === 'CEFR Mock' || newSubj === 'IELTS Mock') {
+                setFilterLevel('');
+              } else if (newSubj === 'Ingliz tili') {
                 if (filterLevel && !ENGLISH_LEVELS.includes(filterLevel)) {
                   setFilterLevel('');
                 }
@@ -1242,7 +1244,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </select>
             <select className="input-field py-2.5 w-full sm:w-auto" value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
               <option value="">Barcha darajalar</option>
-              {(filterSubject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+              {(filterSubject === 'CEFR Mock' ? ['Multi-level', 'A1', 'A2', 'B1', 'B2', 'C1'] : filterSubject === 'IELTS Mock' ? ['Standard'] : filterSubject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full sm:w-auto">
               <Icon name="plus" size={14} /> Yangi fan qo'shish
@@ -1343,7 +1345,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <select className="input-field" value={newQ.subject} onChange={e => {
                 const newSubj = e.target.value;
                 let newLevel = newQ.level;
-                if (newSubj === 'Ingliz tili') {
+                let newSec = newQ.section;
+                if (newSubj === 'CEFR Mock') {
+                  newLevel = 'Multi-level';
+                  if (!newSec) newSec = 'reading';
+                } else if (newSubj === 'IELTS Mock') {
+                  newLevel = 'Standard';
+                  if (!newSec) newSec = 'reading';
+                } else if (newSubj === 'Ingliz tili') {
                   if (!ENGLISH_LEVELS.includes(newLevel)) {
                     newLevel = 'Beginner';
                   }
@@ -1352,14 +1361,23 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     newLevel = "O'rta";
                   }
                 }
-                setNewQ({...newQ, subject: newSubj, level: newLevel});
+                setNewQ({...newQ, subject: newSubj, level: newLevel, section: newSec});
               }}>
                 {allSubjects.map(s => <option key={s}>{s}</option>)}
               </select></div>
-            <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Daraja</label>
-              <select className="input-field" value={newQ.level} onChange={e => setNewQ({...newQ, level: e.target.value})}>
-                {(newQ.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
-              </select></div>
+            <div>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Daraja</label>
+              {(newQ.subject === 'CEFR Mock' || newQ.subject === 'IELTS Mock') ? (
+                <div className="input-field bg-surface-2 text-text-secondary flex items-center gap-1.5 font-semibold text-xs py-2">
+                  <Icon name="award" size={14} className="text-accent flex-shrink-0" />
+                  <span>{newQ.subject === 'CEFR Mock' ? 'Multi-level (A1..C1)' : 'Standart (Band 1..9)'}</span>
+                </div>
+              ) : (
+                <select className="input-field" value={newQ.level} onChange={e => setNewQ({...newQ, level: e.target.value})}>
+                  {(newQ.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              )}
+            </div>
             <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Bo'lim (IELTS/CEFR)</label>
               <select className="input-field" value={newQ.section} onChange={e => setNewQ({...newQ, section: e.target.value})}>
                 <option value="">Umumiy</option>
@@ -1688,7 +1706,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <select className="input-field" value={aiForm.subject} onChange={e => {
                   const newSubj = e.target.value;
                   let newLevel = aiForm.level;
-                  if (newSubj === 'Ingliz tili') {
+                  if (newSubj === 'CEFR Mock') {
+                    newLevel = 'Multi-level';
+                  } else if (newSubj === 'IELTS Mock') {
+                    newLevel = 'Standard';
+                  } else if (newSubj === 'Ingliz tili') {
                     if (!ENGLISH_LEVELS.includes(newLevel)) {
                       newLevel = 'Beginner';
                     }
@@ -1705,12 +1727,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <input type="number" className="input-field" min={1} max={30} value={aiForm.count} onChange={e => setAiForm({...aiForm, count: +e.target.value})} /></div>
             </div>
             <div><label className="block text-xs text-text-secondary mb-1.5">Mavzu</label>
-              <input className="input-field" placeholder="Masalan: Kvadrat tenglamalar, Past tenses..." value={aiForm.topic} onChange={e => setAiForm({...aiForm, topic: e.target.value})} /></div>
+              <input className="input-field" placeholder={aiForm.subject === 'CEFR Mock' ? 'Masalan: CEFR B2 Reading & Vocabulary, Sentence completion...' : aiForm.subject === 'IELTS Mock' ? 'Masalan: IELTS Academic Reading, Vocabulary...' : 'Masalan: Kvadrat tenglamalar, Past tenses...'} value={aiForm.topic} onChange={e => setAiForm({...aiForm, topic: e.target.value})} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-xs text-text-secondary mb-1.5">Qiyinlik darajasi</label>
-                <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
-                  {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
-                </select></div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1.5">Qiyinlik darajasi</label>
+                {(aiForm.subject === 'CEFR Mock' || aiForm.subject === 'IELTS Mock') ? (
+                  <div className="input-field bg-surface-2 text-text-secondary flex items-center gap-1.5 font-semibold text-xs py-2">
+                    <Icon name="award" size={14} className="text-accent flex-shrink-0" />
+                    <span>{aiForm.subject === 'CEFR Mock' ? 'Multi-level (A1..C1)' : 'Standart (Band 1..9)'}</span>
+                  </div>
+                ) : (
+                  <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
+                    {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                )}
+              </div>
               <div><label className="block text-xs text-text-secondary mb-1.5">Test turi</label>
                 <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
                   {AI_TYPES.map(t => <option key={t}>{t}</option>)}
@@ -1808,7 +1839,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <select className="input-field" value={aiForm.subject} onChange={e => {
                   const newSubj = e.target.value;
                   let newLevel = aiForm.level;
-                  if (newSubj === 'Ingliz tili') {
+                  if (newSubj === 'CEFR Mock') {
+                    newLevel = 'Multi-level';
+                  } else if (newSubj === 'IELTS Mock') {
+                    newLevel = 'Standard';
+                  } else if (newSubj === 'Ingliz tili') {
                     if (!ENGLISH_LEVELS.includes(newLevel)) {
                       newLevel = 'Beginner';
                     }
@@ -1821,10 +1856,19 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
-              <div><label className="block text-xs text-text-secondary mb-1.5">Qiyinlik</label>
-                <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
-                  {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
-                </select></div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1.5">Qiyinlik</label>
+                {(aiForm.subject === 'CEFR Mock' || aiForm.subject === 'IELTS Mock') ? (
+                  <div className="input-field bg-surface-2 text-text-secondary flex items-center gap-1.5 font-semibold text-xs py-2">
+                    <Icon name="award" size={14} className="text-accent flex-shrink-0" />
+                    <span>{aiForm.subject === 'CEFR Mock' ? 'Multi-level (A1..C1)' : 'Standart (Band 1..9)'}</span>
+                  </div>
+                ) : (
+                  <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
+                    {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                )}
+              </div>
               {/* Savol turi — PDF oqimi ham `question_type`ni backendga yuboradi
                   (handlePDF), shuning uchun ustoz fayl yuklashdan oldin turni
                   ko'rishi va tanlashi kerak. Avval bu select faqat AI rejimida
@@ -1940,7 +1984,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <select className="input-field" value={aiForm.subject} onChange={e => {
                   const newSubj = e.target.value;
                   let newLevel = aiForm.level;
-                  if (newSubj === 'Ingliz tili') {
+                  if (newSubj === 'CEFR Mock') {
+                    newLevel = 'Multi-level';
+                  } else if (newSubj === 'IELTS Mock') {
+                    newLevel = 'Standard';
+                  } else if (newSubj === 'Ingliz tili') {
                     if (!ENGLISH_LEVELS.includes(newLevel)) {
                       newLevel = 'Beginner';
                     }
@@ -1953,10 +2001,19 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
-              <div><label className="block text-xs text-text-secondary mb-1.5">Qiyinlik</label>
-                <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
-                  {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
-                </select></div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1.5">Qiyinlik</label>
+                {(aiForm.subject === 'CEFR Mock' || aiForm.subject === 'IELTS Mock') ? (
+                  <div className="input-field bg-surface-2 text-text-secondary flex items-center gap-1.5 font-semibold text-xs py-2">
+                    <Icon name="award" size={14} className="text-accent flex-shrink-0" />
+                    <span>{aiForm.subject === 'CEFR Mock' ? 'Multi-level (A1..C1)' : 'Standart (Band 1..9)'}</span>
+                  </div>
+                ) : (
+                  <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
+                    {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                )}
+              </div>
               {/* Savol turi — handleWordAi ham `question_type`ni yuboradi, PDF
                   rejimidagi kabi ustoz oldindan tanlab qo'yadi. */}
               <div className="col-span-2"><label className="block text-xs text-text-secondary mb-1.5">Savol turi</label>

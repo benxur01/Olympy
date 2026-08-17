@@ -33,7 +33,7 @@ DB_SUBJECTS_CACHE_KEY = 'olympy:db_subjects'
 DB_SUBJECTS_CACHE_SECONDS = 10 * 60
 
 DEFAULT_SUBJECTS = [
-    'Matematika', 'Ingliz tili', 'Ona tili', 'Informatika', 'IT',
+    'Matematika', 'Ingliz tili', 'CEFR Mock', 'IELTS Mock', 'Ona tili', 'Informatika', 'IT',
     'Fizika', 'Kimyo', 'Biologiya', 'Tarix', 'Geografiya',
 ]
 

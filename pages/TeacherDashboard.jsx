@@ -613,13 +613,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const editingEvent = editingEventId
       ? olympiads.find(o => String(o.id) === String(editingEventId))
       : null;
+    const isCefr = newEvent.subject === 'CEFR Mock' || newEvent.subject === 'CEFR';
+    const isIelts = newEvent.subject === 'IELTS Mock' || newEvent.subject === 'IELTS';
     const payload = {
       event_type: newEvent.eventType,
+      exam_format: isCefr ? 'cefr' : isIelts ? 'ielts' : (newEvent.examFormat || 'standard'),
       title: newEvent.title.trim(),
       subject: newEvent.subject,
       start_datetime: formStartIso(newEvent),
       duration_minutes: Number(newEvent.duration) || 60,
-      test_level: (newEvent.testLevel || '').trim(),
+      test_level: isCefr ? 'Multi-level' : isIelts ? 'Standard' : (newEvent.testLevel || '').trim(),
       test_type: newEvent.testType || '',
     };
 
@@ -653,13 +656,14 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
     const localPatch = {
       eventType: newEvent.eventType,
+      examFormat: isCefr ? 'cefr' : isIelts ? 'ielts' : (newEvent.examFormat || 'standard'),
       title: newEvent.title.trim(),
       subject: newEvent.subject,
       startDate: newEvent.startDate,
       startTime: newEvent.startTime,
       duration: Number(newEvent.duration) || 60,
       maxScore: newEvent.maxScore,
-      testLevel: (newEvent.testLevel || '').trim(),
+      testLevel: isCefr ? 'Multi-level' : isIelts ? 'Standard' : (newEvent.testLevel || '').trim(),
       testType: newEvent.testType || '',
     };
     if (editingEvent) {
@@ -2170,26 +2174,38 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-text-secondary mb-1.5 font-medium">Daraja <span className="text-text-secondary">(ixtiyoriy)</span></label>
-                  <select className="input-field" value={newEvent.testLevel}
-                    onChange={e => setNewEvent({ ...newEvent, testLevel: e.target.value })}>
-                    <option value="">— Tanlanmagan —</option>
-                    {newEvent.subject === 'Ingliz tili' ? (
-                      <>
-                        <option value="Beginner">Beginner</option>
-                        <option value="Elementary">Elementary</option>
-                        <option value="Pre-Intermediate">Pre-Intermediate</option>
-                        <option value="Intermediate">Intermediate</option>
-                        <option value="Upper-Intermediate">Upper-Intermediate</option>
-                        <option value="Advanced">Advanced</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Beginner">Beginner</option>
-                        <option value="O'rta">O'rta</option>
-                        <option value="Advanced">Advanced</option>
-                      </>
-                    )}
-                  </select>
+                  {newEvent.subject === 'CEFR Mock' ? (
+                    <div className="rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-text-primary flex items-center gap-2">
+                      <Icon name="award" size={15} className="text-accent flex-shrink-0" />
+                      <span><strong>Multi-level:</strong> Natija (A1..C1) ballga ko'ra avtomatik aniqlanadi.</span>
+                    </div>
+                  ) : newEvent.subject === 'IELTS Mock' ? (
+                    <div className="rounded-xl border border-warning/40 bg-warning/10 p-2.5 text-xs text-text-primary flex items-center gap-2">
+                      <Icon name="award" size={15} className="text-warning flex-shrink-0" />
+                      <span><strong>Standart IELTS:</strong> 1.0–9.0 Band shkalasida avtomatik hisoblanadi.</span>
+                    </div>
+                  ) : (
+                    <select className="input-field" value={newEvent.testLevel}
+                      onChange={e => setNewEvent({ ...newEvent, testLevel: e.target.value })}>
+                      <option value="">— Tanlanmagan —</option>
+                      {newEvent.subject === 'Ingliz tili' ? (
+                        <>
+                          <option value="Beginner">Beginner</option>
+                          <option value="Elementary">Elementary</option>
+                          <option value="Pre-Intermediate">Pre-Intermediate</option>
+                          <option value="Intermediate">Intermediate</option>
+                          <option value="Upper-Intermediate">Upper-Intermediate</option>
+                          <option value="Advanced">Advanced</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Beginner">Beginner</option>
+                          <option value="O'rta">O'rta</option>
+                          <option value="Advanced">Advanced</option>
+                        </>
+                      )}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-text-secondary mb-1.5 font-medium">Test turi <span className="text-text-secondary">(ixtiyoriy)</span></label>
