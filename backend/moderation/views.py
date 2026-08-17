@@ -12,7 +12,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from accounts.models import AuditLog
+from accounts.models import AuditLog, User
 from accounts.permissions import IsPlatformAdmin
 from olympy_api.pagination import LargePageNumberPagination
 from olympy_api.security_logging import client_ip
@@ -118,6 +118,14 @@ def admin_moderation_resolve(request, flag_id):
     `archive` — faqat savol bayrog'i uchun ixtiyoriy chora (pastga qarang),
     `block_ip`/`block_days` — faqat shubhali IP bayrog'i uchun.
 
+    APPELLYATSIYA uchun qo'shimcha endpoint kerak emas: `resolved` — e'tiroz
+    qabul qilindi, `dismissed` — rad etildi, izoh esa `note` da. Blokning
+    o'zini bu yer OCHMAYDI — bu ataylab, savol bayrog'idagi "arxivlash
+    avtomatik emas" qoidasi bilan bir xil sababdan: hisobni ochish alohida
+    amal (`accounts.views.admin_set_user_active` / `admin_user_exam_unban`),
+    o'z tekshiruvlari va o'z audit yozuvi bilan. Bayroqning yopilishi esa
+    baribir jurnalga tushadi (`admin_appeal_review`).
+
     Allaqachon yopilgan bayroq 400 qaytaradi — ikkinchi admin birinchisining
     qarorini va `resolved_at` vaqtini bilmasdan qayta yozib yubormasin.
     """
@@ -188,10 +196,40 @@ def admin_moderation_resolve(request, flag_id):
             and request.data.get('block_ip')):
         blocked_ip = _block_ip_from_flag(request, flag, expires_at)
 
+    # Appellyatsiya — yagona tur bo'lib, qarori aynan ODAM haqida (blok
+    # kuchida qoladimi yoki qayta ko'riladimi), shuning uchun YOPILISHNING
+    # O'ZI jurnalga tushadi. Boshqa turlarda jurnalga faqat yon ta'sir
+    # yoziladi: savol/IP bayrog'ini "rad etildi" bilan yopish hech kimga
+    # tegmaydi va hisob tarixida ko'rinishi ham shart emas.
+    if flag.flag_type == ModerationFlag.FLAG_TYPE_APPEAL:
+        _log_appeal_review(request, flag)
+
     return Response({
         **_flag_payload(flag),
         'archived': archived,
         'blocked_ip': _blocked_ip_payload(blocked_ip) if blocked_ip else None,
+    })
+
+
+def _log_appeal_review(request, flag):
+    """Appellyatsiya bo'yicha qarorni audit jurnaliga yozadi.
+
+    Nishon — e'tiroz bergan foydalanuvchi (`flag.target_id`), bayroqning o'zi
+    emas: "Batafsil" oynasidagi amallar tarixi ham, `audit_log_list` dagi
+    `target_name` ham `target_type='User'` bo'yicha o'qiladi, ya'ni qaror
+    aynan o'sha hisobning tarixida ko'rinishi kerak.
+
+    Hisob shu orada o'chirilgan bo'lishi mumkin — bunda yozuv nishonsiz
+    qoladi, lekin baribir yoziladi (`extra.user_id` id'ni saqlaydi): qaror
+    ko'rilgan va uning izi yo'qolmasligi kerak.
+    """
+    target = User.objects.filter(pk=flag.target_id).first()
+    AuditLog.log(request, 'admin_appeal_review', target=target, extra={
+        'moderation_flag_id': flag.id,
+        'user_id': flag.target_id,
+        # `resolved` — e'tiroz qabul qilindi, `dismissed` — rad etildi.
+        'status': flag.status,
+        'note': flag.resolution_note,
     })
 
 

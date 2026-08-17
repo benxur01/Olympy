@@ -36,11 +36,19 @@ class ModerationFlag(models.Model):
     # olgani (`moderation.services.maybe_flag_warning_threshold`). Nishon —
     # foydalanuvchining O'ZI, savol/IP emas.
     FLAG_TYPE_WARNING_THRESHOLD = 'warning_threshold'
+    # Bloklangan/chetlatilgan foydalanuvchining RASMIY e'tirozi
+    # (`accounts.views_appeals.submit_appeal`). Boshqa turlardan farqi:
+    # bayroqni tizim ham, uchinchi shaxs ham emas, NISHONNING O'ZI qo'yadi
+    # (`raised_by == target`) — ya'ni bu "tekshiring, men aybdorman degan
+    # qarorni qayta ko'ring" degan so'rov. Ilgari bunday e'tiroz faqat AI
+    # support chatida qolib ketardi va navbatga umuman tushmasdi.
+    FLAG_TYPE_APPEAL = 'appeal'
     FLAG_TYPE_CHOICES = [
         (FLAG_TYPE_QUESTION, 'Savol'),
         (FLAG_TYPE_OLYMPIAD, 'Olimpiada'),
         (FLAG_TYPE_SUSPICIOUS_IP, 'Shubhali IP'),
         (FLAG_TYPE_WARNING_THRESHOLD, 'Ogohlantirishlar chegarasi'),
+        (FLAG_TYPE_APPEAL, 'Appellyatsiya'),
     ]
 
     STATUS_PENDING = 'pending'

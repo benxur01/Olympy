@@ -185,7 +185,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     custom_practice_quota = models.PositiveIntegerField(default=0)
     custom_discount_percent = models.PositiveIntegerField(default=0)
     custom_discount_until = models.DateTimeField(null=True, blank=True)
-    risk_score = models.PositiveIntegerField(default=0, db_index=True)
+    # `risk_score` USTUNI ATAYLAB YO'Q (migratsiya 0057 uni o'chirdi).
+    # Antifrod balli hech qachon saqlanmaydi — u har safar YAGONA formuladan
+    # hisoblanadi: ro'yxatda `security_queries.annotate_admin_risk` (bitta SQL
+    # ifodasi), "Batafsil" oynasida `views.compute_user_risk_profile`.
+    # Ustun bo'lgan paytda uning yagona yozuvchisi admin GET endpointi edi,
+    # ya'ni qiymat admin oynani ochmagan hisoblarda abadiy 0 bo'lib qolardi
+    # va o'sha eskirgan nol "xavf yo'q" degan yolg'on signal berardi.
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     # Admin panelidagi "Foydalanuvchilar holati" ro'yxati uchun: foydalanuvchi
@@ -625,10 +631,18 @@ class PhoneVerification(models.Model):
     PURPOSE_REGISTRATION = 'registration'
     PURPOSE_ACCOUNT_LINK = 'account_link'
     PURPOSE_PASSWORD_RESET = 'password_reset'
+    # Bloklangan hisobning e'tirozi (`accounts.views_appeals`). Nega alohida
+    # maqsad, `password_reset` ni qayta ishlatish emas: ikkala oqim ham AYNAN
+    # bir xil so'rov bilan yozuv qidiradi (`purpose` + `verified_at__isnull`
+    # + `otp_hash`), ya'ni bitta kod ikkala amalni ham bajara olardi —
+    # e'tiroz uchun so'ralgan kod bilan parolni almashtirib yuborish mumkin
+    # bo'lardi. Telegram'ga ketadigan matn ham shu maydonga qarab tanlanadi.
+    PURPOSE_APPEAL = 'appeal'
     PURPOSE_CHOICES = [
         (PURPOSE_REGISTRATION, 'Registration'),
         (PURPOSE_ACCOUNT_LINK, 'Account link'),
         (PURPOSE_PASSWORD_RESET, 'Password reset'),
+        (PURPOSE_APPEAL, 'Appeal'),
     ]
 
     normalized_phone = models.CharField(max_length=20, db_index=True)
@@ -992,6 +1006,14 @@ class AuditLog(models.Model):
         # qatoriga bog'lanadi, manzilning o'zi `extra.ip_address` da.
         ('admin_ip_block', 'IP manzil bloklandi'),
         ('admin_ip_unblock', 'IP bloki olib tashlandi'),
+        # Foydalanuvchi e'tirozi (`ModerationFlag`, `flag_type='appeal'`)
+        # bo'yicha qaror. Moderatsiya navbatidagi boshqa turlar yopilganda
+        # jurnalga faqat YON TA'SIR tushadi (savol arxivlandi, IP bloklandi),
+        # bu yerda esa qarorning o'zi hisobga tegishli: blok kuchida qoladimi
+        # yoki qayta ko'riladimi. Yozuv APELLYATSIYA BERGAN hisobga
+        # bog'lanadi — "Batafsil" oynasidagi amallar tarixi target bo'yicha
+        # o'qiladi; qaror (`resolved`/`dismissed`) `extra.status` da.
+        ('admin_appeal_review', "Appellyatsiya ko'rib chiqildi"),
         ('center_approve', 'Markaz tasdiqlandi'),
         ('center_reject', 'Markaz rad etildi'),
         ('olympiad_create', 'Olimpiada yaratildi'),
