@@ -30,9 +30,8 @@ from .email_utils import send_account_warning, send_email_verification_code
 from .models import AuditLog, EmailVerification, LoginEvent, PhoneVerification
 from .permissions import IsPlatformAdmin, TrustedOrigin
 from .security_queries import (
-    ADMIN_RISK_TIER_ALIASES,
-    ADMIN_RISK_TIER_RANGES,
     annotate_admin_risk,
+    parse_risk_filter,
 )
 from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
@@ -1339,8 +1338,47 @@ def _filter_admin_users_by_search(qs, search):
     return qs.filter(normalized_phone__startswith=f'+998{digits[-9:]}')
 
 
+def _annotate_admin_user_counts(qs):
+    """Urinish hisoblari: `badges` uchun ham, `?activity=never_tested` uchun ham.
+
+    N+1'ni oldini oladi — `UserSerializer.get_badges` har foydalanuvchi uchun
+    2 ta alohida `TestAttempt` count so'rovi o'rniga shu annotatsiyalarni
+    o'qiydi.
+
+    ATAYLAB alohida funksiya (avval `admin_users_list` ichida joyida
+    yozilgandi): `?activity=never_tested` filtri `total_attempts_count` ga
+    tayanadi, CSV eksporti queryset'ida esa annotatsiya yo'q edi va
+    `/api/admin/users/export/?activity=never_tested` `FieldError` bilan 500
+    qaytarardi. `annotate_admin_risk` bilan bir xil naqsh: ta'rif BITTA
+    joyda va funksiya idempotent, shuning uchun ro'yxat endpointida ikkinchi
+    marta chaqirilishi annotatsiyani takrorlamaydi.
+    """
+    from django.db.models import Count, Q as DQ
+
+    if 'total_attempts_count' in qs.query.annotations:
+        return qs
+    return qs.annotate(
+        attempts_100_count=Count(
+            'attempts',
+            filter=DQ(attempts__score=100, attempts__disqualified=False),
+            distinct=True,
+        ),
+        total_attempts_count=Count(
+            'attempts',
+            filter=DQ(attempts__disqualified=False),
+            distinct=True,
+        ),
+    )
+
+
 def _filter_admin_users_advanced(qs, params):
-    """Admin paneli uchun ko'p parametrli filtrlash: rol, holat, tarif, faollik, teg va xavf."""
+    """Admin paneli uchun ko'p parametrli filtrlash: rol, holat, tarif, faollik, teg va xavf.
+
+    Annotatsiyaga tayanadigan filtrlar (`never_tested`, `risk`) kerakli
+    annotatsiyani O'ZI qo'shadi: bu funksiya ikkita turli queryset ustida
+    ishlaydi — annotatsiyalangan ro'yxat (`admin_users_list`) va yalang'och
+    CSV eksporti (`admin_users_export`).
+    """
     from datetime import timedelta
     from django.utils import timezone
     from django.db.models import Q
@@ -1391,6 +1429,10 @@ def _filter_admin_users_advanced(qs, params):
         cutoff = now - timedelta(days=7)
         qs = qs.filter(Q(last_seen_at__lt=cutoff) | Q(last_seen_at__isnull=True, created_at__lt=cutoff))
     elif activity_filter == 'never_tested':
+        # Ro'yxat endpointida annotatsiya allaqachon bor (funksiya
+        # idempotent), CSV eksportida esa yo'q edi — filtr o'sha yerda
+        # `FieldError` bilan 500 qaytarardi.
+        qs = _annotate_admin_user_counts(qs)
         qs = qs.filter(total_attempts_count=0)
 
     tag_filter = params.get('tag', '').strip()
@@ -1402,39 +1444,72 @@ def _filter_admin_users_advanced(qs, params):
     # shart) — admin "yuqori" ni tanlab "o'rta" deb belgilangan qatorlarni
     # ko'rardi. Endi filtr ham, ustun ham BITTA `risk_tier_score`
     # annotatsiyasidan kelib chiqadi.
-    risk_filter = params.get('risk', '').strip()
-    if risk_filter and risk_filter != 'all':
-        tier = ADMIN_RISK_TIER_ALIASES.get(risk_filter, risk_filter)
-        bounds = ADMIN_RISK_TIER_RANGES.get(tier)
-        if bounds:
-            # `admin_users_list` annotatsiyani allaqachon qo'ygan bo'lishi
-            # mumkin (funksiya idempotent), CSV eksportida esa yo'q.
-            qs = annotate_admin_risk(qs)
-            low, high = bounds
-            qs = qs.filter(risk_tier_score__gte=low)
-            if high is not None:
-                qs = qs.filter(risk_tier_score__lte=high)
+    #
+    # Qiymat shakllari `parse_risk_filter` da: `yuqori` — aynan shu daraja,
+    # `yuqori+` — shu daraja va undan yuqorisi (panel segmenti). Qiymat
+    # RAW ko'rinishida uzatiladi (`.strip()` siz): oxiridagi bo'sh joy
+    # kodlanmagan `+` ning izi bo'lishi mumkin. `'all'`, bo'sh satr va
+    # noma'lum qiymatlar uchun funksiya `None` qaytaradi — filtr qo'yilmaydi.
+    bounds = parse_risk_filter(params.get('risk', ''))
+    if bounds:
+        # `admin_users_list` annotatsiyani allaqachon qo'ygan bo'lishi
+        # mumkin (funksiya idempotent), CSV eksportida esa yo'q.
+        qs = annotate_admin_risk(qs)
+        low, high = bounds
+        qs = qs.filter(risk_tier_score__gte=low)
+        if high is not None:
+            qs = qs.filter(risk_tier_score__lte=high)
 
     return qs
 
 
 def compute_user_risk_profile(user):
-    """Foydalanuvchi ishonch va antifrod risk profilini hisoblaydi."""
+    """Foydalanuvchi ishonch va antifrod risk profilini hisoblaydi.
+
+    Bu — platformadagi YAGONA xavf formulasi. Avval to'rttasi bor edi:
+    shu funksiya, `security_queries.annotate_admin_risk` (ro'yxat uchun SQL
+    ekvivalenti) va `views_admin_advanced` dagi ikkita mustaqil nusxa
+    (`admin_user_risk_score`, `admin_user_ai_summary`) — o'z chegaralari va
+    o'z ballari bilan. Natijada admin bitta ekranda "Xavf: 25% · Past"
+    sarlavhasini va pastda "+35 Bloklangan apparat izi" sababini ko'rardi.
+    Endi ikkala `views_admin_advanced` endpointi ham shu funksiyani chaqiradi,
+    `annotate_admin_risk` esa aynan shu ballarning SQL'da arzon tushadigan
+    QISM TO'PLAMI (ro'yxat xavfni hech qachon oshirib ko'rsatmaydi).
+
+    Qaytadi:
+      * `risk_score` — 0..100;
+      * `risk_level` — `ADMIN_RISK_TIER_RANGES` darajasi ('past' | "o'rta" |
+        'yuqori' | 'kritik'), ro'yxatdagi `risk_tier` bilan bir xil so'z;
+      * `factors` — tuzilmali omillar (`name`/`points`/`description`/
+        `severity`), panel "Batafsil → Xavf" bo'limida shu ro'yxatni chizadi;
+      * `risk_factors` — o'sha omillarning matn ko'rinishi (eski javob
+        formati, `admin_user_detail` va tashqi iste'molchilar uchun).
+    """
     from attempts.models import TestAttempt, TestSession
     from moderation.models import ModerationFlag
     from notifications.models import Notification
-    from accounts.security_queries import get_ip_account_ids
-    from .models import LoginEvent
+    from accounts.security_queries import risk_tier_from_score, get_ip_account_ids
+    from .models import DeviceFingerprint, LoginEvent
 
     factors = []
-    score = 0
+
+    def add(name, points, description, severity):
+        factors.append({
+            'name': name,
+            'points': points,
+            'description': description,
+            'severity': severity,
+        })
 
     # 1. Cheating / Disqualified imtihon urinishlari
     disqualified_attempts = TestAttempt.objects.filter(user=user, disqualified=True).count()
     if disqualified_attempts > 0:
-        pts = min(50, disqualified_attempts * 25)
-        score += pts
-        factors.append(f"{disqualified_attempts} ta olimpiadada diskvalifikatsiya qayd etilgan (+{pts}%)")
+        add(
+            'Diskvalifikatsiya qilingan olimpiadalar',
+            min(50, disqualified_attempts * 25),
+            f"{disqualified_attempts} ta olimpiadada diskvalifikatsiya qayd etilgan",
+            'high' if disqualified_attempts > 1 else 'medium',
+        )
 
     # 2. TestSession tekshiruvi (status pending_review / disqualified)
     flagged_sessions = TestSession.objects.filter(
@@ -1442,60 +1517,94 @@ def compute_user_risk_profile(user):
         status__in=[TestSession.STATUS_DISQUALIFIED, TestSession.STATUS_PENDING_REVIEW]
     ).count()
     if flagged_sessions > 0:
-        pts = min(30, flagged_sessions * 15)
-        score += pts
-        factors.append(f"{flagged_sessions} ta imtihon sessiyasida tekshiruv talab qilingan (+{pts}%)")
+        add(
+            'Shubhali imtihon sessiyalari',
+            min(30, flagged_sessions * 15),
+            f"{flagged_sessions} ta imtihon sessiyasida tekshiruv talab qilingan",
+            'medium',
+        )
 
     # 3. Exam block holati
     if getattr(user, 'is_exam_blocked', False):
-        score += 20
-        factors.append(f"Olimpiada taqiqi (Exam Ban) faol: {user.exam_block_reason or 'qoidabuzarlik'} (+20%)")
+        add(
+            'Olimpiadalardan chetlatilgan (Exam Ban)',
+            20,
+            f"Olimpiada taqiqi (Exam Ban) faol: {user.exam_block_reason or 'qoidabuzarlik'}",
+            'medium',
+        )
 
-    # 4. Shared IP tahlili (bir xil IP orqali boshqa hisoblar)
+    # 4. Bloklangan qurilma izi. Avval bu omil FAQAT `admin_user_risk_score`
+    # da bor edi, ya'ni boshqa signalsiz, lekin bloklangan apparat izi bilan
+    # hisob asosiy ro'yxatda va `?risk=` filtrida "past" (yashil) ko'rinardi —
+    # admin xavf bo'yicha saralab aynan shu qoidabuzarni o'tkazib yuborardi.
+    # `annotate_admin_risk` da ham xuddi shu +35 bor (`Exists` subquery).
+    banned_devices = DeviceFingerprint.objects.filter(user=user, is_banned=True).count()
+    if banned_devices > 0:
+        add(
+            'Bloklangan apparat izi (Banned Device)',
+            35,
+            f"{banned_devices} ta bloklangan qurilma izi aniqlangan",
+            'critical',
+        )
+
+    # 5. Shared IP tahlili (bir xil IP orqali boshqa hisoblar)
     last_logins = LoginEvent.objects.filter(user=user).order_by('-created_at')[:5]
     for login_event in last_logins:
         if login_event.ip_address:
             accounts = get_ip_account_ids(login_event.ip_address)
             other_accounts_count = len([uid for uid in accounts.keys() if uid != user.id])
             if other_accounts_count >= 2:
-                pts = 20 if other_accounts_count >= 5 else 10
-                score += pts
-                factors.append(f"IP ({login_event.ip_address}) orqali yana {other_accounts_count} ta hisob kirgan (+{pts}%)")
+                add(
+                    'Bir xil IP dan ko‘p hisoblar (Multi-accounting)',
+                    20 if other_accounts_count >= 5 else 10,
+                    f"IP ({login_event.ip_address}) orqali yana {other_accounts_count} ta hisob kirgan",
+                    'high' if other_accounts_count >= 5 else 'medium',
+                )
                 break
 
-    # 5. Rasmiy ogohlantirishlar
+    # 6. Rasmiy ogohlantirishlar
     warnings_count = Notification.objects.filter(user=user, type=Notification.TYPE_ACCOUNT_WARNING).count()
     if warnings_count > 0:
-        pts = min(30, warnings_count * 15)
-        score += pts
-        factors.append(f"{warnings_count} ta rasmiy ogohlantirish yuborilgan (+{pts}%)")
+        add(
+            'Rasmiy ogohlantirishlar',
+            min(30, warnings_count * 15),
+            f"{warnings_count} ta rasmiy ogohlantirish yuborilgan",
+            'low' if warnings_count == 1 else 'medium',
+        )
 
-    # 6. Moderation Flags
+    # 7. Moderation Flags
+    # `target_type` — model klassining nomi ('User'), `annotate_admin_risk`
+    # dagi shart bilan AYNAN bir xil (ikkala hisob-kitob bir xil ball berishi
+    # kerak — `test_list_tier_matches_detail_risk_level`).
     flags_count = ModerationFlag.objects.filter(
-        models.Q(raised_by=user) | models.Q(target_type='user', target_id=user.id)
+        models.Q(raised_by=user) | models.Q(target_type='User', target_id=user.id)
     ).count()
     if flags_count > 0:
-        pts = min(20, flags_count * 10)
-        score += pts
-        factors.append(f"{flags_count} ta moderatsiya bayrog'i qo'yilgan (+{pts}%)")
+        add(
+            'Moderatsiya bayroqlari',
+            min(20, flags_count * 10),
+            f"{flags_count} ta moderatsiya bayrog'i qo'yilgan",
+            'medium',
+        )
 
-    score = min(100, max(0, score))
+    score = min(100, max(0, sum(f['points'] for f in factors)))
+    # Daraja chegaralari `ADMIN_RISK_TIER_RANGES` da (yagona manba) — ro'yxat
+    # annotatsiyasi ham o'sha jadvaldan o'qiydi.
+    level = risk_tier_from_score(score)
+
+    risk_factors = [f"{f['description']} (+{f['points']}%)" for f in factors]
     if score == 0:
-        level = 'past'
-        factors.append("Shubhali faollik aniqlanmadi (Ishonchli hisob)")
-    elif score <= 25:
-        level = 'past'
-    elif score <= 55:
-        level = "o'rta"
-    elif score <= 80:
-        level = 'yuqori'
-    else:
-        level = 'kritik'
+        # Matn ro'yxatiga "toza hisob" satri qo'shiladi, TUZILMALI ro'yxatga
+        # esa YO'Q: panel bo'sh `factors` ni ko'rib "Hech qanday shubhali xavf
+        # omillari aniqlanmadi" deb yozadi, aks holda "+0 ball" degan bo'sh
+        # kartochka chiqardi.
+        risk_factors.append("Shubhali faollik aniqlanmadi (Ishonchli hisob)")
 
     return {
         'risk_score': score,
         'risk_level': level,
-        'risk_factors': factors,
+        'factors': factors,
+        'risk_factors': risk_factors,
     }
 
 
@@ -1517,7 +1626,7 @@ def admin_users_list(request):
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
-    from django.db.models import Count, Prefetch, Q as DQ
+    from django.db.models import Prefetch
     from centers.models import CenterMembership
     from billing.models import UserSubscription
     # N+1'ni oldini olamiz:
@@ -1530,18 +1639,6 @@ def admin_users_list(request):
         # Platform adminlar statistikaga kirmasin: foydalanuvchilar soni,
         # faol/o'quvchilar hisobi va o'sish grafigi shu ro'yxatdan keladi.
         .exclude(is_platform_admin=True)
-        .annotate(
-            attempts_100_count=Count(
-                'attempts',
-                filter=DQ(attempts__score=100, attempts__disqualified=False),
-                distinct=True,
-            ),
-            total_attempts_count=Count(
-                'attempts',
-                filter=DQ(attempts__disqualified=False),
-                distinct=True,
-            ),
-        )
         .prefetch_related(
             Prefetch(
                 'memberships',
@@ -1555,6 +1652,10 @@ def admin_users_list(request):
         )
         .order_by('-created_at')
     )
+    # Urinish hisoblari (badges + `?activity=never_tested`) — ta'rifi
+    # `_annotate_admin_user_counts` da, chunki CSV eksporti ham o'sha filtr
+    # uchun aynan shu annotatsiyaga tayanadi.
+    qs = _annotate_admin_user_counts(qs)
     # Xavf darajasi (`risk_tier`) — bitta SQL ifodasida. `compute_user_risk_profile`
     # ni har qatorga chaqirish 100 qatorda ~600 so'rov bo'lardi; bu yerda
     # qo'shimcha JOIN ham yo'q (diskvalifikatsiya hisobi yuqoridagi `attempts`
@@ -1760,6 +1861,14 @@ def admin_user_detail(request, user_id):
     data['exam_block_reason'] = target.exam_block_reason or None
     data['admin_tags'] = target.admin_tags or []
     data['coins'] = target.coins
+    # Shaxsiy kvota/chegirma — `UserSerializer` dan olib tashlangan (u markaz
+    # xodimiga ham qaytariladi), lekin panelning "Batafsil" oynasi shu
+    # qiymatlarni forma boshlang'ich holati sifatida o'qiydi.
+    data['custom_practice_quota'] = target.custom_practice_quota
+    data['custom_discount_percent'] = target.custom_discount_percent
+    data['custom_discount_until'] = (
+        target.custom_discount_until.isoformat() if target.custom_discount_until else None
+    )
 
     # Ichki Admin Notes (CRM)
     recent_notes = UserAdminNote.objects.filter(user=target).select_related('author').order_by('-created_at')[:10]
@@ -4053,11 +4162,15 @@ def _send_telegram_chat_action(chat_id, action='typing', bot='auth'):
 
 def _send_telegram_message(chat_id, text, reply_markup=None, bot='auth'):
     if not _telegram_bot_token(bot):
-        safe_text = (
-            'Tasdiqlash kodi: ******'
-            if text.startswith(('Tasdiqlash kodi:', 'Parolni tiklash kodi:'))
-            else text
-        )
+        # Bir martalik kod HECH QACHON logga ochiq tushmasligi kerak (token
+        # sozlanmagan lokal muhitda xabar faqat shu yerga yoziladi).
+        # Prefikslar YAGONA manbadan olinadi — `EXISTING_USER_OTP_LABELS` ga
+        # yangi OTP turi qo'shilganda bu ro'yxat jimgina eskirib qolmasin.
+        safe_text = text
+        for label in (*EXISTING_USER_OTP_LABELS.values(), 'Tasdiqlash kodi'):
+            if text.startswith(f'{label}:'):
+                safe_text = f'{label}: ******'
+                break
         logger.info('[telegram-%s-local] chat=%s text=%s', bot, chat_id, safe_text)
         return False
     payload = {'chat_id': chat_id, 'text': text}
@@ -4603,6 +4716,22 @@ def confirm_password_reset(request):
 confirm_password_reset.cls.throttle_scope = 'auth'
 
 
+# MAVJUD hisob egasiga bir martalik kod yuboriladigan oqimlar va kodning
+# Telegram'dagi sarlavhasi. Qolgan maqsadlar (`registration`,
+# `account_link`) bu jadvalda YO'Q: ular kod emas, chat'ni hisobga bog'lash
+# bilan tugaydi (`registration` uchun kod hisob TOPILMAGANDA, ya'ni pastdagi
+# boshqa tarmoqda yuboriladi).
+#
+# Matn maqsadga qarab ajratiladi: foydalanuvchi kodni nima uchun
+# so'raganini bilishi kerak — "Parolni tiklash kodi" deb kelgan kodni e'tiroz
+# formasiga kiritish (yoki aksincha) chalkashlik va fishing uchun qulaylik
+# bo'lardi.
+EXISTING_USER_OTP_LABELS = {
+    PhoneVerification.PURPOSE_PASSWORD_RESET: 'Parolni tiklash kodi',
+    PhoneVerification.PURPOSE_APPEAL: "E'tiroz (appellyatsiya) kodi",
+}
+
+
 def _message_from_update(update):
     return update.get('message') or update.get('edited_message') or {}
 
@@ -4865,7 +4994,8 @@ def handle_telegram_update(update, bot='auth'):
                 existing_user = User.objects.filter(normalized_phone=verification.normalized_phone).first()
                 if existing_user:
                     _link_user_to_telegram(existing_user, chat_id, telegram_user_id)
-                    if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
+                    otp_label = EXISTING_USER_OTP_LABELS.get(verification.purpose)
+                    if otp_label:
                         otp = _prepare_otp(verification)
                         # OTP yuborish background Celery task'ga ko'chirildi —
                         # Telegram 429 webhook javobini bloklamaydi.
@@ -4873,12 +5003,12 @@ def handle_telegram_update(update, bot='auth'):
                             from accounts.tasks import send_telegram_otp_task
                             send_telegram_otp_task.delay(
                                 chat_id=chat_id,
-                                text=f'Parolni tiklash kodi: {otp}',
+                                text=f'{otp_label}: {otp}',
                                 bot=bot,
                             )
                         except Exception:
                             logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
-                            _send_telegram_message(chat_id, f'Parolni tiklash kodi: {otp}', bot=bot)
+                            _send_telegram_message(chat_id, f'{otp_label}: {otp}', bot=bot)
                         return {'ok': True}
 
                     verification.verified_at = timezone.now()
@@ -4890,7 +5020,11 @@ def handle_telegram_update(update, bot='auth'):
                     )
                     return {'ok': True}
 
-                if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
+                if verification.purpose in EXISTING_USER_OTP_LABELS:
+                    # Ro'yxatdan o'tmagan raqam: bu ikkala oqim ham MAVJUD
+                    # hisob uchun (parolni tiklash, e'tiroz), ya'ni yangi
+                    # hisob yaratadigan `registration` yo'liga tushib
+                    # ketmasligi kerak.
                     _send_telegram_message(
                         chat_id,
                         "Bu telefon raqam bilan hisob topilmadi.",
