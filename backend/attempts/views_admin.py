@@ -11,7 +11,7 @@ bilan ikki menejerning bir vaqtdagi qarorini (race) himoyalaydi va uni bu yerda
 takrorlash o'sha himoyani ikkinchi nusxaga ajratib yuborardi.
 """
 from django.db.models import (
-    Case, Count, IntegerField, OuterRef, Q, Subquery, Value, When,
+    Case, Count, IntegerField, OuterRef, Prefetch, Q, Subquery, Value, When,
 )
 from django.db.models.functions import Coalesce, Least, Lower, Trim
 from django.utils.dateparse import parse_date
@@ -21,7 +21,7 @@ from rest_framework.response import Response
 from accounts.permissions import IsPlatformAdmin
 from olympy_api.pagination import LargePageNumberPagination
 
-from .models import TestAttempt, TestSession
+from .models import EvidenceSnapshot, TestAttempt, TestSession
 
 # Ro'yxatga kiradigan (va `?status=` bilan toraytirilishi mumkin bo'lgan)
 # holatlar. Boshqa holatlar — `active` (hali ishlayapti) va `completed`
@@ -154,6 +154,28 @@ def _severity_rank_expression():
     return Least(base + escalation, Value(top_rank), output_field=IntegerField())
 
 
+def _evidence_prefetch():
+    """Har sessiyaning dalil kadrlari (`EvidenceSnapshot`) — BITTA qo'shimcha so'rov.
+
+    Bu yerda korrelyatsiyalangan subquery (`_prior_disqualification_count`
+    naqshi) ISHLAMAYDI: panelga sonning o'zi emas, har bir kadrning `id` si
+    kerak (havola aynan shu id bilan quriladi) va SQLite'da id'larni bitta
+    ustunga yig'adigan agregat yo'q. `prefetch_related` esa sahifadagi qator
+    soniga BOG'LIQ EMAS — 2 qator uchun ham, 200 qator uchun ham qo'shimcha
+    bitta so'rov (N+1 yo'q, `test_severity_adds_no_query_per_session`).
+
+    `only(...)` — fayl maydonlaridan faqat nomi o'qiladi (rasm bayti EMAS) va
+    ular ham shu yerda qoladi: payload'da fayl yo'li umuman ko'rsatilmaydi,
+    faqat `has_camera`/`has_screen` bayrog'i.
+    """
+    return Prefetch(
+        'evidence_snapshots',
+        queryset=EvidenceSnapshot.objects.only(
+            'id', 'session_id', 'trigger', 'captured_at', 'image', 'screen_image',
+        ),
+    )
+
+
 def _session_payload(session):
     """Bitta sessiyaning panel uchun ko'rinishi.
 
@@ -168,6 +190,8 @@ def _session_payload(session):
     user = session.user
     olympiad = session.olympiad
     center = olympiad.center
+    # `_evidence_prefetch` tufayli bu qo'shimcha so'rov QILMAYDI.
+    snapshots = list(session.evidence_snapshots.all())
     return {
         'session_id': session.id,
         'student_id': user.id,
@@ -190,6 +214,25 @@ def _session_payload(session):
         # Darajaning sababi menejerga ko'rinsin ("nega yuqori?"): shu
         # o'quvchining boshqa olimpiadalardagi diskvalifikatsiyalari soni.
         'prior_disqualifications': session.prior_disqualifications,
+        # Saqlangan dalil kadrlari. `evidence_count` ro'yxatda bitta belgi
+        # ko'rsatish uchun (dalil bormi?), `evidence` esa har bir kadrning
+        # id'si — havola `/api/attempts/admin/evidence/<id>/?kind=...`
+        # (`views_evidence`). Fayl yo'li ATAYIN yuborilmaydi: rasm faqat
+        # autentifikatsiyali endpoint orqali oqadi.
+        #
+        # Dalil bo'lmasligi ODATIY hol (kesh TTL'i 20 soniya) — bo'sh ro'yxat
+        # "kadr saqlanmagan" degani, "xato" degani emas.
+        'evidence_count': len(snapshots),
+        'evidence': [
+            {
+                'id': snapshot.id,
+                'trigger': snapshot.trigger,
+                'captured_at': snapshot.captured_at.isoformat(),
+                'has_camera': bool(snapshot.image),
+                'has_screen': bool(snapshot.screen_image),
+            }
+            for snapshot in snapshots
+        ],
         'disqualified_at': session.disqualified_at.isoformat() if session.disqualified_at else None,
         'review_requested_at': session.review_requested_at.isoformat() if session.review_requested_at else None,
         # `reviewed_by` NULL — avtomatik (10 daqiqalik timeout) qaror: qatorda
@@ -232,6 +275,9 @@ def admin_cheating_overview(request):
         # `olympiad__center__owner` o'rniga `reviewed_by`: bu yerda markaz
         # egasi emas, "kim qaror qildi" ko'rsatiladi.
         .select_related('user', 'olympiad', 'olympiad__center', 'reviewed_by')
+        # Diskvalifikatsiya dalili (kamera/ekran kadri) — qatorda "dalil bor"
+        # belgisi va havola id'lari uchun.
+        .prefetch_related(_evidence_prefetch())
         # Qatorning "voqea vaqti": DQ qilinganda `disqualified_at`, hali
         # kutayotganda `review_requested_at`. Ikki ustunli
         # `order_by('-disqualified_at', '-review_requested_at')` mos kelmaydi:

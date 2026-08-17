@@ -1,3 +1,5 @@
+import base64
+import uuid
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
@@ -32,7 +34,7 @@ from django.http import HttpResponse
 from questions.grading import RESULT_CORRECT, RESULT_WRONG, grade_answer
 
 from .certificates import render_certificate_png
-from .models import TestAttempt, TestSession
+from .models import EvidenceSnapshot, TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import (
     SUBMIT_GRACE_SECONDS,
@@ -55,6 +57,19 @@ LEADERBOARD_CACHE_SECONDS = 20
 # har javobni Python'da qayta baholaydi (sana chegarasi yo'q). Bu menejer
 # dashboard'i ko'rsatkichi, real vaqt talab qilmaydi.
 QUESTION_DIFFICULTY_CACHE_SECONDS = 5 * 60
+
+# Jonli proktoring kadri keshda shuncha soniya yashaydi. Qisqa: kadr real
+# vaqtda kuzatish uchun, arxiv uchun emas. Aynan shu TTL `capture_evidence_
+# snapshot` ning cheklovini belgilaydi — u faqat SHU oyna ichidagi kadrni
+# doimiy dalilga aylantira oladi.
+LIVE_FRAME_CACHE_SECONDS = 20
+
+
+def live_frame_cache_key(session_id):
+    """Jonli kadr kesh kaliti — yozuvchi (`session_live_frame`) va o'quvchi
+    (`capture_evidence_snapshot`) uchun yagona manba: kalit bir joyda
+    o'zgarib, ikkinchi joyda eskirib qolmasin."""
+    return f'proctor:live_frame:{session_id}'
 
 
 def _cache_refresh_requested(request):
@@ -779,6 +794,104 @@ def _create_disqualified_attempt(user, olympiad, session):
         pass
 
 
+# Bitta dalil kadrining yuqori chegarasi. Frontend 480x360 JPEG yuboradi
+# (~30-60 KB) — 2 MB xatolik uchun keng zaxira, ammo o'zgartirilgan klient
+# 90 kun saqlanadigan diskni to'ldira olmasligi uchun chegara SHART.
+EVIDENCE_MAX_IMAGE_BYTES = 2 * 1024 * 1024
+
+
+def _decode_evidence_frame(raw):
+    """`data:image/jpeg;base64,...` (yoki toza base64) → bytes.
+
+    Yaroqsiz, bo'sh yoki chegaradan katta qiymatda None — dalil bo'lmagani
+    diskvalifikatsiyani to'xtatmaydi.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    if raw.startswith('data:'):
+        # `data:image/jpeg;base64,<payload>` — vergulsiz satr buzilgan
+        # (aks holda sarlavhaning o'zi base64 deb o'qilib, keraksiz fayl
+        # yozilardi: `b64decode` alifboga kirmaydigan belgilarni tashlab
+        # yuboradi va xato ko'tarmaydi).
+        _, _, payload = raw.partition(',')
+        if not payload:
+            return None
+    else:
+        payload = raw
+    # Chegara DEKODLASHDAN OLDIN tekshiriladi: base64 satri original hajmdan
+    # ~4/3 katta, ya'ni avval dekodlab keyin o'lchash o'sha xotirani baribir
+    # ajratib bo'lardi.
+    if len(payload) > (EVIDENCE_MAX_IMAGE_BYTES * 4 // 3) + 4:
+        return None
+    try:
+        # `binascii.Error` — ValueError'ning vorisi (noto'g'ri padding).
+        data = base64.b64decode(payload)
+    except ValueError:
+        return None
+    return data or None
+
+
+def capture_evidence_snapshot(session, trigger):
+    """Keshdagi jonli kadrni doimiy dalil (`EvidenceSnapshot`) qilib yozadi.
+
+    CHEKLOV (kafolat EMAS): kadr Redis'da `session_live_frame` orqali FAQAT
+    `LIVE_FRAME_CACHE_SECONDS` (20 s) turadi. Bayroq qo'yilgan lahzada oxirgi
+    kadr shu oynadan tashqarida bo'lsa — kamera o'chiq, tarmoq sekin, o'quvchi
+    oqim yubormagan yoki rozilik berilmagan — hech qanday rasm bo'lmaydi va
+    funksiya `None` qaytaradi. Diskvalifikatsiya tasdiqlanish nuqtasida
+    (`finalize_cheating_disqualification`) bu ODATIY hol: menejer qarori yoki
+    10 daqiqalik timeout kesh TTL'idan ancha kech keladi, shuning uchun
+    haqiqiy dalil deyarli har doim BAYROQ lahzasidagi kadr bo'ladi.
+
+    Xatolik hech qachon tashqariga chiqmaydi: disk to'lgan, kadr buzilgan yoki
+    yozuv saqlanmagan bo'lsa ham diskvalifikatsiya oqimi davom etadi (dalil —
+    qo'shimcha, qarorning sharti emas). DB yozuvi alohida savepoint ichida:
+    chaqiruvchi tranzaksiya ichida ishlaganda (finalize) yutilgan DB xatosi
+    tashqi tranzaksiyani buzib qo'ymasin.
+    """
+    from django.core.cache import cache
+    from django.core.files.base import ContentFile
+
+    try:
+        data = cache.get(live_frame_cache_key(session.id)) or {}
+        camera = _decode_evidence_frame(data.get('frame'))
+        screen = _decode_evidence_frame(data.get('screen_frame'))
+        if camera is None and screen is None:
+            return None
+
+        snapshot = EvidenceSnapshot(
+            session=session,
+            trigger=trigger,
+            metadata={
+                'audio_level': data.get('audio_level', 0),
+                'face_detected': data.get('face_detected'),
+                'speech_detected': data.get('speech_detected'),
+                'app_switched': data.get('app_switched'),
+                'tab_escapes': data.get('tab_escapes'),
+                'is_in_background': data.get('is_in_background'),
+                # Kadr keshga qachon yozilgani: dalil qanchalik "yangi"
+                # ekanini ko'rsatadi (voqeadan eng ko'pi bilan 20 s oldin).
+                'frame_updated_at': data.get('updated_at'),
+                'cheating_reason': session.cheating_reason or '',
+            },
+        )
+        filename = f'{session.id}-{uuid.uuid4().hex}.jpg'
+        if camera is not None:
+            snapshot.image.save(filename, ContentFile(camera), save=False)
+        if screen is not None:
+            snapshot.screen_image.save(filename, ContentFile(screen), save=False)
+        with transaction.atomic():
+            snapshot.save()
+        return snapshot
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            'evidence snapshot capture failed session=%s trigger=%s',
+            session.id, trigger,
+        )
+        return None
+
+
 def finalize_cheating_disqualification(session, olympiad, reviewed_by, now=None):
     """PENDING_REVIEW sessiyani DISQUALIFIED ga o'tkazadi + attempt yaratadi.
 
@@ -796,6 +909,9 @@ def finalize_cheating_disqualification(session, olympiad, reviewed_by, now=None)
         'reviewed_by', 'reviewed_at', 'status', 'disqualified_at',
     ])
     _create_disqualified_attempt(session.user, olympiad, session)
+    # Dalil oxirida: kadr bo'lmasa ham (odatiy hol — yuqoridagi izohga qarang)
+    # yuqoridagi mutatsiyalar allaqachon bajarilgan.
+    capture_evidence_snapshot(session, EvidenceSnapshot.TRIGGER_DISQUALIFIED)
 
 
 def notify_cheating_confirmed(student, olympiad, reason=''):
@@ -876,6 +992,12 @@ class ReportCheatingView(APIView):
             session.save(update_fields=[
                 'status', 'review_requested_at', 'cheating_reason',
             ])
+
+        # Dalil AYNAN shu lahzada olinadi: kadr keshda faqat 20 soniya turadi,
+        # menejer qarori esa daqiqalar keyin keladi. Tranzaksiyadan TASHQARIDA
+        # (xabarnoma kabi) — fayl yozish DB qulfini ushlab turmasin va yozuv
+        # rollback bo'lgan sessiyaga bog'lanmasin.
+        capture_evidence_snapshot(session, EvidenceSnapshot.TRIGGER_FLAGGED)
 
         try:
             from notifications.services import send_pending_review_notification
@@ -2776,7 +2898,7 @@ def session_live_frame(request, session_id):
         tab_escapes = int(request.data.get('tab_escapes', 0))
         is_in_background = bool(request.data.get('is_in_background', False))
 
-        cache_key = f"proctor:live_frame:{session_id}"
+        cache_key = live_frame_cache_key(session_id)
         payload = {
             'frame': frame,
             'screen_frame': screen_frame,
@@ -2788,7 +2910,7 @@ def session_live_frame(request, session_id):
             'is_in_background': is_in_background,
             'updated_at': timezone.now().isoformat(),
         }
-        cache.set(cache_key, payload, timeout=20)
+        cache.set(cache_key, payload, timeout=LIVE_FRAME_CACHE_SECONDS)
         return Response({'ok': True})
 
     # GET: Kuzatuvchi (Admin, Center Owner/Manager/Teacher)
@@ -2806,7 +2928,7 @@ def session_live_frame(request, session_id):
     # Kuzatuvchi tomosha qilyapti - studentga 15 soniya stream yoqish signali
     cache.set(f"proctor:stream_req:{session_id}", True, timeout=15)
 
-    cache_key = f"proctor:live_frame:{session_id}"
+    cache_key = live_frame_cache_key(session_id)
     data = cache.get(cache_key) or {}
 
     return Response({

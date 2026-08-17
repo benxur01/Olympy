@@ -1,10 +1,17 @@
+import base64
 import json
+import os
+import shutil
+import tempfile
+from datetime import timedelta
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.files.base import ContentFile
 from django.db import transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -12,7 +19,9 @@ from rest_framework import status
 from centers.models import EducationCenter
 from olympiads.models import Olympiad
 from questions.models import Question
-from attempts.models import CodeSubmission, TestAttempt, TestSession
+from attempts.models import (
+    CodeSubmission, EvidenceSnapshot, TestAttempt, TestSession,
+)
 
 User = get_user_model()
 
@@ -846,3 +855,296 @@ class LiveFrameConsentTestCase(APITestCase):
 
         self.assertEqual(data['frame'], self.FRAME)
         self.assertEqual(data['audio_level'], 42)
+
+
+class EvidenceSnapshotTestCase(APITestCase):
+    """Diskvalifikatsiya dalili: saqlash, yopiqlik, yuklab olish, retention.
+
+    Shu paytgacha kadr faqat Redis'da 20 soniya turardi va diskvalifikatsiyadan
+    keyin "nega?" savoliga faqat matn javob berardi. Testlar aynan shu yangi
+    kafolatlarni qotiradi — va ularning CHEGARASINI ham: kadr yo'q bo'lsa yoki
+    disk xato bersa, diskvalifikatsiya oqimi baribir ishlashi kerak.
+    """
+
+    CAMERA_BYTES = b'\xff\xd8\xff-camera-jpeg'
+    SCREEN_BYTES = b'\xff\xd8\xff-screen-jpeg'
+
+    def setUp(self):
+        # Dalil fayllari testda vaqtinchalik katalogga yoziladi — haqiqiy
+        # `EVIDENCE_MEDIA_ROOT` ga tegmasin.
+        self.evidence_dir = tempfile.mkdtemp(prefix='olympy-evidence-')
+        overridden = override_settings(EVIDENCE_MEDIA_ROOT=self.evidence_dir)
+        overridden.enable()
+        self.addCleanup(overridden.disable)
+        self.addCleanup(shutil.rmtree, self.evidence_dir, ignore_errors=True)
+        # LocMemCache jarayon davomida saqlanib qoladi — oldingi testning kadri
+        # bu yerda "dalil" bo'lib qolmasin.
+        cache.clear()
+
+        self.student = User.objects.create_user(
+            phone='+998901239001', password='StrongPass123', full_name="O'quvchi",
+        )
+        self.admin = User.objects.create_user(
+            phone='+998901239002', password='StrongPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save(update_fields=['is_platform_admin'])
+        self.owner = User.objects.create_user(
+            phone='+998901239003', password='StrongPass123', full_name='Markaz egasi',
+        )
+        self.center = EducationCenter.objects.create(
+            name='ProSkill', city='Toshkent', owner=self.owner,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Matematika Olimpiadasi',
+            subject='Matematika',
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(minutes=10),
+            duration_minutes=60,
+            camera_proctoring_enabled=True,
+            voice_proctoring_enabled=True,
+        )
+        self.session = TestSession.objects.create(
+            user=self.student,
+            olympiad=self.olympiad,
+            status=TestSession.STATUS_ACTIVE,
+            camera_consent_given=True,
+            microphone_consent_given=True,
+        )
+
+    # --- yordamchilar -------------------------------------------------------
+
+    def _data_url(self, raw_bytes):
+        return 'data:image/jpeg;base64,' + base64.b64encode(raw_bytes).decode()
+
+    def _push_live_frame(self, camera=True, screen=True):
+        """O'quvchi jonli kadrni yuboradi (haqiqiy endpoint orqali)."""
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(
+            reverse('session-live-frame', args=[self.session.id]),
+            {
+                'frame': self._data_url(self.CAMERA_BYTES) if camera else None,
+                'screen_frame': self._data_url(self.SCREEN_BYTES) if screen else None,
+                'audio_level': 42,
+                'face_detected': False,
+                'tab_escapes': 3,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def _report_cheating(self, reason='no_face_detected'):
+        self.client.force_authenticate(user=self.student)
+        return self.client.post(
+            reverse('report-cheating'),
+            {'olympiad': self.olympiad.id, 'reason': reason},
+            format='json',
+        )
+
+    def _snapshot_with_files(self):
+        """Fayllari bor bitta dalil (bayroq oqimi orqali, ya'ni haqiqiy yo'l)."""
+        self._push_live_frame()
+        self.assertEqual(self._report_cheating().status_code, status.HTTP_200_OK)
+        return EvidenceSnapshot.objects.get(session=self.session)
+
+    # --- dalil olish --------------------------------------------------------
+
+    def test_evidence_saved_when_session_flagged(self):
+        self._push_live_frame()
+        response = self._report_cheating()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        snapshot = EvidenceSnapshot.objects.get(session=self.session)
+        self.assertEqual(snapshot.trigger, EvidenceSnapshot.TRIGGER_FLAGGED)
+        with snapshot.image.open('rb') as handle:
+            self.assertEqual(handle.read(), self.CAMERA_BYTES)
+        with snapshot.screen_image.open('rb') as handle:
+            self.assertEqual(handle.read(), self.SCREEN_BYTES)
+        # Kadr bilan birga kelgan signallar ham dalil bilan qoladi.
+        self.assertEqual(snapshot.metadata['audio_level'], 42)
+        self.assertEqual(snapshot.metadata['tab_escapes'], 3)
+        self.assertFalse(snapshot.metadata['face_detected'])
+        self.assertIsNotNone(snapshot.metadata['frame_updated_at'])
+        self.assertEqual(snapshot.metadata['cheating_reason'], 'no_face_detected')
+
+    def test_evidence_file_is_outside_public_media(self):
+        """Fayl `/media/` ostida EMAS va umuman URL'i yo'q.
+
+        nginx `/media/` ni autentifikatsiyasiz beradi — dalil o'sha yerga
+        tushsa, havolani bilgan har kim o'quvchining yuzini ko'rardi.
+        """
+        snapshot = self._snapshot_with_files()
+        path = snapshot.image.path
+        self.assertTrue(path.startswith(self.evidence_dir))
+        self.assertFalse(path.startswith(str(settings.MEDIA_ROOT)))
+        # `.url` ATAYIN ishlamaydi: ommaviy havola tasodifan ham yasalmasin.
+        with self.assertRaises(ValueError):
+            snapshot.image.url
+
+    def test_flag_flow_survives_when_no_frame_cached(self):
+        """Kesh bo'sh (TTL 20s o'tgan, kamera o'chiq) — oqim baribir ishlaydi."""
+        response = self._report_cheating()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('status'), 'pending_review')
+
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, TestSession.STATUS_PENDING_REVIEW)
+        self.assertFalse(EvidenceSnapshot.objects.exists())
+
+    def test_flag_flow_survives_storage_failure(self):
+        """Disk to'lgan/yozib bo'lmadi — diskvalifikatsiya oqimi to'xtamaydi."""
+        self._push_live_frame()
+        with patch(
+            'attempts.storage.EvidenceStorage._save',
+            side_effect=OSError('No space left on device'),
+        ):
+            response = self._report_cheating()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, TestSession.STATUS_PENDING_REVIEW)
+        self.assertFalse(EvidenceSnapshot.objects.exists())
+
+    def test_oversized_frame_is_ignored(self):
+        """O'zgartirilgan klient 90 kun saqlanadigan diskni to'ldira olmaydi."""
+        from attempts.views import EVIDENCE_MAX_IMAGE_BYTES, live_frame_cache_key
+
+        cache.set(
+            live_frame_cache_key(self.session.id),
+            {'frame': 'A' * (EVIDENCE_MAX_IMAGE_BYTES * 4 // 3 + 100)},
+            timeout=20,
+        )
+        self.assertEqual(self._report_cheating().status_code, status.HTTP_200_OK)
+        self.assertFalse(EvidenceSnapshot.objects.exists())
+
+    def test_evidence_saved_when_disqualification_confirmed(self):
+        """Menejer qarori ham dalil qoldiradi (kadr hali keshda bo'lsa)."""
+        self.session.status = TestSession.STATUS_PENDING_REVIEW
+        self.session.review_requested_at = timezone.now()
+        self.session.cheating_reason = 'multiple_faces_detected'
+        self.session.save(update_fields=[
+            'status', 'review_requested_at', 'cheating_reason',
+        ])
+        self._push_live_frame()
+
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(
+            reverse('review-cheating-case'),
+            {'session_id': self.session.id, 'decision': 'disqualify'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, TestSession.STATUS_DISQUALIFIED)
+        snapshot = EvidenceSnapshot.objects.get(session=self.session)
+        self.assertEqual(snapshot.trigger, EvidenceSnapshot.TRIGGER_DISQUALIFIED)
+        # Diskvalifikatsiya izi (attempt) ham yaratilgan — dalil oqimi unga
+        # xalal bermaydi.
+        self.assertTrue(
+            TestAttempt.objects.filter(
+                user=self.student, olympiad=self.olympiad, disqualified=True,
+            ).exists()
+        )
+
+    # --- yuklab olish endpointi --------------------------------------------
+
+    def _download(self, snapshot, params=None):
+        return self.client.get(
+            reverse('admin-evidence-image', args=[snapshot.id]), params or {},
+        )
+
+    def test_download_requires_authentication(self):
+        snapshot = self._snapshot_with_files()
+        self.client.force_authenticate(user=None)
+        self.assertEqual(
+            self._download(snapshot).status_code, status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_download_is_platform_admin_only(self):
+        """O'quvchining o'zi ham, markaz egasi ham dalil rasmini ko'ra olmaydi."""
+        snapshot = self._snapshot_with_files()
+        for user in (self.student, self.owner):
+            self.client.force_authenticate(user=user)
+            self.assertEqual(
+                self._download(snapshot).status_code,
+                status.HTTP_403_FORBIDDEN,
+                msg=f'{user.full_name} uchun 403 kutilgan',
+            )
+
+    def test_platform_admin_downloads_both_frames(self):
+        snapshot = self._snapshot_with_files()
+        self.client.force_authenticate(user=self.admin)
+
+        response = self._download(snapshot)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'image/jpeg')
+        self.assertIn('no-store', response['Cache-Control'])
+        self.assertEqual(b''.join(response.streaming_content), self.CAMERA_BYTES)
+
+        response = self._download(snapshot, {'kind': 'screen'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(b''.join(response.streaming_content), self.SCREEN_BYTES)
+
+    def test_download_404_when_frame_kind_is_missing(self):
+        """Ekran kadri saqlanmagan (o'quvchi ekranini ulashmagan) — 404."""
+        self._push_live_frame(screen=False)
+        self.assertEqual(self._report_cheating().status_code, status.HTTP_200_OK)
+        snapshot = EvidenceSnapshot.objects.get(session=self.session)
+
+        self.client.force_authenticate(user=self.admin)
+        self.assertEqual(
+            self._download(snapshot, {'kind': 'screen'}).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            self._download(snapshot, {'kind': 'nomalum'}).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    # --- retention (90 kun) -------------------------------------------------
+
+    def test_retention_deletes_old_files_and_rows(self):
+        """Muddati o'tganda DB qatori ham, DISKDAGI FAYL ham yo'qoladi."""
+        from attempts.tasks import EVIDENCE_RETENTION_DAYS, cleanup_expired_evidence
+
+        old = self._snapshot_with_files()
+        old_camera_path = old.image.path
+        old_screen_path = old.screen_image.path
+        EvidenceSnapshot.objects.filter(pk=old.pk).update(
+            captured_at=timezone.now() - timedelta(days=EVIDENCE_RETENTION_DAYS + 1),
+        )
+
+        # Ikkinchi (yangi) dalil — chegara ichida, tegilmasligi kerak.
+        fresh = EvidenceSnapshot.objects.create(
+            session=self.session, trigger=EvidenceSnapshot.TRIGGER_DISQUALIFIED,
+        )
+        fresh.image.save('fresh.jpg', ContentFile(self.CAMERA_BYTES))
+        fresh_path = fresh.image.path
+
+        self.assertEqual(cleanup_expired_evidence(), 1)
+
+        self.assertFalse(EvidenceSnapshot.objects.filter(pk=old.pk).exists())
+        self.assertFalse(os.path.exists(old_camera_path))
+        self.assertFalse(os.path.exists(old_screen_path))
+        self.assertTrue(EvidenceSnapshot.objects.filter(pk=fresh.pk).exists())
+        self.assertTrue(os.path.exists(fresh_path))
+
+    def test_deleting_account_removes_evidence_files(self):
+        """Hisob o'chirilsa (CASCADE) rasm diskda QOLMAYDI.
+
+        `purge_soft_deleted_accounts` user → sessiya → dalil zanjiri bo'ylab
+        o'chiradi va bizning kodimizdan o'tmaydi — fayl `post_delete` signali
+        bilan ketadi.
+        """
+        snapshot = self._snapshot_with_files()
+        camera_path = snapshot.image.path
+        screen_path = snapshot.screen_image.path
+
+        self.student.delete()
+
+        self.assertFalse(EvidenceSnapshot.objects.exists())
+        self.assertFalse(os.path.exists(camera_path))
+        self.assertFalse(os.path.exists(screen_path))
