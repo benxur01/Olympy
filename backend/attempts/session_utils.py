@@ -474,6 +474,12 @@ def score_session_answers(session, olympiad, answers, attempt=None):
 
     # ─── IELTS va CEFR hisoblash ──────────────────────────────────────────
     exam_format = getattr(olympiad, 'exam_format', 'standard') or 'standard'
+    subj = getattr(olympiad, 'subject', '') or ''
+    if exam_format == 'standard':
+        if subj in ('CEFR Mock', 'CEFR'):
+            exam_format = 'cefr'
+        elif subj in ('IELTS Mock', 'IELTS'):
+            exam_format = 'ielts'
     section_scores = {}
     ielts_band = None
     cefr_level = None

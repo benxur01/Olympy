@@ -936,13 +936,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const editingEvent = editingOlympiadId
       ? olympiads.find(o => String(o.id) === String(editingOlympiadId))
       : null;
+    const isCefr = newOlympiad.subject === 'CEFR Mock' || newOlympiad.subject === 'CEFR';
+    const isIelts = newOlympiad.subject === 'IELTS Mock' || newOlympiad.subject === 'IELTS';
     const payload = {
       event_type: newOlympiad.eventType,
+      exam_format: isCefr ? 'cefr' : isIelts ? 'ielts' : (newOlympiad.examFormat || 'standard'),
       title: newOlympiad.title.trim(),
       subject: newOlympiad.subject,
       start_datetime: formStartIso(newOlympiad),
       duration_minutes: Number(newOlympiad.duration) || 60,
-      test_level: (newOlympiad.testLevel || '').trim(),
+      test_level: isCefr ? 'Multi-level' : isIelts ? 'Standard' : (newOlympiad.testLevel || '').trim(),
       test_type: newOlympiad.testType || '',
       group_filter: (newOlympiad.groupFilter || '').trim(),
       it_category: newOlympiad.itCategory || '',
@@ -983,13 +986,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
     const localPatch = {
       eventType: newOlympiad.eventType,
+      examFormat: isCefr ? 'cefr' : isIelts ? 'ielts' : (newOlympiad.examFormat || 'standard'),
       title: newOlympiad.title.trim(),
       subject: newOlympiad.subject,
       startDate: newOlympiad.startDate,
       startTime: newOlympiad.startTime,
       duration: Number(newOlympiad.duration) || 60,
       maxScore: newOlympiad.maxScore,
-      testLevel: (newOlympiad.testLevel || '').trim(),
+      testLevel: isCefr ? 'Multi-level' : isIelts ? 'Standard' : (newOlympiad.testLevel || '').trim(),
       testType: newOlympiad.testType || '',
       groupFilter: (newOlympiad.groupFilter || '').trim(),
     };
@@ -2976,26 +2980,38 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-text-secondary mb-1.5 font-medium">Daraja <span className="text-text-secondary">(ixtiyoriy)</span></label>
-                  <select className="input-field" value={newOlympiad.testLevel}
-                    onChange={e => setNewOlympiad({ ...newOlympiad, testLevel: e.target.value })}>
-                    <option value="">— Tanlanmagan —</option>
-                    {newOlympiad.subject === 'Ingliz tili' ? (
-                      <>
-                        <option value="Beginner">Beginner</option>
-                        <option value="Elementary">Elementary</option>
-                        <option value="Pre-Intermediate">Pre-Intermediate</option>
-                        <option value="Intermediate">Intermediate</option>
-                        <option value="Upper-Intermediate">Upper-Intermediate</option>
-                        <option value="Advanced">Advanced</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Beginner">Beginner</option>
-                        <option value="O'rta">O'rta</option>
-                        <option value="Advanced">Advanced</option>
-                      </>
-                    )}
-                  </select>
+                  {newOlympiad.subject === 'CEFR Mock' ? (
+                    <div className="rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-text-primary flex items-center gap-2">
+                      <Icon name="award" size={15} className="text-accent flex-shrink-0" />
+                      <span><strong>Multi-level:</strong> Natija (A1..C1) ballga ko'ra avtomatik aniqlanadi.</span>
+                    </div>
+                  ) : newOlympiad.subject === 'IELTS Mock' ? (
+                    <div className="rounded-xl border border-warning/40 bg-warning/10 p-2.5 text-xs text-text-primary flex items-center gap-2">
+                      <Icon name="award" size={15} className="text-warning flex-shrink-0" />
+                      <span><strong>Standart IELTS:</strong> 1.0–9.0 Band shkalasida avtomatik hisoblanadi.</span>
+                    </div>
+                  ) : (
+                    <select className="input-field" value={newOlympiad.testLevel}
+                      onChange={e => setNewOlympiad({ ...newOlympiad, testLevel: e.target.value })}>
+                      <option value="">— Tanlanmagan —</option>
+                      {newOlympiad.subject === 'Ingliz tili' ? (
+                        <>
+                          <option value="Beginner">Beginner</option>
+                          <option value="Elementary">Elementary</option>
+                          <option value="Pre-Intermediate">Pre-Intermediate</option>
+                          <option value="Intermediate">Intermediate</option>
+                          <option value="Upper-Intermediate">Upper-Intermediate</option>
+                          <option value="Advanced">Advanced</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Beginner">Beginner</option>
+                          <option value="O'rta">O'rta</option>
+                          <option value="Advanced">Advanced</option>
+                        </>
+                      )}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-text-secondary mb-1.5 font-medium">Test turi <span className="text-text-secondary">(ixtiyoriy)</span></label>

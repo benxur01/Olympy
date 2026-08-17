@@ -134,6 +134,18 @@ class OlympiadSerializer(serializers.ModelSerializer):
         return cleaned
 
     def validate(self, attrs):
+        subject = (attrs.get('subject') or (self.instance.subject if self.instance else '')).strip()
+        if subject in ('CEFR Mock', 'CEFR'):
+            if not attrs.get('exam_format') or attrs.get('exam_format') == Olympiad.EXAM_FORMAT_STANDARD:
+                attrs['exam_format'] = Olympiad.EXAM_FORMAT_CEFR
+            if not attrs.get('test_level'):
+                attrs['test_level'] = 'Multi-level'
+        elif subject in ('IELTS Mock', 'IELTS'):
+            if not attrs.get('exam_format') or attrs.get('exam_format') == Olympiad.EXAM_FORMAT_STANDARD:
+                attrs['exam_format'] = Olympiad.EXAM_FORMAT_IELTS
+            if not attrs.get('test_level'):
+                attrs['test_level'] = 'Standard'
+
         center = attrs.get('center') or (self.instance.center if self.instance else None)
         questions = attrs.get('questions')
         if center and questions is not None:
