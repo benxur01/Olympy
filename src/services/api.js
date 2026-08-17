@@ -1089,6 +1089,28 @@ const mapBackendUser = (user) => {
     isExamBlocked: !!user.is_exam_blocked,
     examBlockedUntil: user.exam_blocked_until || null,
     lastSeenAt: user.last_seen_at || null,
+    // ─── Faqat admin ro'yxatida keladigan maydonlar ───
+    // `AdminUserListSerializer` (backend) qo'shadi; boshqa javoblarda
+    // (login, markaz a'zolari) yo'q — o'shanda null/false bo'lib qoladi.
+    //
+    // `deletedAt` — hisobni foydalanuvchi O'ZI o'chirgan (30 kunlik grace).
+    // `isActive === false` da BLOKLANGAN bilan bir xil ko'rinardi, ya'ni
+    // support xodimi "admin bloklaganmi yoki o'zi ketganmi" ni ajrata
+    // olmasdi. Panel shu maydon bo'yicha ikkisini alohida belgilaydi.
+    deletedAt: user.deleted_at || null,
+    // Blok sababi/muddati endi RO'YXAT javobida ham bor — jadvalda ko'rish
+    // uchun har safar "Batafsil" oynasini ochish shart emas.
+    blockReason: user.block_reason || '',
+    blockedUntil: user.blocked_until || null,
+    examBlockReason: user.exam_block_reason || '',
+    // Telegram tafsiloti: `telegramLinked` faqat "ha/yo'q" beradi, support
+    // esa aynan qaysi chat/hisob ulanganini so'raydi.
+    telegramChatId: user.telegram_chat_id || '',
+    telegramUserId: user.telegram_user_id || '',
+    telegramLinkedAt: user.telegram_linked_at || null,
+    // Xavf darajasi — backend SQL annotatsiyasidan ('past' | "o'rta" |
+    // 'yuqori' | 'kritik'). Annotatsiyasiz queryset'da null.
+    riskTier: user.risk_tier || null,
     onboardingGrade: user.onboarding_grade || null,
     onboardingSubjects: Array.isArray(user.onboarding_subjects) ? user.onboarding_subjects : [],
     onboardingGoal: user.onboarding_goal || null,
@@ -1405,6 +1427,39 @@ export const OlympyApi = {
   getAdminUsers: async (token) => {
     const results = await requestAllPages('/api/admin/users/', { token, pageSize: 100 });
     return { results, count: results.length, next: null, previous: null };
+  },
+  // Foydalanuvchilar JADVALI uchun — yuqoridagi `getAdminUsers` dan farqli
+  // o'laroq BITTA sahifani so'raydi va filtrlarni SERVERGA yuboradi.
+  //
+  // Nega alohida funksiya: `getAdminUsers` `requestAllPages` bilan butun
+  // jadvalni tortadi va `maxPages=50 × pageSize=100` = 5000 yozuvda jimgina
+  // to'xtaydi. Jadval o'sha kesilgan ro'yxatni klientda filtrlaganda 5000dan
+  // keyingi foydalanuvchilar qidiruvda ham, filtrda ham umuman ko'rinmasdi —
+  // xato ham, ogohlantirish ham bermasdan. Backend aynan shuning uchun
+  // paginatsiya va 7 ta filtr beradi (`_filter_admin_users_advanced`).
+  //
+  // Parametrlar backend kutgan nomlar bilan bir xil. Bo'sh yoki 'all'
+  // qiymatlar YUBORILMAYDI: backend ularni filtr sifatida qabul qiladi va
+  // 'all' hech qanday rolga mos kelmay bo'sh ro'yxat qaytarardi.
+  getAdminUsersPaged: (
+    {
+      search = '', role = '', status = '', plan = '',
+      activity = '', tag = '', risk = '', page = 1, pageSize = 50,
+    } = {},
+    token,
+  ) => {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    const setIfActive = (key, value) => {
+      if (value && value !== 'all') qs.set(key, value);
+    };
+    if (search) qs.set('search', search);
+    setIfActive('role', role);
+    setIfActive('status', status);
+    setIfActive('plan', plan);
+    setIfActive('activity', activity);
+    setIfActive('tag', tag);
+    setIfActive('risk', risk);
+    return request(`/api/admin/users/?${qs.toString()}`, { token });
   },
   // Bitta foydalanuvchining to'liq profili ("Batafsil" oynasi) — ro'yxatdagi
   // qatordan ko'ra yangiroq/to'liqroq ma'lumot (rollar detali, obuna, holat).
@@ -1815,6 +1870,40 @@ export const OlympyApi = {
     if (dateTo) qs.set('date_to', dateTo);
     if (search) qs.set('search', search);
     return request(`/api/admin/attempts/cheating-overview/?${qs.toString()}`, { token });
+  },
+  // Bitta dalil kadri (diskvalifikatsiya/bayroq lahzasida saqlangan kamera
+  // yoki ekran rasmi). Id'lar `getAdminCheatingOverview` javobidagi
+  // `evidence[]` dan keladi; `kind` — 'camera' yoki 'screen'.
+  //
+  // NEGA `request()` EMAS: endpoint JSON emas, `image/jpeg` striming qiladi.
+  // NEGA `<img src="...">` EMAS: rasm autentifikatsiyani talab qiladi, brauzer
+  // esa `<img>` so'roviga Authorization headerini QO'SHMAYDI (va endpoint
+  // ataylab `/media/` ostida emas — `attempts/views_evidence.py`). Shu sababli
+  // fetch → blob → `URL.createObjectURL`, aynan `downloadWordTemplate` dagi
+  // naqsh, faqat yuklab olish emas, ekranda ko'rsatish uchun.
+  //
+  // MUHIM: qaytgan `blob:` URL'ni CHAQIRUVCHI `URL.revokeObjectURL` bilan
+  // bo'shatishi shart (oyna yopilganda) — aks holda kadr sahifa yopilgunicha
+  // xotirada qoladi.
+  getAdminEvidenceImageUrl: async (evidenceId, kind, token) => {
+    const qs = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/attempts/admin/evidence/${evidenceId}/${qs}`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      // Xabar AYNAN shu yerda tuziladi: backend `Http404` ga bergan o'zbekcha
+      // matnni DRF saqlamaydi (standart `{"detail": "Not found."}` ga
+      // aylantiradi), ya'ni javobdan o'qib bo'lmaydi.
+      const msg = res.status === 404
+        ? "Bu kadr saqlanmagan yoki fayli o'chirilgan"
+        : (res.status === 403 || res.status === 401)
+          ? "Dalil kadrini ko'rish uchun ruxsat yo'q"
+          : "Dalil kadrini yuklab bo'lmadi";
+      throw new ApiError(msg, { status: res.status });
+    }
+    return URL.createObjectURL(await res.blob());
   },
   // ─── Takrorlangan hisoblarni birlashtirish ───
   // SIM kartasini yo'qotgan o'quvchi yangi raqam bilan qayta ro'yxatdan

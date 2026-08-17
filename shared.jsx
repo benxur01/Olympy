@@ -242,6 +242,10 @@ const openExternalLink = (url, { fallbackRedirect = true } = {}) => {
 };
 
 // ─── Icons (inline SVG helpers) ───────────────────────────────────────────────
+// Noma'lum ikon nomi haqida BIR MARTA ogohlantirish uchun (render loop'da
+// konsolni to'ldirmasligi kerak) — pastdagi izohga qarang.
+const _warnedIconNames = new Set();
+
 const Icon = ({ name, size = 18, className = '' }) => {
   // Modern line icons in the Lucide visual language (MIT-licensed): 24×24 grid,
   // stroke-based, uniform 2px stroke, round caps/joins, no fill. Only the SVG
@@ -252,6 +256,9 @@ const Icon = ({ name, size = 18, className = '' }) => {
     user: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></>,
     trophy: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0012 0V2z" /></>,
     bolt: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 14a1 1 0 01-.78-1.63l9.9-10.2a.5.5 0 01.86.46l-1.92 6.02A1 1 0 0013 10h7a1 1 0 01.78 1.63l-9.9 10.2a.5.5 0 01-.86-.46l1.92-6.02A1 1 0 0011 14z" />,
+    // `bolt` bilan bir xil geometriya, Lucide'dagi nomi bo'yicha taxallus
+    // (`creditCard` / `credit-card` juftligidagi kabi).
+    zap: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 14a1 1 0 01-.78-1.63l9.9-10.2a.5.5 0 01.86.46l-1.92 6.02A1 1 0 0013 10h7a1 1 0 01.78 1.63l-9.9 10.2a.5.5 0 01-.86-.46l1.92-6.02A1 1 0 0011 14z" />,
     chart: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v16a2 2 0 002 2h16M18 17V9M13 17V5M8 17v-3" />,
     settings: <><circle cx="12" cy="12" r="3" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" /></>,
     bell: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.268 21a2 2 0 003.464 0" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.262 15.326A1 1 0 004 17h16a1 1 0 00.74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 006 8c0 4.499-1.411 5.956-2.738 7.326" /></>,
@@ -297,14 +304,30 @@ const Icon = ({ name, size = 18, className = '' }) => {
     'trash-2': <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" /></>,
     'file-text': <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><line x1="16" y1="13" x2="8" y2="13" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><line x1="16" y1="17" x2="8" y2="17" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><polyline points="10 9 9 9 8 9" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></>,
     dollar: <><line x1="12" y1="1" x2="12" y2="23" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></>,
+    'alert-triangle': <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21.73 18l-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4M12 17h.01" /></>,
+    layers: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.83 2.18a2 2 0 00-1.66 0L2.6 6.08a1 1 0 000 1.83l8.58 3.91a2 2 0 001.66 0l8.58-3.9a1 1 0 000-1.83z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2 12a1 1 0 00.58.91l8.6 3.91a2 2 0 001.65 0l8.58-3.9A1 1 0 0022 12" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2 17a1 1 0 00.58.91l8.6 3.91a2 2 0 001.65 0l8.58-3.9A1 1 0 0022 17" /></>,
+    'message-square': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M22 17a2 2 0 01-2 2H6l-4 4V5a2 2 0 012-2h16a2 2 0 012 2z" />,
+    'external-link': <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 3h6v6M10 14L21 3" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /></>,
+    code: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 18l6-6-6-6M8 6l-6 6 6 6" />,
     wallet: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12V8H6a2 2 0 01-2-2V4a2 2 0 012-2h12v4M4 6v14a2 2 0 002 2h14v-4M18 12a2 2 0 100 4h4v-4h-4z" /></>,
     activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />,
     sun: <><circle cx="12" cy="12" r="4" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>,
     moon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3a6 6 0 009 9 9 9 0 11-9-9z" />,
   };
+  // Xaritada yo'q nom BO'SH <svg> chizadi: element o'z joyini egallaydi,
+  // lekin hech narsa ko'rinmaydi va konsolda ham xato bo'lmaydi. Sidebar'dagi
+  // "Mukofotlar" (`gift`) va "Moliya" (`credit-card`) aynan shu sababli
+  // ikonsiz turgan edi — nav bandlari qo'shilgan, ikonlar esa xaritaga
+  // qo'shilmagan. Nomni jimgina yutish o'rniga bir marta ogohlantiramiz,
+  // shunda keyingi safar ikon qo'shishni unutish darhol bilinadi.
+  const glyph = icons[name] || null;
+  if (!glyph && name && !_warnedIconNames.has(name)) {
+    _warnedIconNames.add(name);
+    console.warn(`[Icon] "${name}" ikoni shared.jsx dagi 'icons' xaritasida yo'q — bo'sh SVG chizildi.`);
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>
-      {icons[name] || null}
+      {glyph}
     </svg>
   );
 };
