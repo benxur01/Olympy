@@ -1397,16 +1397,33 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <Icon name="volume" size={14} /> Listening Audio sozlamalari
               </div>
               <div>
-                <label className="block text-xs text-text-secondary mb-1 font-medium">Audio URL / Havola (MP3)</label>
+                <label className="block text-xs text-text-secondary mb-1 font-medium">Audio URL / Havola (MP3, WAV, M4A)</label>
                 <input
                   className="input-field"
-                  placeholder="https://.../ielts_listening_audio.mp3"
+                  placeholder="https://example.com/audio/ielts_section1.mp3"
                   value={newQ.audioUrl}
                   onChange={e => setNewQ({...newQ, audioUrl: e.target.value})}
                 />
+                <p className="mt-1 text-[11px] text-text-secondary">
+                  To'g'ridan-to'g'ri audio havola (masalan, Google Drive, bulutli xotira yoki internetdagi MP3 fayl).
+                </p>
               </div>
+
+              {/* Audio test player preview */}
+              {newQ.audioUrl && (
+                <div className="rounded-xl border border-edge bg-surface-2 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+                    <Icon name="volume" size={14} className="text-accent" />
+                    <span>🎧 Audioni tekshirib eshitish:</span>
+                  </div>
+                  <audio controls className="w-full h-8" src={newQ.audioUrl} preload="none">
+                    Brauzeringiz audio pleyerni qo'llab-quvvatlamaydi.
+                  </audio>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs text-text-secondary mb-1 font-medium">Audio transkripti (Natijalar tahlili uchun)</label>
+                <label className="block text-xs text-text-secondary mb-1 font-medium">Audio transkripti (Natijalar tahlili uchun — ixtiyoriy)</label>
                 <textarea
                   className="input-field resize-y min-h-[80px]"
                   placeholder="Audio matn transkripti..."
