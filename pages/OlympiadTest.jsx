@@ -9,6 +9,349 @@ const LANG_LABELS = {
   c: 'C',
 };
 
+// ─── IELTS / CEFR Audio Player ──────────────────────────────────────────
+const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
+  const audioRef = React.useRef(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [currentTime, setCurrentTime] = React.useState(0);
+  const [duration, setDuration] = React.useState(0);
+  const [playCount, setPlayCount] = React.useState(0);
+  const [volume, setVolume] = React.useState(1);
+  const isIelts = examFormat === 'ielts';
+  const maxPlays = isIelts ? 1 : 2;
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      if (playCount >= maxPlays && isIelts) return;
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime || 0);
+      setDuration(audioRef.current.duration || 0);
+    }
+  };
+
+  const handleAudioEnd = () => {
+    setIsPlaying(false);
+    const nextCount = playCount + 1;
+    setPlayCount(nextCount);
+    if (!isIelts && nextCount < maxPlays) {
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
+          setIsPlaying(true);
+        }
+      }, 4000);
+    }
+    if (onEnded) onEnded();
+  };
+
+  const fmtTime = (secs) => {
+    if (isNaN(secs) || secs < 0) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const handleSeek = (e) => {
+    if (isIelts) return;
+    const target = Number(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = target;
+      setCurrentTime(target);
+    }
+  };
+
+  if (!audioUrl) return null;
+
+  return (
+    <div className="rounded-2xl border border-edge bg-surface-1 p-4 md:p-5 mb-5 shadow-sm">
+      <audio
+        ref={audioRef}
+        src={audioUrl}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleAudioEnd}
+        onLoadedMetadata={handleTimeUpdate}
+      />
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-accent/20 text-accent flex items-center justify-center flex-shrink-0">
+            <Icon name="volume" size={16} />
+          </div>
+          <div>
+            <div className="text-xs md:text-sm font-bold text-text-primary">
+              🎧 Listening Audio ({isIelts ? 'IELTS — 1 marta ijro' : 'CEFR — 2 marta ijro'})
+            </div>
+            <div className="text-[11px] text-text-secondary">
+              Ijro soni: {playCount} / {maxPlays} {playCount >= maxPlays && isIelts ? "(Tugagan)" : ""}
+            </div>
+          </div>
+        </div>
+        <div className="text-xs font-data font-semibold text-text-secondary">
+          {fmtTime(currentTime)} / {fmtTime(duration)}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={togglePlay}
+          disabled={playCount >= maxPlays && isIelts}
+          className={`px-4 py-2 rounded-xl font-semibold text-xs md:text-sm flex items-center gap-2 transition-colors ${
+            playCount >= maxPlays && isIelts
+              ? 'bg-surface-2 text-text-secondary opacity-50 cursor-not-allowed'
+              : isPlaying
+              ? 'bg-warning text-white'
+              : 'btn-primary'
+          }`}
+        >
+          <Icon name={isPlaying ? 'pause' : 'play'} size={14} />
+          {isPlaying ? "To'xtatish" : playCount > 0 ? "Qayta tinglash" : "Tinglashni boshlash"}
+        </button>
+
+        <input
+          type="range"
+          min={0}
+          max={duration || 100}
+          value={currentTime}
+          onChange={handleSeek}
+          disabled={isIelts}
+          className="flex-1 h-2 bg-surface-2 rounded-lg appearance-none cursor-pointer accent-accent disabled:cursor-default"
+        />
+
+        <div className="hidden sm:flex items-center gap-1.5 text-text-secondary">
+          <Icon name="volume" size={14} />
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={volume}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setVolume(v);
+              if (audioRef.current) audioRef.current.volume = v;
+            }}
+            className="w-16 h-1.5 bg-surface-2 rounded-lg accent-accent"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Reading Split-Screen & Highlighter ────────────────────────────────
+const ReadingPassageSplitView = ({ passageText, title, children }) => {
+  const [highlights, setHighlights] = React.useState([]);
+  const [activeColor, setActiveColor] = React.useState('yellow');
+
+  const handleTextSelect = () => {
+    const selection = window.getSelection();
+    const text = selection ? selection.toString().trim() : '';
+    if (text && text.length > 2 && text.length < 300) {
+      if (!highlights.some(h => h.text === text)) {
+        setHighlights(prev => [...prev, { text, color: activeColor }]);
+      }
+      selection.removeAllRanges();
+    }
+  };
+
+  const clearHighlights = () => setHighlights([]);
+
+  const renderHighlightedText = (content) => {
+    if (!content) return '';
+    if (!highlights.length) return content;
+    let parts = [content];
+    highlights.forEach(({ text, color }) => {
+      const colorClass = color === 'green' ? 'bg-emerald-300/40 text-emerald-950 dark:text-emerald-100 rounded px-0.5' :
+                         color === 'cyan' ? 'bg-cyan-300/40 text-cyan-950 dark:text-cyan-100 rounded px-0.5' :
+                         'bg-amber-300/40 text-amber-950 dark:text-amber-100 rounded px-0.5';
+      const newParts = [];
+      parts.forEach(part => {
+        if (typeof part === 'string' && part.includes(text)) {
+          const split = part.split(text);
+          split.forEach((s, idx) => {
+            newParts.push(s);
+            if (idx < split.length - 1) {
+              newParts.push(<mark key={`${text}-${idx}`} className={colorClass}>{text}</mark>);
+            }
+          });
+        } else {
+          newParts.push(part);
+        }
+      });
+      parts = newParts;
+    });
+    return parts;
+  };
+
+  if (!passageText) return children;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {/* Chap tomondagi Reading Matni */}
+      <div className="rounded-2xl border border-edge bg-surface-1 p-5 md:p-6 lg:sticky lg:top-24 max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-edge">
+          <div className="flex items-center gap-2">
+            <Icon name="document" size={16} className="text-accent" />
+            <span className="font-bold text-xs md:text-sm text-text-primary">
+              {title || "Reading Passage (Matn)"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-surface-2 p-1 rounded-lg">
+              <button
+                type="button"
+                title="Sariq belgilash"
+                onClick={() => setActiveColor('yellow')}
+                className={`w-5 h-5 rounded bg-amber-400 border transition-transform ${activeColor === 'yellow' ? 'scale-110 border-text-primary ring-1 ring-accent' : 'border-transparent'}`}
+              />
+              <button
+                type="button"
+                title="Yashil belgilash"
+                onClick={() => setActiveColor('green')}
+                className={`w-5 h-5 rounded bg-emerald-400 border transition-transform ${activeColor === 'green' ? 'scale-110 border-text-primary ring-1 ring-accent' : 'border-transparent'}`}
+              />
+              <button
+                type="button"
+                title="Moviy belgilash"
+                onClick={() => setActiveColor('cyan')}
+                className={`w-5 h-5 rounded bg-cyan-400 border transition-transform ${activeColor === 'cyan' ? 'scale-110 border-text-primary ring-1 ring-accent' : 'border-transparent'}`}
+              />
+            </div>
+            {highlights.length > 0 && (
+              <button
+                type="button"
+                onClick={clearHighlights}
+                title="Belgilarni tozalash"
+                className="text-[11px] text-text-secondary hover:text-error transition-colors px-2 py-1"
+              >
+                Tozalash
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div
+          onMouseUp={handleTextSelect}
+          className="text-text-primary text-sm md:text-base leading-relaxed whitespace-pre-wrap select-text font-serif"
+        >
+          {renderHighlightedText(passageText)}
+        </div>
+      </div>
+
+      {/* O'ng tomondagi Savollar */}
+      <div className="space-y-4">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// ─── Speaking Voice Recorder ──────────────────────────────────────────
+const SpeakingVoiceRecorder = ({ onAudioRecorded }) => {
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [audioBlobUrl, setAudioBlobUrl] = React.useState(null);
+  const [seconds, setSeconds] = React.useState(0);
+  const mediaRecorderRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
+  const timerRef = React.useRef(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setAudioBlobUrl(url);
+        if (onAudioRecorded) onAudioRecorded('voice_answer_recorded');
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => {
+        setSeconds(s => s + 1);
+      }, 1000);
+    } catch (err) {
+      alert("Mikrofonga ruxsat berilmadi: " + (err.message || err));
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const fmtTime = (s) => `${Math.floor(s / 60)}:${s % 60 < 10 ? '0' : ''}${s % 60}`;
+
+  return (
+    <div className="p-5 rounded-2xl border border-edge bg-surface-1 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${isRecording ? 'bg-error animate-pulse' : 'bg-text-secondary'}`} />
+          <span className="font-semibold text-xs md:text-sm text-text-primary">
+            {isRecording ? "Ovoz yozib olinmoqda..." : "🎙️ Speaking Javob Yozish"}
+          </span>
+        </div>
+        <span className="font-data font-bold text-sm text-text-primary">{fmtTime(seconds)}</span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        {!isRecording ? (
+          <button
+            type="button"
+            onClick={startRecording}
+            className="btn-primary px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold flex items-center gap-2"
+          >
+            <Icon name="mic" size={16} /> Ovoz yozishni boshlash
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={stopRecording}
+            className="bg-error text-white px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold flex items-center gap-2 hover:opacity-90"
+          >
+            <Icon name="stop" size={16} /> To'xtatish
+          </button>
+        )}
+      </div>
+
+      {audioBlobUrl && (
+        <div className="pt-3 border-t border-edge space-y-2">
+          <div className="text-xs text-success flex items-center gap-1.5">
+            <Icon name="check" size={13} /> Ovoz yozuvi muvaffaqiyatli saqlandi!
+          </div>
+          <audio src={audioBlobUrl} controls className="w-full h-10" />
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Savol turiga qarab javob kiritish UI. Kod (code) savol bu yerga kelmaydi —
 // u alohida LeetCode-uslubidagi split layoutda render qilinadi.
 //   value formati: mcq/yes_no → son/{chosen_idx}; multiple_select →
@@ -20,22 +363,13 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
   // shuning uchun `rounded-2xl` avvalgi shaklni saqlaydi.
   const inputCls = 'input-field rounded-2xl text-sm md:text-base';
 
-  // Variant yuzasi. `.glass` ATAYIN ishlatilmadi: u hoshiyani
-  // `box-shadow: inset 0 0 0 1px` bilan chizadi, ustiga tanlov `border`i
-  // qo'shilsa ikkita halqa ko'rinardi. Yuzalar tokenlardan to'g'ridan-to'g'ri
-  // yig'ilgan, tanlov esa yagona signal — akcent hoshiya + yengil akcent fon.
+  // Variant yuzasi.
   const optionBase = 'w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left border transition-colors min-h-[56px]';
   const optionOn = 'border-accent bg-accent/15';
   const optionOff = 'border-edge bg-surface-1 hover:border-edge-strong hover:bg-surface-2';
-  // Variant oldidagi belgi (harf / ✓ / checkbox). Tanlangan holat — to'ldirilgan
-  // akcent yuza, ustidagi matn har doim `on-accent`.
   const markOn = 'bg-accent-fill text-on-accent border border-accent-fill';
   const markOff = 'bg-surface-2 text-text-secondary border border-edge';
 
-  // Matn kiritilgan bo'lsa kichik "Saqlandi" belgisi — MCQ/yes_no/multiple_select
-  // uchun tanlangan variant o'zi rangi bilan aniq ko'rinadi, lekin matnli
-  // javoblarda (fill_blank/essay/fill_blanks) hech qanday tasdiq belgisi
-  // yo'q edi: stressli talaba javob "ketdimi yo'qmi" bilmay qolardi.
   const SavedTag = () => (
     <div className="flex items-center gap-1.5 text-xs text-success mt-2">
       <Icon name="check" size={12} /> Saqlandi
@@ -60,19 +394,29 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
     );
   }
 
-  // essay — katta matn maydoni.
+  // essay — katta matn maydoni va so'z sanagich (Writing)
   if (qType === 'essay') {
     const text = (value && typeof value === 'object' ? value.text : '') || '';
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     return (
-      <div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs text-text-secondary">
+          <span>Insho matnini kiriting:</span>
+          <span className="font-data font-semibold">
+            So'zlar soni: <strong className={words >= 150 ? 'text-success' : 'text-warning'}>{words}</strong> ta
+          </span>
+        </div>
         <textarea
           value={text}
           onChange={(e) => onText(e.target.value)}
-          placeholder="Javobingizni batafsil yozing..."
-          rows={8}
-          className={`${inputCls} resize-y min-h-[160px] leading-relaxed`}
+          placeholder="Inshoni bu yerga yozing..."
+          rows={10}
+          className={`${inputCls} resize-y min-h-[200px] leading-relaxed font-sans`}
         />
-        {text.trim() && <SavedTag />}
+        <div className="flex items-center justify-between">
+          {text.trim() && <SavedTag />}
+          <span className="text-[11px] text-text-secondary">Tavsiya: kamida 150-250 so'z</span>
+        </div>
       </div>
     );
   }
@@ -2894,11 +3238,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           </div>
         ) : (
         <div className="flex-1 overflow-y-auto flex flex-col">
-          <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-5 md:py-8 flex-1 pb-28 md:pb-8">
-            {/* Question counter */}
+          <div className={`${q?.passage_text ? 'max-w-6xl' : 'max-w-2xl'} mx-auto w-full px-4 md:px-6 py-5 md:py-8 flex-1 pb-28 md:pb-8`}>
+            {/* Question counter & Section badge */}
             <div className="flex items-center justify-between mb-4 md:mb-6 gap-2">
-              <div className="text-xs md:text-sm text-text-secondary font-medium font-data">
-                Savol <span className="text-text-primary font-bold">{current+1}</span> / {TOTAL}
+              <div className="flex items-center gap-2">
+                <div className="text-xs md:text-sm text-text-secondary font-medium font-data">
+                  Savol <span className="text-text-primary font-bold">{current+1}</span> / {TOTAL}
+                </div>
+                {q?.section && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-accent/15 text-accent border border-accent/30 uppercase tracking-wide">
+                    {q.section === 'listening' ? '🎧 Listening' : q.section === 'reading' ? '📖 Reading' : q.section === 'writing' ? '✍️ Writing' : q.section === 'speaking' ? '🎙️ Speaking' : q.section}
+                  </span>
+                )}
               </div>
               <button onClick={toggleMark} aria-pressed={!!marked[current]}
                 className={`flex items-center gap-1.5 text-[11px] md:text-xs px-2.5 md:px-3 py-1.5 rounded-xl border transition-colors ${marked[current] ? 'bg-wash text-warning border-warning/40' : 'bg-surface-1 text-text-secondary border-edge hover:border-edge-strong hover:text-text-primary'}`}>
@@ -2933,26 +3284,71 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               </div>
             ) : (
               <>
-                {/* Question text */}
-                <div className="rounded-2xl border border-edge bg-surface-2 p-4 md:p-6 mb-5 md:mb-6">
-                  <p className="text-text-primary text-base md:text-lg leading-relaxed font-medium break-words whitespace-pre-wrap"><MathText text={q.text} /></p>
-                </div>
-
-                {/* Answer area — savol turiga qarab UI. */}
-                <div className="mb-6 md:mb-8">
-                  <QuestionAnswerArea
-                    qType={qType}
-                    q={q}
-                    isTrueFalse={isTrueFalse}
-                    value={answers[current]}
-                    onMcq={handleAnswer}
-                    onText={handleTextAnswer}
-                    onBlank={handleBlankAnswer}
-                    onMultiToggle={handleMultiToggle}
-                    onYesNo={handleYesNo}
-                    onSlider={handleSlider}
+                {/* Listening audio agar mavjud bo'lsa */}
+                {(q?.audio || q?.audio_url) && (
+                  <ListeningAudioPlayer
+                    audioUrl={q.audio || q.audio_url}
+                    examFormat={olympiad?.exam_format || olympiad?.examFormat}
                   />
-                </div>
+                )}
+
+                {/* Reading Split-screen yoki odatiy render */}
+                {q?.passage_text ? (
+                  <ReadingPassageSplitView
+                    passageText={q.passage_text}
+                    title={q.section === 'writing' ? "Writing Task Ko'rsatmasi" : "Reading Passage (Matn)"}
+                  >
+                    <div className="rounded-2xl border border-edge bg-surface-2 p-4 md:p-6 mb-4">
+                      <p className="text-text-primary text-base md:text-lg leading-relaxed font-medium break-words whitespace-pre-wrap"><MathText text={q.text} /></p>
+                    </div>
+
+                    <div className="mb-6 md:mb-8">
+                      {q.section === 'speaking' ? (
+                        <SpeakingVoiceRecorder onAudioRecorded={(data) => handleTextAnswer(data)} />
+                      ) : (
+                        <QuestionAnswerArea
+                          qType={qType}
+                          q={q}
+                          isTrueFalse={isTrueFalse}
+                          value={answers[current]}
+                          onMcq={handleAnswer}
+                          onText={handleTextAnswer}
+                          onBlank={handleBlankAnswer}
+                          onMultiToggle={handleMultiToggle}
+                          onYesNo={handleYesNo}
+                          onSlider={handleSlider}
+                        />
+                      )}
+                    </div>
+                  </ReadingPassageSplitView>
+                ) : (
+                  <>
+                    {/* Question text */}
+                    <div className="rounded-2xl border border-edge bg-surface-2 p-4 md:p-6 mb-5 md:mb-6">
+                      <p className="text-text-primary text-base md:text-lg leading-relaxed font-medium break-words whitespace-pre-wrap"><MathText text={q.text} /></p>
+                    </div>
+
+                    {/* Answer area — savol turiga qarab UI. */}
+                    <div className="mb-6 md:mb-8">
+                      {q.section === 'speaking' ? (
+                        <SpeakingVoiceRecorder onAudioRecorded={(data) => handleTextAnswer(data)} />
+                      ) : (
+                        <QuestionAnswerArea
+                          qType={qType}
+                          q={q}
+                          isTrueFalse={isTrueFalse}
+                          value={answers[current]}
+                          onMcq={handleAnswer}
+                          onText={handleTextAnswer}
+                          onBlank={handleBlankAnswer}
+                          onMultiToggle={handleMultiToggle}
+                          onYesNo={handleYesNo}
+                          onSlider={handleSlider}
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
               </>
             )}
 

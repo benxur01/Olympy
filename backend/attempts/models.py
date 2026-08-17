@@ -38,6 +38,10 @@ class TestAttempt(models.Model):
     # attempt yaratiladi va manager paneli "diskvalifitsiya bo'lgan" deb
     # ko'rsata oladi.
     disqualified = models.BooleanField(default=False)
+    # IELTS / CEFR baholash natijalari
+    ielts_band = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
+    cefr_level = models.CharField(max_length=20, blank=True, default='')
+    section_scores = models.JSONField(default=dict, blank=True)
     # Sertifikat ommaviy tekshiruv (verify) UUID'i. Sertifikatda QR/URL
     # sifatida ko'rsatiladi: prolymp.uz/certificates/verify/<uuid>. Public
     # endpoint shu UUID orqali sertifikat haqiqiyligini tasdiqlaydi. Eski

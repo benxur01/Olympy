@@ -129,12 +129,32 @@ def questions_payload(session, olympiad):
         # baholash faqat serverda. fill_blanks uchun bo'sh joylar sonini
         # (blanks_count), slider uchun esa faqat oraliqni (slider_range:
         # min/max/step) to'g'ri javoblarni sizdirmasdan beramiz.
+        audio_val = ''
+        if getattr(question, 'audio', None):
+            try:
+                audio_val = question.audio.url
+            except Exception:
+                audio_val = ''
+        if not audio_val and getattr(question, 'audio_url', None):
+            audio_val = question.audio_url
+
+        image_val = ''
+        if getattr(question, 'image', None):
+            try:
+                image_val = question.image.url
+            except Exception:
+                image_val = ''
+
         item = {
             'id': question.id,
             'text': question.text,
             'options': visible_options,
             'score': question.score,
             'question_type': q_type,
+            'audio': audio_val,
+            'image': image_val,
+            'passage_text': getattr(question, 'passage_text', '') or '',
+            'section': getattr(question, 'section', '') or '',
         }
         if q_type == 'fill_blanks':
             correct = _parse_correct_text(getattr(question, 'correct_text', ''))
@@ -225,6 +245,46 @@ def _extract_chosen(chosen, q_type):
     return chosen
 
 
+def calculate_ielts_band(correct_count, total_count=40):
+    """Rasmiy IELTS Listening / Reading xom ball (Raw score) dan Band (1.0-9.0) ga o'tkazish."""
+    if not total_count or total_count <= 0:
+        return 1.0
+    # 40 talik standart shkalaga moslashtirish (agar savollar soni 40 dan kam/ko'p bo'lsa)
+    raw = round((correct_count / total_count) * 40)
+    if raw >= 39: return 9.0
+    if raw >= 37: return 8.5
+    if raw >= 35: return 8.0
+    if raw >= 33: return 7.5
+    if raw >= 30: return 7.0
+    if raw >= 27: return 6.5
+    if raw >= 23: return 6.0
+    if raw >= 20: return 5.5
+    if raw >= 16: return 5.0
+    if raw >= 13: return 4.5
+    if raw >= 10: return 4.0
+    if raw >= 7:  return 3.5
+    if raw >= 5:  return 3.0
+    if raw >= 3:  return 2.5
+    if raw >= 1:  return 2.0
+    return 1.0
+
+
+def calculate_cefr_level(score_percentage):
+    """Rasmiy CEFR A1..C1 daraja hisoblash (foiz yoki ball asosida)."""
+    pct = round(score_percentage)
+    if pct >= 86:
+        return 'C1'
+    elif pct >= 71:
+        return 'B2'
+    elif pct >= 56:
+        return 'B1'
+    elif pct >= 46:
+        return 'A2'
+    elif pct >= 30:
+        return 'A1'
+    return 'No Certificate'
+
+
 def score_session_answers(session, olympiad, answers, attempt=None):
     """Sessiya javoblarini baholaydi.
 
@@ -249,6 +309,14 @@ def score_session_answers(session, olympiad, answers, attempt=None):
     answered = 0
     earned_score = 0
     all_questions = ordered_questions(session, olympiad)
+
+    section_stats = {
+        'listening': {'correct': 0, 'total': 0, 'earned': 0, 'max': 0},
+        'reading': {'correct': 0, 'total': 0, 'earned': 0, 'max': 0},
+        'writing': {'correct': 0, 'total': 0, 'earned': 0, 'max': 0},
+        'speaking': {'correct': 0, 'total': 0, 'earned': 0, 'max': 0},
+    }
+
     # Qolgan barcha turlar (mcq, yes_no, multiple_select, fill_blank,
     # fill_blanks, essay) variantsiz/variantli — questions.grading.grade_answer
     # orqali izchil baholanadi. Variant indeksli turlarda
@@ -276,6 +344,11 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         if (getattr(q, 'question_type', 'mcq') or 'mcq') != 'essay'
     ]
     for question in gradeable_questions:
+        sec = (getattr(question, 'section', '') or '').lower()
+        if sec in section_stats:
+            section_stats[sec]['total'] += 1
+            section_stats[sec]['max'] += question.score
+
         chosen = answers.get(str(question.id))
         if chosen is None:
             chosen = answers.get(question.id)
@@ -307,6 +380,9 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         if result == RESULT_CORRECT:
             correct += 1
             earned_score += question.score
+            if sec in section_stats:
+                section_stats[sec]['correct'] += 1
+                section_stats[sec]['earned'] += question.score
 
     # Kod (IT) savollar bo'yicha avtomatik ball faqat `attempt` berilganda
     # hisoblanadi (Judge0 callback'dan keyingi qayta hisoblash). Submit oqimida
@@ -364,6 +440,10 @@ def score_session_answers(session, olympiad, answers, attempt=None):
             for g in EssayGrade.objects.filter(attempt=attempt)
         }
         for question in essay_questions:
+            sec = (getattr(question, 'section', '') or '').lower()
+            if sec in section_stats:
+                section_stats[sec]['total'] += 1
+                section_stats[sec]['max'] += question.score
             grade = essay_grades.get(question.id)
             if grade is None:
                 continue
@@ -372,6 +452,10 @@ def score_session_answers(session, olympiad, answers, attempt=None):
             earned_score += earned
             if earned >= question.score:
                 correct += 1
+            if sec in section_stats:
+                section_stats[sec]['earned'] += earned
+                if earned >= question.score:
+                    section_stats[sec]['correct'] += 1
             scored_questions.append(question)
 
     questions = scored_questions
@@ -387,6 +471,58 @@ def score_session_answers(session, olympiad, answers, attempt=None):
     wrong = max(0, answered - correct)
     blank = max(0, total - answered)
     score = round((earned_score / max_possible) * 100) if max_possible else 0
+
+    # ─── IELTS va CEFR hisoblash ──────────────────────────────────────────
+    exam_format = getattr(olympiad, 'exam_format', 'standard') or 'standard'
+    section_scores = {}
+    ielts_band = None
+    cefr_level = None
+
+    for sec_name, stats in section_stats.items():
+        if stats['total'] > 0:
+            if exam_format == 'ielts':
+                section_scores[sec_name] = calculate_ielts_band(stats['correct'], stats['total'])
+            else:
+                pct = round((stats['earned'] / stats['max']) * 100) if stats['max'] else 0
+                section_scores[sec_name] = pct
+
+    if exam_format == 'ielts':
+        if section_scores:
+            bands = list(section_scores.values())
+            avg_band = sum(bands) / len(bands)
+            # IELTS yaxlitlash: 0.25 -> 0.5, 0.75 -> 1.0
+            ielts_band = round(avg_band * 2) / 2
+        else:
+            ielts_band = calculate_ielts_band(correct, total)
+        # IELTS band bo'yicha mos CEFR darajasini ham belgilaymiz
+        if ielts_band >= 8.5:
+            cefr_level = 'C2'
+        elif ielts_band >= 7.0:
+            cefr_level = 'C1'
+        elif ielts_band >= 5.5:
+            cefr_level = 'B2'
+        elif ielts_band >= 4.0:
+            cefr_level = 'B1'
+        elif ielts_band >= 3.0:
+            cefr_level = 'A2'
+        else:
+            cefr_level = 'A1'
+    elif exam_format == 'cefr':
+        cefr_level = calculate_cefr_level(score)
+        if cefr_level == 'C1':
+            ielts_band = 7.5
+        elif cefr_level == 'B2':
+            ielts_band = 6.0
+        elif cefr_level == 'B1':
+            ielts_band = 5.0
+        elif cefr_level == 'A2':
+            ielts_band = 3.5
+        else:
+            ielts_band = 2.5
+    else:
+        # Standart rejimda ham foizga qarab CEFR darajasini informatsion beramiz
+        cefr_level = calculate_cefr_level(score)
+
     return {
         'total': total,
         'correct': correct,
@@ -396,6 +532,9 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         'earned_score': earned_score,
         'max_possible': max_possible,
         'score': score,
+        'ielts_band': ielts_band,
+        'cefr_level': cefr_level,
+        'section_scores': section_scores,
         # Essay savollar soni — ular avtomatik ball hisobiga kirmaydi
         # (qo'lda baholash tizimi qo'shilguncha).
         'essay_count': len(essay_questions),

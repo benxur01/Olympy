@@ -478,6 +478,10 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const pct = (r.score !== undefined && r.score !== null)
     ? Math.round(r.score)
     : (r.total ? Math.round((r.correct / r.total) * 100) : 0);
+  const ieltsBand = r.ielts_band ?? r.ieltsBand ?? fetchedAttempt?.ielts_band;
+  const cefrLevel = r.cefr_level ?? r.cefrLevel ?? fetchedAttempt?.cefr_level;
+  const sectionScores = (r.section_scores ?? r.sectionScores ?? fetchedAttempt?.section_scores) || {};
+  const examFormat = r.olympiad?.exam_format || r.olympiad?.examFormat || (ieltsBand ? 'ielts' : (cefrLevel ? 'cefr' : 'standard'));
   const grade = resultGradeOf(pct);
   const fmtTime = (s) => `${Math.floor((s||0)/60)}m ${(s||0)%60}s`;
 
@@ -550,6 +554,52 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             </div>
           ))}
         </div>
+
+        {/* IELTS / CEFR Maxsus Natija Bloki */}
+        {(ieltsBand || cefrLevel) && (
+          <div className="glass-strong rounded-3xl p-5 md:p-6 border-l-4 border-l-accent space-y-4">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-edge">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-accent/20 text-accent flex items-center justify-center">
+                  <Icon name="award" size={18} />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-sm md:text-base text-text-primary">
+                    {examFormat === 'ielts' ? 'IELTS Test Report Form' : 'CEFR Milliy Sertifikat Natijasi'}
+                  </h3>
+                  <div className="text-[11px] text-text-secondary">
+                    Rasmiy xalqaro standart bo'yicha baholash
+                  </div>
+                </div>
+              </div>
+              <span className="chip border border-accent/40 bg-accent/15 text-accent font-bold text-xs md:text-sm px-3 py-1">
+                {examFormat === 'ielts' ? `Band ${Number(ieltsBand).toFixed(1)}` : cefrLevel}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {['listening', 'reading', 'writing', 'speaking'].map((sec) => {
+                const val = sectionScores[sec];
+                const secLabel = sec === 'listening' ? '🎧 Listening' :
+                                 sec === 'reading' ? '📖 Reading' :
+                                 sec === 'writing' ? '✍️ Writing' : '🎙️ Speaking';
+                return (
+                  <div key={sec} className="rounded-2xl border border-edge bg-ground p-3.5 text-center">
+                    <div className="text-[11px] text-text-secondary font-medium mb-1">{secLabel}</div>
+                    <div className="font-data font-black text-lg md:text-xl text-text-primary">
+                      {val != null ? (examFormat === 'ielts' ? Number(val).toFixed(1) : `${val}%`) : (examFormat === 'ielts' ? Number(ieltsBand || 0).toFixed(1) || '—' : `${pct}%`)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-3 border-t border-edge flex flex-wrap items-center justify-between text-xs text-text-secondary gap-2">
+              <span>CEFR Darajasi: <strong className="text-text-primary font-bold">{cefrLevel || (ieltsBand >= 7.0 ? 'C1' : ieltsBand >= 5.5 ? 'B2' : 'B1')}</strong></span>
+              <span>IELTS Band: <strong className="text-text-primary font-bold">{ieltsBand ? Number(ieltsBand).toFixed(1) : '—'}</strong></span>
+            </div>
+          </div>
+        )}
 
         {/* ─── Natija tahlili ───────────────────────────────────────────────
             Grafik ranglari: to'g'ri/noto'g'ri — bu "kim" emas, "yaxshimi

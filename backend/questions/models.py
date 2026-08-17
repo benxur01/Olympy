@@ -153,6 +153,32 @@ class Question(models.Model):
         max_length=10, choices=DIFFICULTY_CHOICES, default=DIFFICULTY_MEDIUM,
     )
     image = models.ImageField(upload_to='questions/', null=True, blank=True)
+    # Listening / Audio materiallar
+    audio = models.FileField(upload_to='questions/audio/', null=True, blank=True)
+    audio_url = models.URLField(max_length=500, blank=True, default='', help_text="Tashqi audio havola yoki CDN")
+    audio_transcript = models.TextField(blank=True, default='', help_text="Listening audio transkripti / tahlili")
+    # Reading matni yoki Writing topshiriq ko'rsatmasi (Split-Screen uchun)
+    passage_text = models.TextField(blank=True, default='', help_text="Reading matni yoki topshiriq ko'rsatmasi")
+    # Imtihon bo'limi (Listening, Reading, Writing, Speaking)
+    SECTION_UNSET = ''
+    SECTION_LISTENING = 'listening'
+    SECTION_READING = 'reading'
+    SECTION_WRITING = 'writing'
+    SECTION_SPEAKING = 'speaking'
+    SECTION_CHOICES = [
+        (SECTION_UNSET, 'Umumiy'),
+        (SECTION_LISTENING, 'Listening'),
+        (SECTION_READING, 'Reading'),
+        (SECTION_WRITING, 'Writing'),
+        (SECTION_SPEAKING, 'Speaking'),
+    ]
+    section = models.CharField(
+        max_length=20,
+        choices=SECTION_CHOICES,
+        blank=True,
+        default=SECTION_UNSET,
+        db_index=True,
+    )
     source = models.CharField(
         max_length=10, choices=SOURCE_CHOICES, default=SOURCE_MANUAL,
     )

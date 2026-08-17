@@ -9,7 +9,8 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'center', 'subject', 'text', 'options', 'correct_answer',
-                  'correct_text', 'score', 'difficulty', 'image', 'source',
+                  'correct_text', 'score', 'difficulty', 'image', 'audio', 'audio_url',
+                  'audio_transcript', 'passage_text', 'section', 'source',
                   'created_by', 'created_at', 'question_type', 'purpose',
                   'programming_language', 'code_template', 'expected_output',
                   'test_cases', 'is_active']

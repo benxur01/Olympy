@@ -64,6 +64,17 @@ class Olympiad(models.Model):
         (IT_CATEGORY_GENERAL, 'Umumiy'),
     ]
 
+    # Imtihon formati — standart olimpiada (foiz/ball), IELTS Mock (1.0-9.0 band)
+    # yoki CEFR Mock (A1-C1 darajalar).
+    EXAM_FORMAT_STANDARD = 'standard'
+    EXAM_FORMAT_IELTS = 'ielts'
+    EXAM_FORMAT_CEFR = 'cefr'
+    EXAM_FORMAT_CHOICES = [
+        (EXAM_FORMAT_STANDARD, 'Standart'),
+        (EXAM_FORMAT_IELTS, 'IELTS Mock'),
+        (EXAM_FORMAT_CEFR, 'CEFR Mock'),
+    ]
+
     center = models.ForeignKey(
         EducationCenter,
         on_delete=models.CASCADE,
@@ -73,6 +84,12 @@ class Olympiad(models.Model):
         max_length=20,
         choices=EVENT_TYPE_CHOICES,
         default=EVENT_TYPE_COMPETITION,
+        db_index=True,
+    )
+    exam_format = models.CharField(
+        max_length=20,
+        choices=EXAM_FORMAT_CHOICES,
+        default=EXAM_FORMAT_STANDARD,
         db_index=True,
     )
     title = models.CharField(max_length=200)
