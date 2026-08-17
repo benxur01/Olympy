@@ -26,10 +26,10 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from accounts.models import AuditLog, LoginEvent, User
+from accounts.models import AuditLog, DeviceFingerprint, LoginEvent, User
 from accounts.serializers import AdminUserListSerializer, UserSerializer
 from attempts.models import TestAttempt, TestSession
-from centers.models import EducationCenter
+from centers.models import CenterMembership, EducationCenter
 from moderation.models import ModerationFlag
 from olympiads.models import Olympiad
 
@@ -65,14 +65,20 @@ class AdminDataTestMixin:
             status=Olympiad.STATUS_ACTIVE,
         )
 
+    def attempt(self, user, *, disqualified=False, score=50):
+        """Bitta test urinishi. Har chaqiruv YANGI olimpiada yasaydi —
+        `TestAttempt` da (user, olympiad) unique."""
+        return TestAttempt.objects.create(
+            user=user,
+            olympiad=self.make_olympiad(f'Olimpiada {user.id}'),
+            score=score,
+            disqualified=disqualified,
+        )
+
     def disqualify(self, user, count=1):
-        """`count` ta diskvalifikatsiya qilingan urinish (har biri boshqa olimpiada:
-        `TestAttempt` da (user, olympiad) unique)."""
-        for i in range(count):
-            TestAttempt.objects.create(
-                user=user, olympiad=self.make_olympiad(f'Olimpiada {user.id}-{i}'),
-                score=0, disqualified=True,
-            )
+        """`count` ta diskvalifikatsiya qilingan urinish."""
+        for _ in range(count):
+            self.attempt(user, disqualified=True, score=0)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -275,6 +281,93 @@ class AdminUsersExportColumnsTestCase(AdminDataTestMixin, APITestCase):
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
+class AdminUserFilterAnnotationTestCase(AdminDataTestMixin, APITestCase):
+    """Annotatsiyaga tayanadigan filtrlar IKKALA endpointda ham ishlaydi.
+
+    `_filter_admin_users_advanced` ikkita TURLI queryset ustida chaqiriladi:
+    annotatsiyalangan ro'yxat (`admin_users_list`) va yalang'och CSV eksporti
+    (`admin_users_export`). `?activity=never_tested` `total_attempts_count`
+    annotatsiyasiga tayanadi va eksportda u yo'q edi — endpoint
+    `FieldError` bilan 500 qaytarardi.
+    """
+
+    def setUp(self):
+        self.admin = self.make_admin()
+        self.list_url = reverse('admin-users-list')
+        self.export_url = reverse('admin-users-export')
+        self.client.force_authenticate(user=self.admin)
+
+    def test_never_tested_filter_on_list(self):
+        untested = self.make_user('7001', full_name='Topshirmagan')
+        tested = self.make_user('7002', full_name='Topshirgan')
+        self.attempt(tested)
+        res = self.client.get(self.list_url, {'activity': 'never_tested'})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual([r['id'] for r in res.data['results']], [untested.id])
+
+    def test_never_tested_does_not_crash_csv_export(self):
+        """Regressiya: avval bu so'rov `FieldError` (500) qaytarardi."""
+        self.make_user('7101', full_name='Topshirmagan Hisob')
+        tested = self.make_user('7102', full_name='Topshirgan Hisob')
+        self.attempt(tested)
+        res = self.client.get(self.export_url, {'activity': 'never_tested'})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        rows = [line for line in res.content.decode('utf-8-sig').splitlines() if line.strip()]
+        # Sarlavha + faqat bitta qator.
+        self.assertEqual(len(rows), 2)
+        self.assertIn('Topshirmagan Hisob', rows[1])
+
+    def test_disqualified_attempt_still_counts_as_never_tested(self):
+        """`total_attempts_count` faqat diskvalifikatsiya QILINMAGAN
+        urinishlarni sanaydi — semantika ro'yxatda ham, eksportda ham bir xil."""
+        only_dq = self.make_user('7201', full_name='Faqat DQ')
+        self.disqualify(only_dq, 1)
+        listed = self.client.get(self.list_url, {'activity': 'never_tested'})
+        self.assertEqual([r['id'] for r in listed.data['results']], [only_dq.id])
+        exported = self.client.get(self.export_url, {'activity': 'never_tested'})
+        self.assertEqual(exported.status_code, status.HTTP_200_OK)
+        self.assertIn('Faqat DQ', exported.content.decode('utf-8-sig'))
+
+    def test_never_tested_combined_with_risk_filter_on_export(self):
+        """Ikkala annotatsiya bir vaqtda: har biri o'zini qo'shadi va
+        `attempts` join'i takrorlanmaydi."""
+        risky = self.make_user('7301', full_name='DQ Hisob')
+        self.disqualify(risky, 2)          # 50 ball → "o'rta", non-DQ urinish 0
+        clean = self.make_user('7302', full_name='Toza Hisob')
+        self.attempt(clean)                # topshirgan, xavfsiz
+        res = self.client.get(self.export_url, {'activity': 'never_tested', 'risk': "o'rta"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        text = res.content.decode('utf-8-sig')
+        self.assertIn('DQ Hisob', text)
+        self.assertNotIn('Toza Hisob', text)
+
+    def test_every_supported_filter_value_is_accepted_by_both_endpoints(self):
+        """Qo'riqchi test: kelajakda annotatsiyaga tayanadigan yangi filtr
+        qo'shilsa va u faqat ro'yxatda annotatsiya qilinsa, eksport 500
+        qaytaradi — shu test uni darhol ushlaydi."""
+        user = self.make_user('7401', full_name='Aralash Hisob')
+        self.attempt(user)
+        self.disqualify(user, 1)
+        cases = [
+            ('search', ['Aralash', '+998908887401']),
+            ('role', ['all', 'admin', 'student', 'teacher', 'manager', 'owner']),
+            ('status', ['active', 'blocked', 'exam_blocked', 'soft_deleted',
+                        'telegram_linked', 'telegram_unlinked']),
+            ('plan', ['free', 'trial', 'premium']),
+            ('activity', ['online', 'today', 'inactive_7d', 'never_tested']),
+            ('tag', ['all', 'vip']),
+            ('risk', ['past', "o'rta", 'yuqori', 'kritik', 'high', 'all', 'nonsense',
+                      'yuqori+', 'high+', 'nonsense+']),
+        ]
+        for param, values in cases:
+            for value in values:
+                for url in (self.list_url, self.export_url):
+                    with self.subTest(param=param, value=value, url=url):
+                        res = self.client.get(url, {param: value})
+                        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
 class AdminUserRiskTierTestCase(AdminDataTestMixin, APITestCase):
     """Ro'yxatdagi `risk_tier` va `?risk=` filtri (Feature-1)."""
 
@@ -326,7 +419,12 @@ class AdminUserRiskTierTestCase(AdminDataTestMixin, APITestCase):
         user = self.make_user('5006')
         ModerationFlag.objects.create(
             flag_type=ModerationFlag.FLAG_TYPE_WARNING_THRESHOLD,
-            target_type='user',
+            # `target_type` AYNAN yozuvchi qo'yadigan qiymat
+            # (`moderation.services.maybe_flag_warning_threshold` → 'User').
+            # Avval bu yerda kichik harfli 'user' turardi va test faqat
+            # so'rovning O'ZI bilan mos kelgani uchun o'tardi — haqiqiy
+            # bayroqlar esa hisobga tushmasdi.
+            target_type='User',
             target_id=user.id,
             reason='Ko‘p ogohlantirish',
         )
@@ -338,6 +436,51 @@ class AdminUserRiskTierTestCase(AdminDataTestMixin, APITestCase):
         # 50 + 20 + 10 = 80 → 'yuqori' ning yuqori chegarasi.
         self.assertEqual(self._tier(user), 'yuqori')
 
+    def test_banned_device_alone_is_not_low_risk(self):
+        """Qurilma bloki — ro'yxat formulasining bir qismi.
+
+        Avval bu signal FAQAT `admin_user_risk_score` da bor edi: bloklangan
+        apparat izi bilan, boshqa signalsiz hisob ro'yxatda 'past' (yashil)
+        turardi va admin xavf bo'yicha saralaganda aynan shu qoidabuzarni
+        o'tkazib yuborardi.
+        """
+        user = self.make_user('5008')
+        self.assertEqual(self._tier(user), 'past')
+        DeviceFingerprint.objects.create(
+            user=user, fingerprint_hash='a' * 32, is_banned=True,
+        )
+        # +35 → "o'rta" (26..55).
+        self.assertEqual(self._tier(user), "o'rta")
+
+    def test_second_banned_device_does_not_double_count(self):
+        """Ball qurilmalar SONIGA bog'liq emas (`Exists`, `min` emas) —
+        detaldagi `+35` bilan bir xil qoida."""
+        user = self.make_user('5009')
+        for i in range(3):
+            DeviceFingerprint.objects.create(
+                user=user, fingerprint_hash=f'b{i}' * 16, is_banned=True,
+            )
+        self.assertEqual(self._tier(user), "o'rta")
+
+    def test_list_reaches_critical_with_every_cheap_signal(self):
+        """Qurilma bloki qo'shilgach ro'yxatning eng katta balli 80 emas, 100
+        (50+35+20+10 = 115, yuqori chegara bilan kesilgan) — ya'ni 'kritik'
+        endi ro'yxatda ham, `?risk=kritik` filtrida ham chiqadi."""
+        user = self.make_user('5010')
+        self.disqualify(user, 2)
+        user.exam_block_reason = 'Taqiq'
+        user.save(update_fields=['exam_block_reason'])
+        DeviceFingerprint.objects.create(
+            user=user, fingerprint_hash='c' * 32, is_banned=True,
+        )
+        ModerationFlag.objects.create(
+            flag_type=ModerationFlag.FLAG_TYPE_WARNING_THRESHOLD,
+            target_type='User', target_id=user.id, reason='Ko‘p ogohlantirish',
+        )
+        self.assertEqual(self._tier(user), 'kritik')
+        res = self.client.get(self.url, {'risk': 'kritik'})
+        self.assertEqual([r['id'] for r in res.data['results']], [user.id])
+
     def test_list_tier_matches_detail_risk_level(self):
         """Ro'yxat va "Batafsil" oynasi bir xil so'z bilan gapirishi kerak:
         arzon signallar to'plamida ikkala hisob-kitob aynan bir xil ball
@@ -347,6 +490,9 @@ class AdminUserRiskTierTestCase(AdminDataTestMixin, APITestCase):
         self.disqualify(user, 2)
         user.exam_block_reason = 'Taqiq'
         user.save(update_fields=['exam_block_reason'])
+        DeviceFingerprint.objects.create(
+            user=user, fingerprint_hash='d' * 32, is_banned=True,
+        )
         detail = self.client.get(reverse('admin-user-detail', args=[user.id]))
         self.assertEqual(self._tier(user), detail.data['risk_level'])
 
@@ -371,6 +517,93 @@ class AdminUserRiskTierTestCase(AdminDataTestMixin, APITestCase):
         # `all` va bo'sh qiymat — filtrsiz.
         self.assertEqual(ids(risk='all'), {clean.id, medium.id, high.id})
         self.assertEqual(ids(), {clean.id, medium.id, high.id})
+
+    def _tiered_users(self):
+        """Har bir darajadan bittadan hisob: past / o'rta / yuqori / kritik."""
+        clean = self.make_user('5501')
+        medium = self.make_user('5502')
+        self.disqualify(medium, 2)
+        high = self.make_user('5503')
+        self.disqualify(high, 2)
+        high.exam_block_reason = 'Taqiq'
+        high.save(update_fields=['exam_block_reason'])
+        critical = self.make_user('5504')
+        self.disqualify(critical, 2)
+        critical.exam_block_reason = 'Taqiq'
+        critical.save(update_fields=['exam_block_reason'])
+        DeviceFingerprint.objects.create(
+            user=critical, fingerprint_hash='g' * 32, is_banned=True,
+        )
+        ModerationFlag.objects.create(
+            flag_type=ModerationFlag.FLAG_TYPE_WARNING_THRESHOLD,
+            target_type='User', target_id=critical.id, reason='Ko‘p ogohlantirish',
+        )
+        return clean, medium, high, critical
+
+    def _ids(self, **params):
+        res = self.client.get(self.url, params)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return {r['id'] for r in res.data['results']}
+
+    def test_at_least_filter_covers_higher_tiers(self):
+        """`?risk=yuqori+` — "yuqori VA undan yuqori".
+
+        Panelning "Yuqori xavf" SEGMENTI shu qiymatni yuboradi. Oddiy
+        `yuqori` bilan bloklangan apparat izli 'kritik' hisoblar segmentdan
+        tushib qolardi — admin eng xavfli qoidabuzarlarni aynan shu tugmani
+        bosib ko'rmay qolardi.
+        """
+        clean, medium, high, critical = self._tiered_users()
+        self.assertEqual(self._ids(risk='yuqori+'), {high.id, critical.id})
+        self.assertEqual(
+            self._ids(risk="o'rta+"), {medium.id, high.id, critical.id},
+        )
+        # Eng quyi daraja + suffiks — hammasi (filtrsiz bilan bir xil).
+        self.assertEqual(
+            self._ids(risk='past+'), {clean.id, medium.id, high.id, critical.id},
+        )
+
+    def test_plain_tier_filter_stays_exact(self):
+        """Suffikssiz qiymat AYNAN bitta darajani beradi — ochiluvchi
+        ro'yxatdagi "Kritik xavf" varianti shunga tayanadi."""
+        clean, medium, high, critical = self._tiered_users()
+        self.assertEqual(self._ids(risk='yuqori'), {high.id})
+        self.assertEqual(self._ids(risk='kritik'), {critical.id})
+
+    def test_at_least_filter_accepts_latin_alias(self):
+        """`high+` — lotincha taxallus ham `+` bilan ishlaydi."""
+        clean, medium, high, critical = self._tiered_users()
+        self.assertEqual(self._ids(risk='high+'), {high.id, critical.id})
+
+    def test_at_least_filter_survives_plus_decoded_as_space(self):
+        """KODLANMAGAN `?risk=yuqori+` da `+` probelga aylanadi.
+
+        Busiz filtr jimgina "aynan yuqori" ga tushib qolardi va segment
+        yana 'kritik' hisoblarni tashlab ketardi — xatoning o'zi ko'rinmasdi
+        (400 emas, shunchaki kamroq qator).
+        """
+        clean, medium, high, critical = self._tiered_users()
+        self.assertEqual(self._ids(risk='yuqori '), {high.id, critical.id})
+
+    def test_at_least_filter_works_on_csv_export_too(self):
+        """Eksport queryset'ida annotatsiya yo'q — `+` shakli ham uni o'zi
+        qo'shishi kerak (aks holda `FieldError` bilan 500)."""
+        clean, medium, high, critical = self._tiered_users()
+        res = self.client.get(reverse('admin-users-export'), {'risk': 'yuqori+'})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        text = res.content.decode('utf-8-sig')
+        self.assertIn(str(high.normalized_phone), text)
+        self.assertIn(str(critical.normalized_phone), text)
+        self.assertNotIn(str(medium.normalized_phone), text)
+
+    def test_unknown_tier_with_suffix_is_ignored(self):
+        """Noma'lum qiymat + `+` — filtr e'tiborsiz qoldiriladi (buzuq
+        parametr butun ro'yxatni bo'shatib yubormasin)."""
+        clean, medium, high, critical = self._tiered_users()
+        self.assertEqual(
+            self._ids(risk='nonsense+'),
+            {clean.id, medium.id, high.id, critical.id},
+        )
 
     def test_legacy_high_alias_is_still_accepted(self):
         """Panelning avvalgi yagona qiymati (`?risk=high`) ishlashda davom
@@ -604,3 +837,131 @@ class AdminSharedDeviceAccountsTestCase(AdminDataTestMixin, APITestCase):
         self.client.force_authenticate(user=self.make_user('9300'))
         res = self.client.get(reverse('admin-shared-device-detail', args=['dev-x']))
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+# `UserSerializer` orqali HECH KIMGA (na hisobning o'ziga, na markaz
+# xodimiga) chiqmasligi kerak bo'lgan ichki maydonlar.
+#
+# `risk_score` — antifrod signali: uni hisobning O'ZI ko'rsa, qaysi harakati
+# ballni oshirganini sinab, tekshiruvni chetlab o'tishni o'rganadi. Bu endi
+# USTUN emas (migratsiya 0057 uni o'chirdi), lekin javob KALITI sifatida
+# admin endpointlarida bor — ya'ni "foydalanuvchiga chiqmasin" sharti
+# kuchida qoladi.
+# `admin_tags` — admin CRM yorliqlari ('shubhali', 'chargeback').
+# `custom_*` — admin qo'lda bergan kvota/chegirma (ichki tijorat qarori).
+INTERNAL_ONLY_USER_FIELDS = (
+    'risk_score',
+    'admin_tags',
+    'custom_practice_quota',
+    'custom_discount_percent',
+    'custom_discount_until',
+)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class InternalUserFieldsExposureTestCase(AdminDataTestMixin, APITestCase):
+    """Ichki maydonlar IKKI YO'NALISHDA tekshiriladi.
+
+    613 testli yashil suite `risk_score` sizib chiqishini ushlamagan edi,
+    chunki mavjud testlar faqat "admin endpointida maydon BOR" tomonini
+    tekshirardi. Bu yerda ikkalasi ham bor: admin ko'radigan joyda BOR,
+    foydalanuvchi va markaz xodimi ko'radigan joyda YO'Q.
+    """
+
+    def setUp(self):
+        self.admin = self.make_admin()
+        self.owner = self.make_user('6001', full_name='Markaz Egasi')
+        self.student = self.make_user('6002', full_name='O‘quvchi')
+        # Ichki maydonlarni nolinchi bo'lmagan qiymatlar bilan to'ldiramiz:
+        # serializer maydonni tashlab yuborganini "qiymat 0/bo'sh" holatidan
+        # farqlab bo'lsin.
+        self.student.admin_tags = ['shubhali']
+        self.student.custom_practice_quota = 50
+        self.student.custom_discount_percent = 40
+        self.student.custom_discount_until = timezone.now() + timedelta(days=30)
+        self.student.save()
+
+        self.center = EducationCenter.objects.create(
+            name='Registon markazi',
+            owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        CenterMembership.objects.create(
+            center=self.center,
+            user=self.student,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+
+    def _assert_clean(self, payload, where):
+        for field in INTERNAL_ONLY_USER_FIELDS:
+            self.assertNotIn(field, payload, f'{field} {where} javobiga sizib chiqdi')
+
+    # ── Sizib chiqmasligi kerak ────────────────────────────────────────────
+    def test_me_endpoint_hides_internal_fields_from_the_user_himself(self):
+        """`GET /api/me/` — istalgan o'quvchi `curl` bilan o'z antifrod
+        ballini o'qiy olardi."""
+        self.client.force_authenticate(user=self.student)
+        res = self.client.get(reverse('me'))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # Hisobning o'ziniki bo'lgan maydonlar joyida qoladi (test maydon
+        # ro'yxatini butunlay qirqib tashlagan regressiyani ham ushlasin).
+        self.assertEqual(res.data['id'], self.student.id)
+        self.assertIn('coins', res.data)
+        self._assert_clean(res.data, 'GET /api/me/')
+
+    def test_center_roster_hides_internal_fields_from_center_staff(self):
+        """Markaz egasi o'z o'quvchisining xavf balli, admin yorliqlari va
+        shaxsiy chegirmasini ko'rmaydi."""
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.get(
+            reverse('students-memberships', args=[self.center.id]),
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        rows = res.data['results'] if isinstance(res.data, dict) else res.data
+        user_payload = rows[0]['user']
+        self.assertEqual(user_payload['id'], self.student.id)
+        self._assert_clean(user_payload, 'markaz roster')
+
+    def test_serializer_field_lists_do_not_mention_internal_fields(self):
+        """Serializer darajasidagi qo'riqchi: `UserSerializer` HAR JOYDA
+        ishlatiladi (login, profil, markaz javoblari, admin amallari), ya'ni
+        maydonni ro'yxatga qaytarish bitta emas, o'nlab endpointni ochadi."""
+        for field in INTERNAL_ONLY_USER_FIELDS:
+            self.assertNotIn(field, UserSerializer.Meta.fields)
+            self.assertNotIn(field, UserSerializer.Meta.read_only_fields)
+            self.assertNotIn(field, UserSerializer().fields)
+
+    def test_risk_score_is_in_no_serializer_at_all(self):
+        """`risk_score` `AdminUserListSerializer` ga ham qo'shilmaydi:
+        `User.risk_score` USTUNI umuman yo'q (migratsiya 0057), ya'ni model
+        maydoni sifatida uni serialize qilib ham bo'lmaydi. Ro'yxatdagi
+        jonli qiymat — `risk_tier` annotatsiyasi."""
+        self.assertNotIn('risk_score', AdminUserListSerializer.Meta.fields)
+        self.assertIn('risk_tier', AdminUserListSerializer.Meta.fields)
+        model_fields = {f.name for f in User._meta.get_fields()}
+        self.assertNotIn('risk_score', model_fields)
+
+    # ── Admin ko'radigan joyda bo'lishi SHART ──────────────────────────────
+    def test_admin_list_still_exposes_internal_fields(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('admin-users-list'))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        row = next(r for r in res.data['results'] if r['id'] == self.student.id)
+        self.assertEqual(row['admin_tags'], ['shubhali'])
+        self.assertEqual(row['custom_practice_quota'], 50)
+        self.assertEqual(row['custom_discount_percent'], 40)
+        self.assertIsNotNone(row['custom_discount_until'])
+
+    def test_admin_detail_still_exposes_internal_fields(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('admin-user-detail', args=[self.student.id]))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['admin_tags'], ['shubhali'])
+        self.assertEqual(res.data['custom_practice_quota'], 50)
+        self.assertEqual(res.data['custom_discount_percent'], 40)
+        self.assertIsNotNone(res.data['custom_discount_until'])
+        # Detaldagi `risk_score` — saqlangan ustun emas, har safar qayta
+        # hisoblanadigan jonli qiymat (`compute_user_risk_profile`).
+        self.assertEqual(res.data['risk_score'], 0)
+        self.assertEqual(res.data['risk_level'], 'past')

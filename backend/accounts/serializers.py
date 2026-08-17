@@ -35,8 +35,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'current_plan_name', 'student_tier',
                   'is_active', 'avatar_url', 'created_at', 'last_seen_at',
                   'streak_count', 'longest_streak', 'last_active_date', 'badges',
-                  'coins', 'admin_tags', 'is_exam_blocked', 'exam_blocked_until',
-                  'risk_score', 'custom_practice_quota', 'custom_discount_percent', 'custom_discount_until',
+                  'coins', 'is_exam_blocked', 'exam_blocked_until',
                   'onboarding_completed', 'onboarding_grade',
                   'onboarding_subjects', 'onboarding_goal',
                   'onboarding_center_completed',
@@ -64,8 +63,7 @@ class UserSerializer(serializers.ModelSerializer):
                             'current_plan_name', 'student_tier',
                             'is_active', 'avatar_url', 'created_at', 'last_seen_at',
                             'streak_count', 'longest_streak', 'last_active_date', 'badges',
-                            'coins', 'admin_tags', 'is_exam_blocked', 'exam_blocked_until',
-                            'risk_score', 'custom_practice_quota', 'custom_discount_percent', 'custom_discount_until',
+                            'coins', 'is_exam_blocked', 'exam_blocked_until',
                             'onboarding_completed', 'onboarding_grade',
                             'onboarding_subjects', 'onboarding_goal',
                             'onboarding_center_completed',
@@ -214,6 +212,14 @@ class UserSerializer(serializers.ModelSerializer):
 # maydonlar. Ro'yxatda ular bo'lmagani uchun admin har bir savolga ("nega
 # bloklangan?", "o'zi o'chirganmi yoki bloklanganmi?") javob topish uchun
 # "Batafsil" oynasini qayta-qayta ochishga majbur edi.
+#
+# `risk_score` bu ro'yxatda ATAYLAB YO'Q. U ikki sababga ko'ra hech bir
+# serializerga qaytmaydi: (1) antifrod balli maxfiy signal — hisobning o'zi
+# uni ko'rsa, qaysi harakati ballni oshirganini sinab, tekshiruvni chetlab
+# o'tishni o'rganadi; (2) `User.risk_score` USTUNI umuman mavjud emas
+# (migratsiya 0057 uni o'chirdi) — ball hech qachon saqlanmaydi. Jonli qiymat
+# ro'yxatda `risk_tier` (`annotate_admin_risk` SQL annotatsiyasi), "Batafsil"
+# oynasida esa `accounts.views.compute_user_risk_profile` orqali keladi.
 ADMIN_ONLY_USER_FIELDS = [
     # Soft-delete belgisi. Busiz o'z hisobini O'CHIRGAN foydalanuvchi
     # (30 kunlik grace) admin BLOKLAGAN foydalanuvchidan farq qilmasdi:
@@ -225,6 +231,18 @@ ADMIN_ONLY_USER_FIELDS = [
     # Blok va imtihon taqiqi sabablari — jadvalda ko'rinsin (avval faqat
     # `admin_user_detail` javobiga qo'lda qo'shilardi).
     'block_reason', 'blocked_until', 'exam_block_reason',
+    # Admin CRM teglari ('shubhali', 'chargeback', 'vip'). Bularni platforma
+    # admini FOYDALANUVCHI HAQIDA yozadi, foydalanuvchi uchun emas: hisobning
+    # o'zi `GET /api/me/` da o'ziga qo'yilgan yorliqni ko'rmasligi kerak,
+    # markaz xodimi esa umuman bu qatlamga aloqador emas. Panelda faqat admin
+    # jadvali o'qiydi (`AdminDashboard` → `row.adminTags`).
+    'admin_tags',
+    # Shaxsiy AI kvotasi va chegirmasi — admin qo'lda beradigan ichki
+    # tijorat vositasi (`admin_user_set_quota`). Hech bir o'quvchi
+    # ekranida ishlatilmaydi (backendda ham hech qayerda o'qilmaydi), lekin
+    # markaz egasiga a'zolar ro'yxatida "bu o'quvchiga 40% chegirma
+    # berilgan" degan ma'lumotni ochib berardi.
+    'custom_practice_quota', 'custom_discount_percent', 'custom_discount_until',
 ]
 
 
