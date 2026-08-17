@@ -147,6 +147,12 @@ services:
       - static_data:/app/staticfiles
       # Yuklangan media (Cloudinary o'chiq bo'lganda ishlatiladi).
       - media_data:/app/media
+      # Proktoring dalillari (diskvalifikatsiya kadrlari, 90 kun saqlanadi).
+      # DIQQAT: bu volume nginx xizmatiga ATAYIN ULANMAGAN — `/media/` bloki
+      # fayllarni autentifikatsiyasiz beradi, dalil rasmi esa faqat
+      # `/api/attempts/admin/evidence/...` orqali, platforma admini uchun
+      # ochiq bo'lishi kerak. Nginx'ga qo'shmang.
+      - evidence_data:/app/evidence_media
     # Port ATAYIN publish qilinmagan — backend faqat Docker tarmog'i ichida,
     # tashqariga yagona kirish nuqtasi nginx.
     expose:
@@ -169,6 +175,10 @@ services:
     volumes:
       # Task'lar ham media yozadi (sertifikat, hisobot rasmlari).
       - media_data:/app/media
+      # `cleanup_expired_evidence` muddati o'tgan dalil FAYLLARINI o'chiradi —
+      # worker'da bu volume bo'lmasa faqat DB qatorlari o'chib, rasmlar diskda
+      # abadiy qolardi (nginx'ga esa baribir ulanmaydi).
+      - evidence_data:/app/evidence_media
 
   # ── Celery beat (davriy jadval) ───────────────────────────────────────────
   # FAQAT BITTA nusxada ishlashi kerak — aks holda davriy task'lar (olimpiada
@@ -230,3 +240,6 @@ volumes:
   redis_data:
   static_data:
   media_data:
+  # Proktoring dalillari. FAQAT `backend` va `celery-worker` ga ulanadi —
+  # nginx bu volume'ni ko'rmasligi kerak (yuqoridagi izoh).
+  evidence_data:

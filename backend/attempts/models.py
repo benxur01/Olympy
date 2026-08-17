@@ -5,6 +5,8 @@ from django.db import models
 
 from olympiads.models import Olympiad
 
+from .storage import evidence_storage
+
 
 class TestAttempt(models.Model):
     """One submission of an olympiad by a student.
@@ -130,15 +132,25 @@ class TestSession(models.Model):
     paused_seconds = models.PositiveIntegerField(default=0)
     # Webkamera proktoring rozilikni kuzatish. Olimpiadada
     # `camera_proctoring_enabled` yoqilgan bo'lsa, student imtihonni
-    # boshlashdan oldin rozilik ekranida tasdiqlaydi. Bu yerda FAQAT boolean
-    # rozilik va vaqt tamg'asi saqlanadi — hech qanday video/rasm/audio EMAS.
+    # boshlashdan oldin rozilik ekranida tasdiqlaydi. Shu QATORDA faqat
+    # boolean rozilik va vaqt tamg'asi turadi.
+    #
+    # DIQQAT (avval "hech qanday rasm saqlanmaydi" deb yozilgan edi — endi bu
+    # NOTO'G'RI): jonli oqim hamon saqlanmaydi, lekin cheating bayrog'i
+    # qo'yilgan va diskvalifikatsiya tasdiqlangan LAHZADA bitta kadr
+    # `EvidenceSnapshot` sifatida yozib qoldiriladi (appellyatsiya va qarorni
+    # qayta ko'rish uchun). Bu shaxsiy/biometrik ma'lumot: yopiq storage'da
+    # (`attempts/storage.py`), faqat platforma admini uchun ochiq va
+    # `EVIDENCE_RETENTION_DAYS` (90 kun) dan keyin `cleanup_expired_evidence`
+    # bilan butunlay o'chiriladi. Batafsil — `EvidenceSnapshot` docstringi.
     camera_consent_given = models.BooleanField(default=False)
     camera_consent_at = models.DateTimeField(null=True, blank=True)
     # Ovoz (mikrofon) proktoring rozilikni kuzatish. Olimpiadada
     # `voice_proctoring_enabled` yoqilgan bo'lsa, student imtihonni
     # boshlashdan oldin rozilik ekranida tasdiqlaydi. Kamera roziligidan
     # MUSTAQIL. Bu yerda FAQAT boolean rozilik va vaqt tamg'asi saqlanadi —
-    # hech qanday audio/ovoz EMAS.
+    # hech qanday audio/ovoz saqlanmaydi (dalil kadrida ham audio yo'q, faqat
+    # `EvidenceSnapshot.metadata` dagi son — ovoz DARAJASI).
     microphone_consent_given = models.BooleanField(default=False)
     microphone_consent_at = models.DateTimeField(null=True, blank=True)
 
@@ -161,6 +173,75 @@ class TestSession(models.Model):
 
     def __str__(self):
         return f'session:{self.user_id}@{self.olympiad_id}'
+
+
+class EvidenceSnapshot(models.Model):
+    """Cheating bayrog'i/diskvalifikatsiya LAHZASIDAGI proktoring kadri.
+
+    Nima uchun: shu paytgacha jonli kadr faqat Redis keshida, 20 soniyalik TTL
+    bilan turardi (`session_live_frame`). Diskvalifikatsiyadan keyin "nega?"
+    degan savolga faqat matn (`TestSession.cheating_reason`) javob berardi —
+    appellyatsiyada ham, qarorni ikkinchi menejer qayta ko'rganda ham hech
+    qanday dalil qolmasdi.
+
+    Qamrov ATAYIN tor: kadr FAQAT ikki lahzada olinadi (`trigger`) — bayroq
+    qo'yilganda va diskvalifikatsiya yakunlanganda. Davriy (har 30-60 soniyada)
+    surat olish YO'Q: u imtihonning butun davomini yozib olishga aylanardi.
+
+    Shaxsiy ma'lumot rejimi:
+      * fayllar `attempts/storage.py` dagi yopiq storage'da — `MEDIA_ROOT`/
+        Cloudinary'da EMAS, ya'ni nginx'ning autentifikatsiyasiz `/media/`
+        bloki ularga umuman yeta olmaydi;
+      * yagona kirish nuqtasi — `views_evidence.admin_evidence_image`
+        (faqat platforma admini);
+      * `EVIDENCE_RETENTION_DAYS` (90 kun) dan keyin fayl ham, qator ham
+        `attempts.tasks.cleanup_expired_evidence` bilan o'chiriladi.
+
+    Kadr YO'Q bo'lishi ham normal holat (kesh TTL'i 20 soniya): kamera o'chiq,
+    tarmoq sekin yoki o'quvchi umuman kadr yubormagan bo'lsa yozuv yaratilmaydi
+    — batafsil `views.capture_evidence_snapshot`.
+    """
+    TRIGGER_FLAGGED = 'flagged'
+    TRIGGER_DISQUALIFIED = 'disqualified'
+    TRIGGER_CHOICES = [
+        (TRIGGER_FLAGGED, 'Bayroq qo\'yildi (tekshiruv kutilmoqda)'),
+        (TRIGGER_DISQUALIFIED, 'Diskvalifikatsiya tasdiqlandi'),
+    ]
+
+    session = models.ForeignKey(
+        TestSession,
+        on_delete=models.CASCADE,
+        related_name='evidence_snapshots',
+    )
+    # Kamera kadri (JPEG). Bo'sh bo'lishi mumkin — ekran kadri bor-u, kamera
+    # kadri yo'q holat (kamera roziligi berilmagan) haqiqiy stsenariy.
+    image = models.FileField(
+        upload_to='camera/%Y/%m/%d/', storage=evidence_storage, blank=True,
+    )
+    # Ekran kadri (screen share) — kamera kadridan MUSTAQIL: ko'p hollarda
+    # umuman bo'lmaydi (o'quvchi ekranini ulashmagan).
+    screen_image = models.FileField(
+        upload_to='screen/%Y/%m/%d/', storage=evidence_storage,
+        null=True, blank=True,
+    )
+    captured_at = models.DateTimeField(auto_now_add=True)
+    trigger = models.CharField(max_length=20, choices=TRIGGER_CHOICES)
+    # Kadr bilan BIR VAQTDA kelgan signallar: audio_level, face_detected,
+    # speech_detected, app_switched, tab_escapes, is_in_background va kadrning
+    # kesh yoshini ko'rsatuvchi `frame_updated_at`. Rasm bo'lmasa ham menejerga
+    # kontekst beradi, shu sababli alohida ustunlar emas, erkin JSON.
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-captured_at']
+        indexes = [
+            # Retention sweep (`captured_at < cutoff`) butun jadvalni
+            # skanerlamasin — u har kuni ishlaydi va jadval faqat o'sadi.
+            models.Index(fields=['captured_at'], name='evidence_captured_idx'),
+        ]
+
+    def __str__(self):
+        return f'evidence:{self.session_id} [{self.trigger}]'
 
 
 class CodeSubmission(models.Model):

@@ -29,6 +29,9 @@ db.sqlite3
 db.sqlite3-journal
 media/
 staticfiles/
+# Lokal dalil rasmlari image ichiga ko'chirilmasin (shaxsiy ma'lumot; konteynerda
+# katalog `evidence_data` volume'idan keladi).
+evidence_media/
 *.log
 scratch/
 
