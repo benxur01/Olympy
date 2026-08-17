@@ -117,7 +117,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   // (≈5 daqiqa) so'raydi. Foydalanuvchi sahifadan chiqib ketsa polling
   // to'xtashi kerak — aks holda Gemini'ga so'rov ketaveradi.
   const aiAbort = useAbortOnUnmount();
-  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[], section:'', audioUrl:'', audioTranscript:'', passageText:'' });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   // saveQuestion tugmasi so'rov davomida disabled bo'lishi uchun — avval
   // hech qanday busy holat yo'q edi, ikki marta bosilsa dublikat savol
@@ -697,7 +697,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   // Bo'sh joy reset qiymati — saqlashdan keyin va bekor qilishda ishlatiladi.
-  const _resetQ = () => ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+  const _resetQ = () => ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[], section:'', audioUrl:'', audioTranscript:'', passageText:'' });
 
   // Forma holatidan backend payload quradi va front validatsiyasini bajaradi.
   // Xatolik bo'lsa toast ko'rsatib null qaytaradi (saqlash to'xtaydi).
@@ -709,6 +709,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       score: newQ.score,
       difficulty: _diffToApi(newQ.level, newQ.subject),
       question_type: backendType,
+      section: newQ.section || '',
+      audio_url: newQ.audioUrl || '',
+      audio_transcript: newQ.audioTranscript || '',
+      passage_text: newQ.passageText || '',
     };
     if (backendType === 'code') {
       return { ...base, programming_language: newQ.programmingLanguage,
@@ -1356,9 +1360,59 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <select className="input-field" value={newQ.level} onChange={e => setNewQ({...newQ, level: e.target.value})}>
                 {(newQ.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
               </select></div>
+            <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Bo'lim (IELTS/CEFR)</label>
+              <select className="input-field" value={newQ.section} onChange={e => setNewQ({...newQ, section: e.target.value})}>
+                <option value="">Umumiy</option>
+                <option value="listening">🎧 Listening (Tinglash)</option>
+                <option value="reading">📖 Reading (O'qish)</option>
+                <option value="writing">✍️ Writing (Yozish)</option>
+                <option value="speaking">🎙️ Speaking (Gapirish)</option>
+              </select></div>
             <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Ball</label>
               <input type="number" className="input-field" value={newQ.score} onChange={e => setNewQ({...newQ, score: +e.target.value})} /></div>
           </div>
+
+          {/* Listening Audio sozlamalari */}
+          {(newQ.section === 'listening' || newQ.audioUrl) && (
+            <div className="space-y-3 p-4 rounded-xl border border-edge bg-surface-1 mb-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-accent">
+                <Icon name="volume" size={14} /> Listening Audio sozlamalari
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1 font-medium">Audio URL / Havola (MP3)</label>
+                <input
+                  className="input-field"
+                  placeholder="https://.../ielts_listening_audio.mp3"
+                  value={newQ.audioUrl}
+                  onChange={e => setNewQ({...newQ, audioUrl: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1 font-medium">Audio transkripti (Natijalar tahlili uchun)</label>
+                <textarea
+                  className="input-field resize-y min-h-[80px]"
+                  placeholder="Audio matn transkripti..."
+                  value={newQ.audioTranscript}
+                  onChange={e => setNewQ({...newQ, audioTranscript: e.target.value})}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Reading / Writing Passage Matni */}
+          {(newQ.section === 'reading' || newQ.section === 'writing' || newQ.passageText) && (
+            <div className="space-y-2 p-4 rounded-xl border border-edge bg-surface-1 mb-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-accent">
+                <Icon name="document" size={14} /> {newQ.section === 'writing' ? 'Writing topshiriq ko\'rsatmasi' : 'Reading Passage Matni (Split-Screen uchun)'}
+              </div>
+              <textarea
+                className="input-field resize-y min-h-[120px]"
+                placeholder="Reading matnini yoki insho mavzusini shu yerga kiriting..."
+                value={newQ.passageText}
+                onChange={e => setNewQ({...newQ, passageText: e.target.value})}
+              />
+            </div>
+          )}
           {(newQ.type === "Ko'p tanlovli") && (
             <div>
               <label className="block text-xs text-text-secondary mb-2 font-medium">Javob variantlari (to'g'risini belgilang)</label>

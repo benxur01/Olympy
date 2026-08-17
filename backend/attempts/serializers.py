@@ -19,10 +19,12 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'user_name', 'avatar_url', 'olympiad',
                   'olympiad_title', 'subject', 'answers',
                   'score', 'correct_count', 'wrong_count', 'total_questions',
-                  'time_spent', 'rank', 'disqualified', 'submitted_at']
+                  'time_spent', 'rank', 'disqualified', 'ielts_band', 'cefr_level',
+                  'section_scores', 'submitted_at']
         read_only_fields = ['id', 'user', 'user_name', 'avatar_url',
                             'olympiad_title', 'subject', 'rank',
-                            'disqualified', 'submitted_at']
+                            'disqualified', 'ielts_band', 'cefr_level',
+                            'section_scores', 'submitted_at']
 
     def get_user_name(self, obj):
         user = getattr(obj, 'user', None)

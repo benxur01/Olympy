@@ -572,6 +572,9 @@ def submit_attempt(request):
                     total_questions=total,
                     time_spent=time_spent,
                     rank=None,
+                    ielts_band=scored.get('ielts_band'),
+                    cefr_level=scored.get('cefr_level', '') or '',
+                    section_scores=scored.get('section_scores', {}) or {},
                 )
         except IntegrityError:
             # Race condition: bir vaqtda ikkita so'rov yuborilsa yoki bir
