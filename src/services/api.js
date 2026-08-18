@@ -2258,6 +2258,35 @@ export const OlympyApi = {
   // boolean + vaqt tamg'asi yoziladi (audio EMAS).
   microphoneConsent: (payload, token) => request('/api/attempts/microphone-consent/', { method: 'POST', body: payload, token }),
   pingTestSession: (olympiadId, answeredCount, tabEscapes, token, deviceId) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes, device_id: deviceId }, token }),
+  // IELTS/CEFR Speaking javobi — MediaRecorder blob'i multipart bilan
+  // yuklanadi. Javob: 201 { saved, question, answer_ref }. Fayl YOPIQ
+  // storage'da (ovoz — shaxsiy ma'lumot, EvidenceSnapshot darajasida), shu
+  // sababli URL qaytmaydi: `answer_ref` faqat "yozuv mavjud" markeri va u
+  // javob qiymati sifatida submit'ga ketadi.
+  // FormData bo'lgani uchun `request` Content-Type qo'ymaydi (boundary'ni
+  // brauzer yozadi) va timeout ham qo'yilmaydi — uploadMyAvatar bilan bir xil.
+  uploadSpeakingAnswer: (olympiadId, questionId, audioBlob, token) => {
+    const fd = new FormData();
+    fd.append('olympiad', String(olympiadId));
+    fd.append('question', String(questionId));
+    fd.append('audio', audioBlob, 'speaking-answer.webm');
+    return request('/api/attempts/speaking-answer/', { method: 'POST', body: fd, token });
+  },
+  // Listening ijro hisobi serverda — F5 bilan chetlab o'tib bo'lmaydi.
+  // Ikkala javob ham: { play_count, allowed }.
+  // POST — yangi ijro qayd qilinadi, hisob BIR ga oshadi.
+  registerListeningPlay: (olympiadId, questionId, token) => request('/api/attempts/listening-play/', {
+    method: 'POST',
+    body: { olympiad: olympiadId, question: questionId },
+    token,
+  }),
+  // GET — hisob OSHMAYDI, faqat joriy holat. Pleyer mount bo'lganda shu
+  // chaqiriladi: POST bo'lganda o'quvchi hech narsa bosmasdan turib yagona
+  // ijro huquqini yo'qotardi.
+  getListeningPlayState: (olympiadId, questionId, token) => {
+    const qs = new URLSearchParams({ olympiad: String(olympiadId), question: String(questionId) });
+    return request(`/api/attempts/listening-play/?${qs.toString()}`, { token });
+  },
   // Jonli Kamera va Mikrofon Proktoringi (Live Video & Audio feed)
   sendLiveProctorFrame: (sessionId, data, token) => request(`/api/attempts/sessions/${sessionId}/live-frame/`, { method: 'POST', body: data, token, timeoutMs: 4000 }),
   getLiveProctorFrame: (sessionId, token) => request(`/api/attempts/sessions/${sessionId}/live-frame/`, { token, timeoutMs: 5000 }),
@@ -2272,6 +2301,42 @@ export const OlympyApi = {
   getAttempt: (attemptId, token) => request(`/api/attempts/${attemptId}/`, { token }),
   // Feature 4: insho uchun on-demand chuqur AI tahlili (Plus tarifi).
   getEssayAIFeedback: (attemptId, questionId, token) => request(`/api/attempts/${attemptId}/essay/${questionId}/ai-feedback/`, { token }),
+  // Speaking javob audiosi (baholovchi tinglaydi). `audioPath` — backend
+  // bergan `audio_url` (masalan `/api/attempts/12/speaking-answer/34/`), hech
+  // qachon `/media/` emas: yozuv yopiq storage'da va endpoint har so'rovda
+  // ruxsatni qayta tekshiradi.
+  //
+  // NEGA `request()` EMAS: endpoint JSON emas, `audio/webm` qaytaradi.
+  // NEGA `<audio src="...">` EMAS: brauzer media elementining so'roviga
+  // Authorization headerini QO'SHMAYDI — `<img>` bilan bir xil cheklov
+  // (`getAdminEvidenceImageUrl` izohiga qarang), ya'ni yagona kanal cookie
+  // bo'lib qolardi. Cookie esa bu deploy'da ISHONCHLI EMAS: production'da API
+  // sahifaga nisbatan cross-site (`_apiIsCrossSite()` — aynan shu sabab
+  // `ALLOW_TOKEN_STORAGE` ni yoqadi) va yuqoridagi izohda yozilganidek Safari
+  // ITP uchinchi tomon cookie'sini UMUMAN saqlamaydi. Ustiga impersonatsiya
+  // tokeni cookie'dan ustun turadi (`request()` ga qarang) — cookie'ga tayangan
+  // player "foydalanuvchi sifatida ko'rish" rejimida ADMIN nomidan so'ragan
+  // bo'lardi. Shu sababli fetch → blob, mavjud Bearer mexanizmi bilan.
+  //
+  // MUHIM: qaytgan `blob:` URL'ni CHAQIRUVCHI `URL.revokeObjectURL` bilan
+  // bo'shatishi shart (oyna yopilganda) — aks holda yozuv sahifa yopilgunicha
+  // xotirada qoladi.
+  getSpeakingAnswerBlobUrl: async (audioPath, token) => {
+    const res = await fetch(makeAssetUrl(audioPath), {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const msg = res.status === 404
+        ? "Ovozli javob saqlanmagan yoki fayli o'chirilgan"
+        : (res.status === 403 || res.status === 401)
+          ? "Ovozli javobni tinglash uchun ruxsat yo'q"
+          : "Ovozli javobni yuklab bo'lmadi";
+      throw new ApiError(msg, { status: res.status });
+    }
+    return URL.createObjectURL(await res.blob());
+  },
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
   getMyStats: (token) => request('/api/results/me/stats/', { token }),
   // Backend shakli: { results: [...], pagination: {...}, header: {...}|null }.

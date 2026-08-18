@@ -747,6 +747,21 @@ const mapApiOlympiad = (o) => {
     centerId: o.center != null ? String(o.center) : null,
     centerName: o.center_name || null,
     eventType: o.event_type || o.eventType || 'competition',
+    // IELTS/CEFR imtihon formati. Bu maydon ilgari ko'chirilmasdi va natijada
+    // imtihon ekranidagi `olympiad?.exam_format || olympiad?.examFormat` HAR
+    // DOIM undefined bo'lardi: haqiqiy IELTS listening savoli ham "CEFR — 2
+    // marta ijro" deb ko'rsatilib, birinchi ijrodan keyin ikkinchisini
+    // avtomatik urinardi. Natija ekrani esa formatni band/CEFR darajasidan
+    // to'g'ri chiqarardi — ikki ekran bir imtihonni turlicha ko'rsatardi.
+    // Serializer maydonni bermagan holat uchun fan nomidan xulosa qilamiz
+    // (backend ham aynan shu qoidani ishlatadi). Solishtiruv KICHIK HARFDA:
+    // `Olympiad.save()` subject'ni `.strip().capitalize()` qiladi, ya'ni API
+    // doim "Ielts mock" qaytaradi va "IELTS Mock" bilan hech qachon mos
+    // kelmasdi — fallback jimgina 'standard' berardi.
+    examFormat: o.exam_format || o.examFormat || (() => {
+      const subj = String(o.subject || '').trim().toLowerCase();
+      return subj === 'ielts mock' ? 'ielts' : subj === 'cefr mock' ? 'cefr' : 'standard';
+    })(),
     title: o.title,
     subject: o.subject,
     testLevel: o.test_level || o.testLevel || '',

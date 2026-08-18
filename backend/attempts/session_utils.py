@@ -1,3 +1,4 @@
+import math
 import random
 from datetime import timedelta
 
@@ -285,6 +286,30 @@ def calculate_cefr_level(score_percentage):
     return 'No Certificate'
 
 
+def resolve_exam_format(olympiad):
+    """Olimpiadaning haqiqiy imtihon formatini qaytaradi: standard/ielts/cefr.
+
+    `Olympiad.exam_format` yangi olimpiadalarda `olympiads.serializers` orqali
+    fan nomidan avtomatik to'ldiriladi, ammo eski (yoki admin panelidan
+    yaratilgan) yozuvlarda 'standard' bo'lib qolishi mumkin — shu sababli fan
+    nomi bo'yicha ham aniqlaymiz.
+
+    Solishtirish KICHIK harfda: `Olympiad.save()` fan nomini
+    `.strip().capitalize()` bilan normalize qiladi, ya'ni bazada "IELTS Mock"
+    emas, "Ielts mock" yotadi. Avvalgi aniq-satr solishtiruvi shu sababli
+    saqlangan olimpiadada hech qachon ishlamasdi.
+    """
+    exam_format = getattr(olympiad, 'exam_format', 'standard') or 'standard'
+    if exam_format != 'standard':
+        return exam_format
+    subj = (getattr(olympiad, 'subject', '') or '').strip().lower()
+    if subj in ('cefr mock', 'cefr'):
+        return 'cefr'
+    if subj in ('ielts mock', 'ielts'):
+        return 'ielts'
+    return exam_format
+
+
 def score_session_answers(session, olympiad, answers, attempt=None):
     """Sessiya javoblarini baholaydi.
 
@@ -473,13 +498,7 @@ def score_session_answers(session, olympiad, answers, attempt=None):
     score = round((earned_score / max_possible) * 100) if max_possible else 0
 
     # ─── IELTS va CEFR hisoblash ──────────────────────────────────────────
-    exam_format = getattr(olympiad, 'exam_format', 'standard') or 'standard'
-    subj = getattr(olympiad, 'subject', '') or ''
-    if exam_format == 'standard':
-        if subj in ('CEFR Mock', 'CEFR'):
-            exam_format = 'cefr'
-        elif subj in ('IELTS Mock', 'IELTS'):
-            exam_format = 'ielts'
+    exam_format = resolve_exam_format(olympiad)
     section_scores = {}
     ielts_band = None
     cefr_level = None
@@ -496,8 +515,13 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         if section_scores:
             bands = list(section_scores.values())
             avg_band = sum(bands) / len(bands)
-            # IELTS yaxlitlash: 0.25 -> 0.5, 0.75 -> 1.0
-            ielts_band = round(avg_band * 2) / 2
+            # IELTS yaxlitlash: 0.25 -> 0.5, 0.75 -> 1.0 (rasmiy qoida —
+            # yarim band chegarasida HAR DOIM yuqoriga).
+            # `round()` ISHLATILMAYDI: Python banker's rounding qiladi va
+            # juft songa yaxlitlaydi — `round(6.25 * 2) / 2` = 6.0 (kerak 6.5),
+            # `round(7.25 * 2) / 2` = 7.0 (kerak 7.5). `math.floor(x + 0.5)`
+            # esa chegarada doim yuqoriga yaxlitlaydi.
+            ielts_band = math.floor(avg_band * 2 + 0.5) / 2
         else:
             ielts_band = calculate_ielts_band(correct, total)
         # IELTS band bo'yicha mos CEFR darajasini ham belgilaymiz

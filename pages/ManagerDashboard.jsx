@@ -115,6 +115,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [essayOnlyUngraded, setEssayOnlyUngraded] = React.useState(true);
   const [essayDrafts, setEssayDrafts] = React.useState({}); // { 'attemptId:questionId': {score, feedback} }
   const [essaySavingKey, setEssaySavingKey] = React.useState('');
+  // Speaking javob audiolari: { 'attemptId:questionId': { loading } | { url } | { error } }.
+  // Audio himoyalangan endpointdan `blob:` URL sifatida keladi
+  // (`getSpeakingAnswerBlobUrl` izohiga qarang) — xom `audio_url` ni
+  // to'g'ridan-to'g'ri `<audio src>` ga berib bo'lmaydi.
+  const [speakingAudio, setSpeakingAudio] = React.useState({});
   // Natijalar → "Ko'rish" modali: tadbir ishtirokchilari natijalari jadvali.
   // page_size=200 bilan yuklanadi; 200+ bo'lsa oddiy "Keyingisi →" pagination.
   const [resultsModal, setResultsModal] = React.useState({
@@ -350,6 +355,60 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       })
       .finally(() => setEssayLoading(false));
   };
+
+  // Speaking javob audiolarini yuklash. `useApiData` bu yerda ishlamaydi:
+  // har bir yozuv uchun alohida so'rov ketadi va javob JSON emas, `blob:` URL
+  // (AdminDashboard'dagi dalil kadrlari bilan bir xil naqsh).
+  //
+  // Effekt AYNAN audio manbalari ro'yxatiga bog'lanadi, `essayData` ga EMAS:
+  // baho saqlanganda `saveEssayGrade` yangi massiv yasaydi, audio manbalari esa
+  // o'zgarmaydi. `essayData` ga bog'lansak, har baholashdan keyin barcha
+  // yozuvlar qaytadan yuklanar va o'sha payt tinglanayotgan player'ning
+  // `blob:` manzili bo'shatilib, ijro uzilib qolardi.
+  const speakingSources = React.useMemo(() => (
+    (Array.isArray(essayData) ? essayData : [])
+      .filter(e => e.is_audio_answer && e.audio_url)
+      .map(e => ({ key: `${e.attempt_id}:${e.question_id}`, path: e.audio_url }))
+  ), [essayData]);
+  const speakingSourcesKey = speakingSources.map(s => `${s.key}|${s.path}`).join(',');
+  const speakingSourcesRef = React.useRef(speakingSources);
+  speakingSourcesRef.current = speakingSources;
+  // Effektning cleanup'i — blob'larni bo'shatadigan YAGONA joy: modal
+  // yopilganda ham, ro'yxat qayta yuklanganda ham ishlaydi. `setSpeakingAudio({})`
+  // ga tayanib bo'lmaydi — state tozalansa `blob:` manzil yo'qoladi, brauzerdagi
+  // nusxa esa sahifa yopilgunicha xotirada qolardi.
+  React.useEffect(() => {
+    const wanted = speakingSourcesRef.current;
+    if (wanted.length === 0) {
+      setSpeakingAudio({});
+      return undefined;
+    }
+    setSpeakingAudio(Object.fromEntries(wanted.map(w => [w.key, { loading: true }])));
+    let cancelled = false;
+    const created = [];
+    wanted.forEach(({ key, path }) => {
+      OlympyApi.getSpeakingAnswerBlobUrl(path, OlympyApi.getToken())
+        .then(url => {
+          // Javob cleanup'dan KEYIN keldi: URL `created` ga tushmagan, ya'ni
+          // uni shu yerda bo'shatmasak hech kim bo'shatmaydi.
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          created.push(url);
+          setSpeakingAudio(prev => ({ ...prev, [key]: { url } }));
+        })
+        .catch(err => {
+          if (cancelled) return;
+          console.warn('getSpeakingAnswerBlobUrl failed:', err);
+          setSpeakingAudio(prev => ({
+            ...prev,
+            [key]: { error: OlympyApi.toUserMessage?.(err) || "Ovozli javobni yuklab bo'lmadi" },
+          }));
+        });
+    });
+    return () => {
+      cancelled = true;
+      created.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [speakingSourcesKey]);
 
   // Essay baholash modalini ochish.
   const openEssayGrading = (olympiad) => {
@@ -2401,6 +2460,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   : (entry.score !== null && entry.score !== undefined ? String(entry.score) : '');
                 const feedbackVal = draft.feedback !== undefined ? draft.feedback : (entry.feedback || '');
                 const saving = essaySavingKey === key;
+                const audioState = speakingAudio[key];
                 return (
                   <div key={key} className={`glass rounded-xl p-4 ${entry.graded ? 'border-l-4 border-l-success' : ''}`}>
                     <div className="flex items-start justify-between gap-3">
@@ -2415,10 +2475,35 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                       )}
                     </div>
                     <div className="mt-3">
-                      <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">O'quvchi javobi</div>
-                      <div className="text-xs text-text-primary bg-surface-2 rounded-xl p-3 whitespace-pre-wrap break-words border border-edge">
-                        {entry.answer_text || "(bo'sh)"}
+                      <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">
+                        {entry.is_audio_answer ? "O'quvchi ovozli javobi" : "O'quvchi javobi"}
                       </div>
+                      {/* Speaking javobi. `answer_text` bu yerda faqat
+                          "speaking-answer:<qid>" markeri — o'qiladigan matn ham,
+                          fayl manzili ham EMAS. Player himoyalangan
+                          `entry.audio_url` dan olingan `blob:` URL bilan
+                          quriladi (yuqoridagi effekt). */}
+                      {entry.is_audio_answer ? (
+                        !entry.audio_url ? (
+                          <div className="text-xs text-text-secondary bg-surface-2 rounded-xl p-3 border border-edge">
+                            Ovoz yozuvi topilmadi (o'quvchi javob yozmagan).
+                          </div>
+                        ) : audioState?.loading ? (
+                          <div className="flex items-center gap-2 text-xs text-text-secondary bg-surface-2 rounded-xl p-3 border border-edge">
+                            <Spinner size={14} className="text-accent" /> Ovozli javob yuklanmoqda...
+                          </div>
+                        ) : audioState?.error ? (
+                          <div className="flex items-center gap-1.5 text-xs text-error bg-wash rounded-xl p-3 border border-error/40">
+                            <Icon name="info" size={13} /> {audioState.error}
+                          </div>
+                        ) : audioState?.url ? (
+                          <audio controls src={audioState.url} className="w-full" />
+                        ) : null
+                      ) : (
+                        <div className="text-xs text-text-primary bg-surface-2 rounded-xl p-3 whitespace-pre-wrap break-words border border-edge">
+                          {entry.answer_text || "(bo'sh)"}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-2">
                       <div>

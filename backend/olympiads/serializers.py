@@ -134,13 +134,24 @@ class OlympiadSerializer(serializers.ModelSerializer):
         return cleaned
 
     def validate(self, attrs):
-        subject = (attrs.get('subject') or (self.instance.subject if self.instance else '')).strip()
-        if subject in ('CEFR Mock', 'CEFR'):
+        # Solishtirish KICHIK harfda: `Olympiad.save()` fan nomini
+        # `.strip().capitalize()` bilan normalize qiladi, ya'ni bazada
+        # "IELTS Mock" emas, "Ielts mock" yotadi. Aniq-satr solishtiruvida
+        # `subject` qayta yuborilmaydigan HAR QANDAY PATCH (davomiylik,
+        # proktoring va h.k.) fallback sifatida instance'dagi "Ielts mock" ni
+        # o'qib, tuple'ga mos kelmasdi — `exam_format`/`test_level` o'z-o'zini
+        # tuzatishi o'sha yozuv uchun abadiy ishlamay qolardi.
+        # Bir xil naqsh: `attempts.session_utils.resolve_exam_format` va
+        # `questions.serializers.IELTS_CEFR_SUBJECTS`.
+        subject = (
+            attrs.get('subject') or (self.instance.subject if self.instance else '')
+        ).strip().lower()
+        if subject in ('cefr mock', 'cefr'):
             if not attrs.get('exam_format') or attrs.get('exam_format') == Olympiad.EXAM_FORMAT_STANDARD:
                 attrs['exam_format'] = Olympiad.EXAM_FORMAT_CEFR
             if not attrs.get('test_level'):
                 attrs['test_level'] = 'Multi-level'
-        elif subject in ('IELTS Mock', 'IELTS'):
+        elif subject in ('ielts mock', 'ielts'):
             if not attrs.get('exam_format') or attrs.get('exam_format') == Olympiad.EXAM_FORMAT_STANDARD:
                 attrs['exam_format'] = Olympiad.EXAM_FORMAT_IELTS
             if not attrs.get('test_level'):

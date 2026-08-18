@@ -418,8 +418,17 @@ def _recompute_attempt_score_for_submission(submission_id):
         attempt.correct_count = scored['correct']
         attempt.wrong_count = scored['wrong']
         attempt.total_questions = scored['total']
+        # Ball o'zgargani IELTS band / CEFR daraja va bo'limlar kesimini ham
+        # eskirtiradi — ular ham qayta yoziladi (aks holda submit paytidagi,
+        # kod savoli hisobga olinmagan qiymat qolib ketardi). Standart
+        # olimpiadada `ielts_band` None bo'lib qaytadi — submit oqimi bilan
+        # bir xil.
+        attempt.ielts_band = scored.get('ielts_band')
+        attempt.cefr_level = scored.get('cefr_level', '') or ''
+        attempt.section_scores = scored.get('section_scores', {}) or {}
         attempt.save(update_fields=[
             'score', 'correct_count', 'wrong_count', 'total_questions',
+            'ielts_band', 'cefr_level', 'section_scores',
         ])
         # Kod savoli deadline yaqinida kech baholansa, ball o'zgargani
         # sertifikat/reyting uchun ishlatiladigan `rank`ni eskirtiradi —

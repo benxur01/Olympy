@@ -1,8 +1,23 @@
 import json
 
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import Question
+
+# IELTS / CEFR imtihon fanlari. Shu fanlardagi savol uchun `section`
+# (listening/reading/writing/speaking) MAJBURIY: band va CEFR daraja
+# `attempts.session_utils.score_session_answers` da aynan bo'limlar bo'yicha
+# hisoblanadi va bo'limsiz savol na `section_scores` ga, na band o'rtachasiga
+# kiradi — natija jimgina noto'g'ri chiqadi.
+#
+# Qiymatlar KICHIK harfda va solishtirish ham kichik harfga keltirib qilinadi:
+# `Question.save()` fan nomini `.strip().capitalize()` bilan normalize qiladi,
+# ya'ni "IELTS Mock" bazada "Ielts mock" bo'lib yotadi — aniq satr bo'yicha
+# solishtirish mavjud savolda (PATCH) hech qachon mos kelmasdi.
+# DIQQAT: ro'yxat `attempts.session_utils.resolve_exam_format` dagi fanlar
+# bilan bir xil bo'lishi shart.
+IELTS_CEFR_SUBJECTS = ('ielts mock', 'ielts', 'cefr mock', 'cefr')
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -109,12 +124,49 @@ class QuestionSerializer(serializers.ModelSerializer):
                 data['test_cases'] = parsed_tc
         return super().to_internal_value(data)
 
+    def validate_audio(self, value):
+        """Listening audio faylini tekshiradi (MIME + hajm).
+
+        `Question.audio` — oddiy `FileField`: tekshiruvsiz u orqali ixtiyoriy
+        fayl (HTML/skript) yuklab, media domenidan tarqatish mumkin edi.
+        Naqsh `accounts.views.update_my_avatar` bilan bir xil: `content_type`
+        berilgan bo'lsa `audio/` bo'lishi shart, hajm esa
+        `QUESTION_AUDIO_MAX_BYTES` dan oshmasligi kerak.
+        """
+        if not value:
+            return value
+        content_type = getattr(value, 'content_type', '') or ''
+        if content_type and not content_type.startswith('audio/'):
+            raise serializers.ValidationError('Faqat audio fayl qabul qilinadi')
+        max_bytes = getattr(settings, 'QUESTION_AUDIO_MAX_BYTES', 15 * 1024 * 1024)
+        if value.size and value.size > max_bytes:
+            raise serializers.ValidationError(
+                f"Audio juda katta. Limit: {max_bytes // (1024 * 1024)} MB"
+            )
+        return value
+
     def validate(self, data):
         # PATCH uchun mavjud instance maydonlari fallback bo'ladi.
         instance = getattr(self, 'instance', None)
         q_type = data.get('question_type')
         if q_type is None:
             q_type = instance.question_type if instance is not None else Question.QUESTION_TYPE_MCQ
+
+        # ─── IELTS / CEFR: bo'lim majburiy ─────────────────────────────────
+        # Savol turidan qat'i nazar tekshiriladi (kod/essay/mcq — barchasi),
+        # shuning uchun tur bo'yicha erta `return` lardan OLDIN turadi.
+        # Boshqa fanlarda `section` bo'sh qolishi qonuniy.
+        subject = data.get('subject')
+        if subject is None and instance is not None:
+            subject = instance.subject
+        if str(subject or '').strip().lower() in IELTS_CEFR_SUBJECTS:
+            section = data.get('section')
+            if section is None and instance is not None:
+                section = instance.section
+            if not str(section or '').strip():
+                raise serializers.ValidationError(
+                    {'section': "IELTS/CEFR savoli uchun bo'lim majburiy"}
+                )
 
         # Kod (IT) savol — variant/correct_answer talab qilinmaydi; o'rniga
         # dasturlash tili majburiy. options bo'sh qoladi va baholash AI orqali

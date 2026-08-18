@@ -66,6 +66,82 @@ class OlympiadCreateTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class OlympiadExamFormatDetectionTestCase(APITestCase):
+    """IELTS/CEFR fanida `exam_format` fan nomidan avtomatik aniqlanishi.
+
+    `Olympiad.save()` fan nomini `.strip().capitalize()` bilan normalize
+    qiladi — bazada "IELTS Mock" emas, "Ielts mock" yotadi. Serializer
+    aniq satr bo'yicha solishtirganda `subject` qayta yuborilmaydigan PATCH
+    (masalan faqat `duration_minutes`) instance'dagi normalize qilingan
+    nomni o'qib, hech qachon mos kelmasdi va `exam_format` o'z-o'zini
+    tuzatolmay qolardi.
+    """
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            phone='+998901300020', password='StrongPass123', full_name='Owner',
+        )
+        self.center = EducationCenter.objects.create(
+            name='IELTS Markaz', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.client.force_authenticate(user=self.owner)
+
+    def test_create_detects_format_from_subject(self):
+        response = self.client.post(reverse('olympiads-list-create'), {
+            'center': self.center.id,
+            'title': 'IELTS Mock Test',
+            'subject': 'IELTS Mock',
+            'duration_minutes': 60,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        olympiad = Olympiad.objects.get(title='IELTS Mock Test')
+        self.assertEqual(olympiad.exam_format, Olympiad.EXAM_FORMAT_IELTS)
+        self.assertEqual(olympiad.test_level, 'Standard')
+        # Fan nomi saqlashda normalize qilinadi — solishtirish shu shaklga ham
+        # bardosh berishi kerak.
+        self.assertEqual(olympiad.subject, 'Ielts mock')
+
+    def test_patch_without_subject_still_detects_format(self):
+        olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Eski IELTS yozuvi',
+            subject='IELTS Mock',
+            duration_minutes=60,
+            start_datetime=timezone.now() + timezone.timedelta(days=1),
+        )
+        # Eski yozuv: `exam_format` standart bo'lib qolgan
+        self.assertEqual(olympiad.exam_format, Olympiad.EXAM_FORMAT_STANDARD)
+
+        response = self.client.patch(
+            reverse('olympiad-detail', args=[olympiad.id]),
+            {'duration_minutes': 90},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        olympiad.refresh_from_db()
+        self.assertEqual(olympiad.duration_minutes, 90)
+        self.assertEqual(olympiad.exam_format, Olympiad.EXAM_FORMAT_IELTS)
+
+    def test_patch_without_subject_detects_cefr_format(self):
+        olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Eski CEFR yozuvi',
+            subject='CEFR Mock',
+            duration_minutes=60,
+            start_datetime=timezone.now() + timezone.timedelta(days=1),
+        )
+        response = self.client.patch(
+            reverse('olympiad-detail', args=[olympiad.id]),
+            {'duration_minutes': 75},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        olympiad.refresh_from_db()
+        self.assertEqual(olympiad.exam_format, Olympiad.EXAM_FORMAT_CEFR)
+        self.assertEqual(olympiad.test_level, 'Multi-level')
+
+
 class OlympiadStatusFlowTestCase(APITestCase):
     """Olimpiada holati: draft -> active (publish) -> finished (finish)."""
 

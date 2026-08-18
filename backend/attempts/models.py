@@ -111,6 +111,12 @@ class TestSession(models.Model):
     cheating_reason = models.CharField(max_length=120, blank=True)
     question_order = models.JSONField(default=list, blank=True)
     option_orders = models.JSONField(default=dict, blank=True)
+    # Listening audio necha marta ijro etilgani: {"<question_id>": <count>}.
+    # IELTS qoidasi bo'yicha listening audio FAQAT BIR MARTA tinglanadi —
+    # hisob serverda yuritiladi (`views_speaking.listening_play`), chunki
+    # frontend'dagi hisoblagichni sahifani yangilash bilan nolga qaytarish
+    # mumkin edi.
+    listening_play_counts = models.JSONField(default=dict, blank=True)
     # Parallel sessiya tekshiruvi uchun: oxirgi ping kelgan qurilma identifikatori
     # va ping vaqti. Agar 30 soniyadan kam vaqt ichida boshqa device_id'dan ping
     # kelsa — bir vaqtda ikki qurilmadan kirilgan deb hisoblanadi va session DQ.
@@ -372,6 +378,69 @@ class EssayGrade(models.Model):
 
     def __str__(self):
         return f'essay-grade:{self.attempt_id}@q{self.question_id} = {self.score}'
+
+
+class SpeakingAnswer(models.Model):
+    """IELTS/CEFR Speaking bo'limida o'quvchi yozgan OVOZLI javob.
+
+    Nima uchun alohida model: yozuv imtihon DAVOMIDA, ya'ni `TestAttempt`
+    yaratilishidan OLDIN yuklanadi (`views_speaking.upload_speaking_answer`),
+    shuning uchun kalit attempt emas — (user, olympiad, savol) uchligi.
+    Qayta yozib yuborilsa yozuv ALMASHTIRILADI (eski fayl o'chadi), ya'ni har
+    uchlik uchun aynan bitta fayl qoladi.
+
+    Shaxsiy ma'lumot rejimi — `EvidenceSnapshot` bilan AYNAN bir xil, chunki
+    ovoz (ehtimol voyaga yetmagan o'quvchining ovozi) kamera kadri bilan bir
+    xil darajadagi shaxsiy ma'lumot:
+      * fayl `attempts/storage.py` dagi YOPIQ storage'da — `MEDIA_ROOT`/
+        Cloudinary'da EMAS, ya'ni nginx'ning autentifikatsiyasiz `/media/`
+        bloki unga umuman yeta olmaydi (avval yozuvlar o'sha ochiq makonda
+        yotardi va URL sizib ketsa istalgan kishi tinglay olardi);
+      * yagona kirish nuqtasi — `views_speaking.speaking_answer_audio`
+        (javob egasi yoki olimpiadani baholay oladigan teacher/manager/owner);
+      * qator o'chganda fayl ham o'chadi (`signals.delete_speaking_answer_file`).
+    `cleanup_expired_evidence` bu fayllarga TEGMAYDI: u faqat
+    `EvidenceSnapshot` QATORLARI bo'yicha yuradi, katalogni kezmaydi — ovozli
+    javob esa imtihon natijasining bir qismi va 90 kunlik dalil muddatiga
+    bo'ysunmaydi.
+
+    Fayl yo'li DB'da (`audio.name`) turadi va HECH QACHON foydalanuvchidan
+    qabul qilinmaydi — endpoint uni `attempt` + `question` dan kelib chiqib
+    o'zi topadi (path traversal yuzasi yo'q).
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='speaking_answers',
+    )
+    olympiad = models.ForeignKey(
+        Olympiad,
+        on_delete=models.CASCADE,
+        related_name='speaking_answers',
+    )
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='speaking_answers',
+    )
+    audio = models.FileField(upload_to='speaking/%Y/%m/%d/', storage=evidence_storage)
+    # Yuklanganda kelgan MIME turi (`audio/webm`, `audio/mp4`, ...). Faylni
+    # qaytarishda aynan shu tur beriladi — kengaytmadan taxmin qilinmaydi.
+    content_type = models.CharField(max_length=100, blank=True, default='audio/webm')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['question_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'olympiad', 'question'],
+                name='unique_speaking_answer',
+            ),
+        ]
+
+    def __str__(self):
+        return f'speaking:{self.user_id}@o{self.olympiad_id}q{self.question_id}'
 
 
 class AttemptAIAnalysis(models.Model):

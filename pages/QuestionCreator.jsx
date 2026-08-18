@@ -703,6 +703,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   // Xatolik bo'lsa toast ko'rsatib null qaytaradi (saqlash to'xtaydi).
   const _buildManualPayload = () => {
     const backendType = TYPE_TO_BACKEND[newQ.type] || 'mcq';
+    // IELTS/CEFR savoli bo'limsiz saqlansa, imtihonda na Listening pleyeri, na
+    // Reading split-screen ishlaydi va bo'lim ballari hisoblanmaydi. Backend
+    // ham buni rad etadi — bu shunchaki tezroq va tushunarli xabar.
+    if ((newQ.subject === 'CEFR Mock' || newQ.subject === 'IELTS Mock') && !newQ.section) {
+      showApiToast("⚠ IELTS/CEFR uchun bo'lim (Listening/Reading/Writing/Speaking) tanlang");
+      return null;
+    }
     const base = {
       subject: newQ.subject,
       text: newQ.text,
@@ -1416,7 +1423,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     <Icon name="volume" size={14} className="text-accent" />
                     <span>🎧 Audioni tekshirib eshitish:</span>
                   </div>
-                  <audio controls className="w-full h-8" src={newQ.audioUrl} preload="none">
+                  {/* makeAssetUrl — nisbiy `/media/...` manzil frontend
+                      origin'iga nisbatan hal qilinib 404 berardi (API alohida
+                      domenda). Loyihadagi barcha media havolalari shundan
+                      o'tadi. */}
+                  <audio controls className="w-full h-8" src={OlympyApi.makeAssetUrl(newQ.audioUrl)} preload="none">
                     Brauzeringiz audio pleyerni qo'llab-quvvatlamaydi.
                   </audio>
                 </div>
