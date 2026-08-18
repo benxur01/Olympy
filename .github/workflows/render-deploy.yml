@@ -17,6 +17,7 @@ jobs:
   # deploy job'lari (needs: test) umuman boshlanmaydi.
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -48,6 +49,7 @@ jobs:
   # muvaffaqiyatli tugamaguncha boshlanmaydi.
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -62,6 +64,7 @@ jobs:
   deploy:
     needs: [test, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Trigger backend deploy (olympy-api) and poll status
         env:
@@ -212,6 +215,7 @@ jobs:
   smoke:
     needs: deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       FRONTEND_URL: https://prolymp.uz
       # ILOVA HAQIQATAN ISHLATADIGAN manzil (src/services/api.js dagi
@@ -257,9 +261,19 @@ jobs:
       # runner image'ida allaqachon bo'lmasligi mumkin — faqat browser binary
       # keshlanadi, shuning uchun --with-deps'siz ham yengil `install-deps`
       # qadam qo'shilgan.
+      #
+      # Bu qadam MAJBURIY EMAS, shuning uchun timeout + continue-on-error:
+      # 2026-08-18 (run 32087128241) da apt-get paket yuklashda qotib qoldi
+      # va butun `smoke` job'i 6 SOAT yonib, GitHub tomonidan cancel
+      # qilindi. Cache hit holatida Chromium binary'si allaqachon bor va
+      # runner image'ida odatda kerakli OS kutubxonalari mavjud; rostdan
+      # yetishmasa, keyingi Playwright chaqiruvi aniq xato beradi — bu
+      # soatlab qotib turishdan yaxshiroq.
       - name: Ensure Playwright OS dependencies
         run: npx playwright install-deps chromium
         if: steps.playwright-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
+        continue-on-error: true
       - name: Run smoke tests against production (with retry)
         run: |
           set +e
