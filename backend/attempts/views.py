@@ -6,6 +6,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Max, Min, Q
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -34,7 +35,7 @@ from django.http import HttpResponse
 from questions.grading import RESULT_CORRECT, RESULT_WRONG, grade_answer
 
 from .certificates import render_certificate_png
-from .models import EvidenceSnapshot, TestAttempt, TestSession
+from .models import EvidenceSnapshot, SpeakingAnswer, TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import (
     SUBMIT_GRACE_SECONDS,
@@ -1283,6 +1284,21 @@ def attempt_detail(request, attempt_id):
             g.question_id: g
             for g in attempt.essay_grades.all()
         }
+        # Speaking javoblari — ovoz yozuvi (`SpeakingAnswer`). `answers` ichida
+        # faqat ichki marker yotadi, shuning uchun natijalar sahifasiga
+        # himoyalangan endpoint yo'li beriladi. So'rov FAQAT olimpiadada
+        # speaking savoli bo'lsa otiladi (savollar allaqachon prefetch
+        # qilingan — bu tekshiruv qo'shimcha so'rov qilmaydi).
+        speaking_answer_qids = set()
+        if any(
+            getattr(q, 'section', '') == Question.SECTION_SPEAKING
+            for q in olympiad.questions.all()
+        ):
+            speaking_answer_qids = set(
+                SpeakingAnswer.objects
+                .filter(user_id=attempt.user_id, olympiad=olympiad)
+                .values_list('question_id', flat=True)
+            )
         # Prefetch `id` bo'yicha tartiblangan — bu yerda `.order_by('id')`
         # qo'ymaymiz, aks holda prefetch cache buziladi va yangi DB so'rovi
         # otiladi.
@@ -1350,7 +1366,24 @@ def attempt_detail(request, attempt_id):
                 # Qo'lda baholanadi — natija sahifasida alohida ko'rsatiladi.
                 # Ustoz baho qo'ygan bo'lsa ball + izoh qaytariladi va
                 # pending_review=False bo'ladi.
-                review_item['chosen_answer'] = chosen_val
+                is_speaking = getattr(q, 'section', '') == Question.SECTION_SPEAKING
+                review_item['is_audio_answer'] = is_speaking
+                if is_speaking:
+                    # Speaking javobi MATN EMAS — ovoz yozuvi. `answers` da
+                    # faqat ichki marker ("speaking-answer:<id>") yotadi va uni
+                    # `chosen_answer` sifatida berish o'quvchining rasmiy
+                    # natijalar sahifasida "Sizning javobingiz:
+                    # speaking-answer:57" bo'lib chiqardi. O'rniga ovozni
+                    # tinglash uchun himoyalangan endpoint yo'li beriladi
+                    # (`views_essay._essay_entry` bilan bir xil shartnoma).
+                    review_item['chosen_answer'] = None
+                    review_item['audio_url'] = (
+                        reverse('attempt-speaking-answer', args=[attempt.id, q.id])
+                        if q.id in speaking_answer_qids else ''
+                    )
+                else:
+                    review_item['chosen_answer'] = chosen_val
+                    review_item['audio_url'] = ''
                 grade = essay_grades.get(q.id)
                 if grade is not None:
                     review_item['pending_review'] = False

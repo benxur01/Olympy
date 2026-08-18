@@ -1,4 +1,4 @@
-"""Dalil qatori o'chganda uning FAYLI ham o'chsin (post_delete).
+"""Yopiq storage'dagi qator o'chganda uning FAYLI ham o'chsin (post_delete).
 
 Django model o'chirilganda `FileField` faylini diskda QOLDIRADI. Dalil uchun
 bu jiddiy: rasm o'quvchining yuzi, ya'ni shaxsiy/biometrik ma'lumot. Qator
@@ -18,7 +18,7 @@ import logging
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
-from .models import EvidenceSnapshot
+from .models import EvidenceSnapshot, SpeakingAnswer
 
 logger = logging.getLogger(__name__)
 
@@ -38,3 +38,23 @@ def delete_evidence_files(sender, instance, **kwargs):
                 'evidence file delete failed evidence=%s name=%s',
                 instance.pk, field.name,
             )
+
+
+@receiver(post_delete, sender=SpeakingAnswer)
+def delete_speaking_answer_file(sender, instance, **kwargs):
+    """Ovozli javob qatori o'chganda fayl ham o'chsin.
+
+    Dalil kadri bilan bir xil sabab: ovoz — shaxsiy ma'lumot, qator esa
+    bizning kodimizdan o'tmaydigan yo'llar bilan ham o'chishi mumkin
+    (olimpiada/savol/hisob o'chirilishi — CASCADE). Qayta yozib yuborilganda
+    esa eski fayl `views_speaking` da ataylab o'chiriladi.
+    """
+    if not instance.audio:
+        return
+    try:
+        instance.audio.delete(save=False)
+    except Exception:
+        logger.exception(
+            'speaking answer file delete failed id=%s name=%s',
+            instance.pk, instance.audio.name,
+        )

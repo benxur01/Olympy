@@ -179,6 +179,20 @@ def generate_essay_ai_feedback_task(feedback_id):
     if feedback.status == EssayAIFeedback.STATUS_READY:
         return
 
+    # Speaking javobi matn emas — ovoz yozuvi, `answers` da faqat ichki marker
+    # ("speaking-answer:<id>") yotadi. `essay_ai_feedback` bunday so'rovni
+    # allaqachon rad etadi; bu ikkinchi qatlam — tuzatishdan OLDIN yaratilib
+    # navbatda qolgan yozuvlar va task qayta urinishlari uchun. Marker LLM'ga
+    # BORMASLIGI kerak: tahlil bema'ni chiqadi va pullik chaqiruv behuda ketadi.
+    from questions.models import Question
+
+    if feedback.question.section == Question.SECTION_SPEAKING:
+        EssayAIFeedback.objects.filter(pk=feedback_id).update(
+            feedback_text="Speaking javobi ovozli — matnli AI tahlil qilinmaydi",
+            status=EssayAIFeedback.STATUS_FAILED,
+        )
+        return
+
     try:
         answer_text = _essay_answer_text(feedback.attempt, feedback.question)
         result = review_essay_answer(

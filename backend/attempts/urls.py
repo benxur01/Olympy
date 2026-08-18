@@ -1,6 +1,12 @@
 from django.urls import path
 
-from . import views, views_admin_plagiarism, views_essay, views_evidence
+from . import (
+    views,
+    views_admin_plagiarism,
+    views_essay,
+    views_evidence,
+    views_speaking,
+)
 
 # Mounted under /api/attempts/
 urlpatterns = [
@@ -23,6 +29,11 @@ urlpatterns = [
     # Jonli Kamera va Mikrofon Proktoringi (Live Video & Audio feed)
     path('sessions/<int:session_id>/live-frame/', views.session_live_frame, name='session-live-frame'),
     path('sessions/<int:session_id>/proctor-signal/', views.session_proctor_signal, name='session-proctor-signal'),
+    # IELTS/CEFR Speaking javob audiosi va Listening ijro hisobi. Ikkalasi ham
+    # imtihon paytida (attempt yaratilgunga qadar) chaqiriladi, shu sababli
+    # `<int:attempt_id>/` catch-all marshrutidan YUQORIDA turadi.
+    path('speaking-answer/', views_speaking.upload_speaking_answer, name='speaking-answer'),
+    path('listening-play/', views_speaking.listening_play, name='listening-play'),
     path('mistakes/', views.get_mistakes_list, name='mistakes-list'),
     path('mistakes/explain/', views.explain_all_mistakes, name='mistakes-explain-all'),
     path(
@@ -41,6 +52,13 @@ urlpatterns = [
         '<int:attempt_id>/essay-answers/<int:question_id>/grade/',
         views_essay.grade_essay_answer,
         name='grade-essay-answer',
+    ),
+    # Speaking ovozli javobini tinglash — fayl yopiq storage'da, yagona
+    # kirish nuqtasi shu endpoint (javob egasi yoki baholovchi).
+    path(
+        '<int:attempt_id>/speaking-answer/<int:question_id>/',
+        views_speaking.speaking_answer_audio,
+        name='attempt-speaking-answer',
     ),
     # Insho chuqur AI tahlili (on-demand, Plus+ o'quvchi).
     path(

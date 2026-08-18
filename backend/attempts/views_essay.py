@@ -9,14 +9,18 @@ baholangan savollar bilan birga umumiy foizga kiradi.
 import logging
 
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from olympiads.models import Olympiad
+from questions.models import Question
 
-from .models import EssayAIFeedback, EssayGrade, TestAttempt, TestSession
+from .models import (
+    EssayAIFeedback, EssayGrade, SpeakingAnswer, TestAttempt, TestSession,
+)
 from .views import _extract_review_chosen, _user_can_manage_olympiad
 
 logger = logging.getLogger(__name__)
@@ -41,8 +45,34 @@ def _essay_answer_text(attempt, question):
     return str(text) if text is not None else ''
 
 
-def _essay_entry(attempt, question, grade):
-    """Bitta essay javob uchun javob+baho dict'i."""
+def _speaking_answer_keys(olympiad, attempts):
+    """Ovoz yozuvi BOR (user_id, question_id) juftliklari to'plami.
+
+    Bir marta so'raladi va `_essay_entry` ga uzatiladi — aks holda menejer
+    ro'yxatida har (attempt × savol) uchun alohida so'rov ketardi (N+1).
+    """
+    return set(
+        SpeakingAnswer.objects
+        .filter(olympiad=olympiad, user_id__in=[a.user_id for a in attempts])
+        .values_list('user_id', 'question_id')
+    )
+
+
+def _essay_entry(attempt, question, grade, audio_keys=None):
+    """Bitta essay javob uchun javob+baho dict'i.
+
+    `audio_keys` — `_speaking_answer_keys` natijasi. Berilmasa (bitta javob
+    qaytariladigan joylar) mavjudlik alohida so'rov bilan tekshiriladi.
+    """
+    key = (attempt.user_id, question.id)
+    if audio_keys is None:
+        has_audio = SpeakingAnswer.objects.filter(
+            user_id=attempt.user_id,
+            olympiad_id=attempt.olympiad_id,
+            question_id=question.id,
+        ).exists()
+    else:
+        has_audio = key in audio_keys
     return {
         'attempt_id': attempt.id,
         'student_id': attempt.user_id,
@@ -55,6 +85,18 @@ def _essay_entry(attempt, question, grade):
         'score': grade.score if grade else None,
         'feedback': grade.feedback if grade else '',
         'graded_at': grade.updated_at.isoformat() if grade else None,
+        # Speaking bo'limida javob matn emas, o'quvchining ovozli yozuvi.
+        # `answer_text` bunda ma'noli matn EMAS (frontend yuborgan
+        # "speaking-answer:<id>" belgisi) — menejer modali shu bayroqqa qarab
+        # matn o'rniga audio pleyer ko'rsatadi.
+        'is_audio_answer': question.section == Question.SECTION_SPEAKING,
+        # Ovozni tinglash HAVOLASI: ochiq media URL emas, autentifikatsiya
+        # talab qiladigan endpoint yo'li (`views_speaking.speaking_answer_audio`).
+        # Yozuv bo'lmasa '' — pleyer ko'rsatilmaydi.
+        'audio_url': (
+            reverse('attempt-speaking-answer', args=[attempt.id, question.id])
+            if has_audio else ''
+        ),
     }
 
 
@@ -83,8 +125,18 @@ def _recompute_attempt_score(attempt):
     attempt.correct_count = scored['correct']
     attempt.wrong_count = scored['wrong']
     attempt.total_questions = scored['total']
+    # IELTS/CEFR natijasi ham qayta yoziladi: writing/speaking insholari aynan
+    # shu yerda baholanadi va ular hisobga kirgach band, CEFR daraja va
+    # bo'limlar kesimi o'zgaradi. Avval faqat score yangilanib, band submit
+    # paytidagi (inshosiz) eski qiymatda qolib ketardi. Standart olimpiadada
+    # `ielts_band` None, `cefr_level` esa informatsion qiymat qaytadi — submit
+    # oqimi (`views.submit_attempt`) allaqachon xuddi shunday saqlaydi.
+    attempt.ielts_band = scored.get('ielts_band')
+    attempt.cefr_level = scored.get('cefr_level', '') or ''
+    attempt.section_scores = scored.get('section_scores', {}) or {}
     attempt.save(update_fields=[
         'score', 'correct_count', 'wrong_count', 'total_questions',
+        'ielts_band', 'cefr_level', 'section_scores',
     ])
     # Insho bahosi kech qo'yilsa (masalan natijalar e'lon qilingandan keyin),
     # ball o'zgarishi butun olimpiadaning reytingini eskirtiradi — kod
@@ -112,8 +164,9 @@ def attempt_essay_answers(request, attempt_id):
         g.question_id: g
         for g in EssayGrade.objects.filter(attempt=attempt)
     }
+    audio_keys = _speaking_answer_keys(attempt.olympiad, [attempt])
     return Response([
-        _essay_entry(attempt, q, grades.get(q.id))
+        _essay_entry(attempt, q, grades.get(q.id), audio_keys)
         for q in questions
     ])
 
@@ -222,6 +275,16 @@ def essay_ai_feedback(request, attempt_id, question_id):
             {'detail': 'Essay savol topilmadi'},
             status=http_status.HTTP_404_NOT_FOUND,
         )
+    # Speaking javobi `essay` TURIDA bo'ladi, lekin matn emas — ovoz yozuvi;
+    # `answers` da faqat ichki marker ("speaking-answer:<id>") yotadi. Uni
+    # LLM'ga "insho" sifatida uzatish bema'ni tahlil qaytaradi va pullik AI
+    # chaqiruvini behuda sarflaydi. Tekshiruv `get_or_create` dan OLDIN:
+    # shunda na yozuv yaratiladi, na Celery task navbatga qo'yiladi.
+    if question.section == Question.SECTION_SPEAKING:
+        return Response(
+            {'detail': "Speaking javobi ovozli — matnli AI tahlil qilinmaydi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
 
     feedback, created = EssayAIFeedback.objects.get_or_create(
         attempt=attempt,
@@ -268,16 +331,19 @@ def olympiad_essay_answers(request, olympiad_id):
     grades = {}
     for g in EssayGrade.objects.filter(attempt__in=attempts):
         grades[(g.attempt_id, g.question_id)] = g
+    audio_keys = _speaking_answer_keys(olympiad, attempts)
 
     entries = []
     for attempt in attempts:
         for q in questions:
             answer = _essay_answer_text(attempt, q)
             # Javob yozilmagan essay'lar baholanmaydi — ro'yxatga kirmaydi.
-            if not answer.strip():
+            # Speaking javobida esa MATN bo'lmasligi normal: baholanadigan
+            # narsa ovoz yozuvi, shu sababli yozuv bo'lsa ro'yxatda qoladi.
+            if not answer.strip() and (attempt.user_id, q.id) not in audio_keys:
                 continue
             grade = grades.get((attempt.id, q.id))
             if only_ungraded and grade is not None:
                 continue
-            entries.append(_essay_entry(attempt, q, grade))
+            entries.append(_essay_entry(attempt, q, grade, audio_keys))
     return Response(entries)

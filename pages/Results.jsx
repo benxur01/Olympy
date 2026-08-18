@@ -69,6 +69,15 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   // On-demand insho AI tahlili holati (savol id bo'yicha).
   const [essayAI, setEssayAI] = React.useState({});          // { [qid]: {status, text} }
   const [essayAILoading, setEssayAILoading] = React.useState({}); // { [qid]: bool }
+  // Speaking javob yozuvlari (savol id bo'yicha):
+  //   { [qid]: { loading } | { url } | { error } }.
+  // Audio ochiq `/media/` da emas — har so'rovda ruxsat tekshiriladigan
+  // endpointdan `blob:` URL sifatida olinadi. `<audio src={q.audio_url}>` ni
+  // to'g'ridan-to'g'ri qo'yib bo'lmaydi: brauzer media elementiga Authorization
+  // headerini qo'shmaydi, cookie esa bu deploy'da ishonchli emas
+  // (`getSpeakingAnswerBlobUrl` izohiga qarang — cross-site + Safari ITP).
+  // Yuklovchi effekt quyida — u `fetchedAttempt` dan keyin turishi kerak.
+  const [speakingAudio, setSpeakingAudio] = React.useState({});
   const essayPollRef = React.useRef({});                     // { [qid]: timeoutId }
   React.useEffect(() => () => {
     // Unmount'da barcha polling timerlarini tozalaymiz.
@@ -159,13 +168,37 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     // (essay_score/essay_feedback), aks holda "tekshirilmoqda" holati.
     if (qType === 'essay') {
       const graded = q.pending_review === false && q.essay_score !== undefined && q.essay_score !== null;
+      // Speaking javobi matn emas, ovozli yozuv: `chosen_answer` bu holatda
+      // doim null (ilgari ichki "speaking-answer:<id>" markeri "Sizning
+      // javobingiz" deb chop etilardi), yozuv esa `audio_url` orqali keladi.
+      const isAudio = !!q.is_audio_answer;
+      const audioState = speakingAudio[String(q.id)];
       return (
         <div className="space-y-2">
           <div>
-            <ResultFieldLabel>Sizning javobingiz</ResultFieldLabel>
-            <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-ground text-text-primary border-edge whitespace-pre-wrap break-words">
-              {q.chosen_answer ? String(q.chosen_answer) : '(javob berilmagan)'}
-            </div>
+            <ResultFieldLabel>{isAudio ? 'Sizning ovozli javobingiz' : 'Sizning javobingiz'}</ResultFieldLabel>
+            {isAudio ? (
+              !q.audio_url ? (
+                <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-ground text-text-secondary border-edge">
+                  Ovoz yozuvi topilmadi.
+                </div>
+              ) : audioState?.loading ? (
+                <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-ground text-text-secondary border-edge flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full border border-edge border-t-accent animate-spin" />
+                  Yozuv yuklanmoqda...
+                </div>
+              ) : audioState?.error ? (
+                <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-ground text-error border-error/40 flex items-center gap-1.5">
+                  <Icon name="info" size={13} /> {audioState.error}
+                </div>
+              ) : audioState?.url ? (
+                <audio controls src={audioState.url} className="w-full" />
+              ) : null
+            ) : (
+              <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-ground text-text-primary border-edge whitespace-pre-wrap break-words">
+                {q.chosen_answer ? String(q.chosen_answer) : '(javob berilmagan)'}
+              </div>
+            )}
           </div>
           {graded ? (
             <>
@@ -183,11 +216,15 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             </>
           ) : (
             <div className="text-[11px] text-warning flex items-center gap-1.5">
-              <Icon name="info" size={12} /> Insho qo'lda baholanadi
+              <Icon name="info" size={12} /> {isAudio ? "Ovozli javob qo'lda baholanadi" : "Insho qo'lda baholanadi"}
             </div>
           )}
 
-          {/* Feature 4: on-demand chuqur AI tahlil (Plus+). */}
+          {/* Feature 4: on-demand chuqur AI tahlil (Plus+). Speaking javobida
+              KO'RSATILMAYDI: tahlil matn ustida ishlaydi va backend bunday
+              so'rovni 400 bilan rad etadi ("Speaking javobi ovozli — matnli AI
+              tahlil qilinmaydi"), ya'ni tugma faqat xatoga olib borardi. */}
+          {!isAudio && (
           <div className="pt-1">
             {!canPlusEssay ? (
               <button
@@ -225,6 +262,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
               </button>
             )}
           </div>
+          )}
         </div>
       );
     }
@@ -390,6 +428,53 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     return () => { cancelled = true; };
   }, [isApi, reviewAttemptId, needsFetch]);
 
+  // Effekt AYNAN manbalar ro'yxatiga bog'lanadi, `fetchedAttempt` ga EMAS:
+  // ustoz bahosi/AI tahlili kelganda obyekt yangilanadi, audio manbalari esa
+  // o'zgarmaydi — aks holda har yangilanishda barcha yozuvlar qayta yuklanar
+  // va tinglanayotgan player'ning `blob:` manzili bo'shatilib, ijro uzilardi.
+  const speakingSources = React.useMemo(() => (
+    (Array.isArray(fetchedAttempt?.questions_review) ? fetchedAttempt.questions_review : [])
+      .filter(q => q.is_audio_answer && q.audio_url)
+      .map(q => ({ key: String(q.id), path: q.audio_url }))
+  ), [fetchedAttempt]);
+  const speakingSourcesKey = speakingSources.map(s => `${s.key}|${s.path}`).join(',');
+  const speakingSourcesRef = React.useRef(speakingSources);
+  speakingSourcesRef.current = speakingSources;
+  // Cleanup — blob'larni bo'shatadigan YAGONA joy: ro'yxat almashganda ham,
+  // sahifa yechilganda ham ishlaydi.
+  React.useEffect(() => {
+    const wanted = speakingSourcesRef.current;
+    if (wanted.length === 0) {
+      setSpeakingAudio({});
+      return undefined;
+    }
+    setSpeakingAudio(Object.fromEntries(wanted.map(w => [w.key, { loading: true }])));
+    let cancelled = false;
+    const created = [];
+    wanted.forEach(({ key, path }) => {
+      OlympyApi.getSpeakingAnswerBlobUrl(path, OlympyApi.getToken())
+        .then(url => {
+          // Javob cleanup'dan KEYIN keldi: URL `created` ga tushmagan, ya'ni
+          // uni shu yerda bo'shatmasak hech kim bo'shatmaydi.
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          created.push(url);
+          setSpeakingAudio(prev => ({ ...prev, [key]: { url } }));
+        })
+        .catch(err => {
+          if (cancelled) return;
+          console.warn('getSpeakingAnswerBlobUrl failed:', err);
+          setSpeakingAudio(prev => ({
+            ...prev,
+            [key]: { error: OlympyApi.toUserMessage?.(err) || "Ovozli javobni yuklab bo'lmadi" },
+          }));
+        });
+    });
+    return () => {
+      cancelled = true;
+      created.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [speakingSourcesKey]);
+
   // Bo'limlar bo'yicha: backend /api/results/me/stats/ subjects ro'yxati.
   // Avval bu yerda 4 ta hardcoded bo'lim ("Algebraik tenglamalar 8/10" va h.k.)
   // har bir foydalanuvchiga bir xil ko'rinardi. Endi haqiqiy fan kesimi.
@@ -427,6 +512,13 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       total: r.total ?? r.totalQuestions ?? 0,
       rank: r.rank ?? null,
       time: r.time ?? r.timeSpent ?? 0,
+      // IELTS/CEFR maydonlarini ham olib qolamiz — aks holda ular shu yerda
+      // tushib qolib, quyidagi fallback zanjiri doim fetchedAttempt'ga
+      // tayanardi (u esa bu yo'lda hali kelmagan bo'ladi va rasmiy hisobot
+      // tarmoq sekin bo'lsa sababsiz ko'rinmasdi).
+      ielts_band: r.ielts_band ?? r.ieltsBand ?? null,
+      cefr_level: r.cefr_level ?? r.cefrLevel ?? null,
+      section_scores: r.section_scores ?? r.sectionScores ?? null,
       olympiad: r.olympiad,
     };
   } else if (r && r.attemptId && fetchedAttempt) {
@@ -586,8 +678,11 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                 return (
                   <div key={sec} className="rounded-2xl border border-edge bg-ground p-3.5 text-center">
                     <div className="text-[11px] text-text-secondary font-medium mb-1">{secLabel}</div>
+                    {/* Bo'lim bo'lmasa umumiy band/foizni takrorlash — soxta
+                        raqam: Speaking'siz imtihonda ham "Speaking: 6.5"
+                        ko'rinardi, ustiga "rasmiy hisobot" sarlavhasi ostida. */}
                     <div className="font-data font-black text-lg md:text-xl text-text-primary">
-                      {val != null ? (examFormat === 'ielts' ? Number(val).toFixed(1) : `${val}%`) : (examFormat === 'ielts' ? Number(ieltsBand || 0).toFixed(1) || '—' : `${pct}%`)}
+                      {val != null ? (examFormat === 'ielts' ? Number(val).toFixed(1) : `${val}%`) : '—'}
                     </div>
                   </div>
                 );

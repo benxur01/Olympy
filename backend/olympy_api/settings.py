@@ -12,6 +12,7 @@ following environment variables:
 """
 from datetime import datetime, timedelta, timezone as dt_timezone
 import os
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -57,6 +58,13 @@ TOTP_ENCRYPTION_KEY = os.environ.get('TOTP_ENCRYPTION_KEY') or None
 # Google OAuth 2.0 Client ID (ixtiyoriy, Google Login uchun).
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID') or None
 DEBUG = env_bool('OLYMPY_DEBUG', False)
+
+# Test rejimi aniqlash. Ikkala runner ham qamraladi:
+#   - `manage.py test` (Django unittest runner) — `sys.argv` da 'test' bo'ladi
+#   - `pytest` / `pytest-django` — `pytest` moduli import qilingan bo'ladi
+# Production'da (gunicorn/runserver) ikkalasi ham bajarilmaydi, shuning uchun
+# bu bayroq faqat testlarda True bo'ladi.
+RUNNING_TESTS = 'test' in sys.argv or 'pytest' in sys.modules
 _allowed = os.environ.get('OLYMPY_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (
     ['localhost', '127.0.0.1'] if DEBUG else []
@@ -394,6 +402,12 @@ EVIDENCE_MEDIA_ROOT = os.environ.get(
 
 PROFILE_IMAGE_MAX_BYTES = int(os.environ.get('PROFILE_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 CENTER_IMAGE_MAX_BYTES = int(os.environ.get('CENTER_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
+# Listening savoliga o'qituvchi yuklaydigan audio (Question.audio) — bir necha
+# daqiqalik mp3 uchun 15 MB yetarli.
+QUESTION_AUDIO_MAX_BYTES = int(os.environ.get('QUESTION_AUDIO_MAX_BYTES', str(15 * 1024 * 1024)))
+# Speaking bo'limida o'quvchi brauzerda yozib yuboradigan javob (webm/opus).
+# Yozuv uzunroq bo'lishi mumkin, shu sababli limit kattaroq.
+SPEAKING_AUDIO_MAX_BYTES = int(os.environ.get('SPEAKING_AUDIO_MAX_BYTES', str(25 * 1024 * 1024)))
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF
@@ -881,7 +895,11 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # shu son bo'yicha oladi.
 NUM_PROXIES = int(os.environ.get('NUM_PROXIES', '1'))
 REST_FRAMEWORK['NUM_PROXIES'] = NUM_PROXIES
-SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', not DEBUG)
+# Test runner'da SSL redirect har doim o'chiq: test klienti HTTP so'rov yuboradi
+# va redirect yoqilgan bo'lsa har bir API testi 301 oladi (assert'lar 200/201
+# kutadi). Production oqimiga ta'siri yo'q — `RUNNING_TESTS` faqat
+# `manage.py test` yoki pytest ostida True bo'ladi.
+SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', not DEBUG) and not RUNNING_TESTS
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 # Session/CSRF cookie SameSite=Lax — CSRF himoyasi (cross-site POST'da cookie
@@ -1234,8 +1252,7 @@ if os.environ.get('MAILGUN_API_KEY'):
 
 
 # ─── Test rejimida throttle juda yuqori (rate-limit 429 testlarni buzmasin) ───
-import sys as _sys
-if 'test' in _sys.argv or os.environ.get('OLYMPY_DISABLE_THROTTLE') == '1':
+if RUNNING_TESTS or os.environ.get('OLYMPY_DISABLE_THROTTLE') == '1':
     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
         key: '10000/min' for key in REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
     }

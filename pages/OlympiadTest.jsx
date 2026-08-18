@@ -10,26 +10,109 @@ const LANG_LABELS = {
 };
 
 // ─── IELTS / CEFR Audio Player ──────────────────────────────────────────
-const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
+// DIQQAT: chaqirilganda `key={savol id}` majburiy. Kalitsiz React bir xil JSX
+// pozitsiyasidagi instansiyani qayta ishlatadi va `playCount` savoldan savolga
+// o'tib ketadi — IELTS'da ikkinchi listening savoli boshidanoq qulflangan
+// bo'lib qolardi.
+const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded, olympiadId, questionId }) => {
   const audioRef = React.useRef(null);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [currentTime, setCurrentTime] = React.useState(0);
   const [duration, setDuration] = React.useState(0);
   const [playCount, setPlayCount] = React.useState(0);
   const [volume, setVolume] = React.useState(1);
+  // Ijro hisobi serverda (#8): lokal `playCount` — faqat ko'rsatkich, F5 bosilsa
+  // nolga qaytadi. Ruxsatni har yangi ijro boshlanishida backend beradi, ya'ni
+  // sahifani yangilab chegarani chetlab bo'lmaydi.
+  const [checkingGate, setCheckingGate] = React.useState(false);
+  const [serverBlocked, setServerBlocked] = React.useState(false);
+  const [gateNote, setGateNote] = React.useState('');
+  // Ijro boshlangan va hali tugamagan — pauzadan davom etish yangi ijro emas,
+  // server hisobiga qayta yozilmaydi va tugma qulflanmaydi.
+  const [playInProgress, setPlayInProgress] = React.useState(false);
   const isIelts = examFormat === 'ielts';
   const maxPlays = isIelts ? 1 : 2;
+  // Mock rejimda (backend id yo'q) server tekshiruvi o'tkazib yuboriladi.
+  const gateEnabled = olympiadId != null && questionId != null;
+  const exhausted = serverBlocked || (playCount >= maxPlays && isIelts);
+  // Ijro davom etayotganda (yoki pauzada) tugma faol qoladi — chegara tugagan
+  // bo'lsa ham talaba boshlagan ijrosini pauza qilib, davom ettira olsin.
+  const playDisabled = checkingGate || (!isPlaying && !playInProgress && exhausted);
+  const blockedNote = isIelts
+    ? 'Bu audio faqat bir marta tinglanadi.'
+    : 'Ijro chegarasi tugadi — bu audio qayta tinglanmaydi.';
 
-  const togglePlay = () => {
+  // Mount'da server holatini tiklaymiz. GET hisobni OSHIRMAYDI (POST'dan farqi
+  // shunda) — shu sababli uni bemalol chaqirsa bo'ladi. Busiz F5'dan keyin
+  // yagona ijrosini sarflagan talaba tugmani ochiq ko'rar, bosgandan keyingina
+  // qulflanardi: audio baribir ijro etilmasdi, lekin UI chalg'itardi.
+  React.useEffect(() => {
+    if (!gateEnabled) return undefined;
+    let cancelled = false;
+    const token = globalThis.OlympyApi?.getToken?.();
+    globalThis.OlympyApi.getListeningPlayState(olympiadId, questionId, token)
+      .then(res => {
+        if (cancelled) return;
+        if (typeof res?.play_count === 'number') setPlayCount(res.play_count);
+        if (res?.allowed === false) {
+          setServerBlocked(true);
+          setGateNote(blockedNote);
+        }
+      })
+      .catch(err => {
+        // Holatni o'qib bo'lmadi — imtihonni bloklamaymiz va talabani
+        // qo'rqitmaymiz. Haqiqiy ruxsatni baribir ijro boshlanishidagi POST
+        // hal qiladi, ya'ni chegara chetlab o'tilmaydi.
+        if (!cancelled) console.warn('listening-play state failed:', err?.message || err);
+      });
+    return () => { cancelled = true; };
+  }, [gateEnabled, olympiadId, questionId, blockedNote]);
+
+  // Serverdan ijroga ruxsat so'raymiz. Tarmoq xatosida imtihonni bloklamaymiz —
+  // ruxsat beramiz, lekin buni log qilib va foydalanuvchiga ko'rsatib (jimgina
+  // yutib yuborish natijasi: talaba nima bo'lganini bilmay qoladi).
+  const requestPlayPermission = async () => {
+    if (!gateEnabled) return true;
+    setCheckingGate(true);
+    try {
+      const token = globalThis.OlympyApi?.getToken?.();
+      const res = await globalThis.OlympyApi.registerListeningPlay(olympiadId, questionId, token);
+      if (typeof res?.play_count === 'number') setPlayCount(res.play_count);
+      if (res?.allowed === false) {
+        setServerBlocked(true);
+        setGateNote(blockedNote);
+        return false;
+      }
+      setGateNote('');
+      return true;
+    } catch (err) {
+      console.warn('listening-play gate failed:', err?.message || err);
+      setGateNote("Ijro hisobini serverga yozib bo'lmadi — tinglash davom etadi.");
+      return true;
+    } finally {
+      setCheckingGate(false);
+    }
+  };
+
+  const togglePlay = async () => {
     if (!audioRef.current) return;
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
-    } else {
-      if (playCount >= maxPlays && isIelts) return;
+      return;
+    }
+    if (playInProgress) {
+      // Pauzadan davom etish — hisobga yangi ijro sifatida yozilmaydi.
       audioRef.current.play();
       setIsPlaying(true);
+      return;
     }
+    if (exhausted) return;
+    const allowed = await requestPlayPermission();
+    if (!allowed || !audioRef.current) return;
+    audioRef.current.play();
+    setIsPlaying(true);
+    setPlayInProgress(true);
   };
 
   const handleTimeUpdate = () => {
@@ -39,17 +122,22 @@ const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
     }
   };
 
-  const handleAudioEnd = () => {
+  const handleAudioEnd = async () => {
     setIsPlaying(false);
-    const nextCount = playCount + 1;
-    setPlayCount(nextCount);
+    setPlayInProgress(false);
+    // Gate yoqilganda hisobni server yuritadi (ijro BOSHLANISHIDA yoziladi) —
+    // bu yerda yana oshirsak, bitta ijro ikki marta sanalardi.
+    const nextCount = gateEnabled ? playCount : playCount + 1;
+    if (!gateEnabled) setPlayCount(nextCount);
     if (!isIelts && nextCount < maxPlays) {
-      setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play();
-          setIsPlaying(true);
-        }
+      setTimeout(async () => {
+        if (!audioRef.current) return;
+        const allowed = await requestPlayPermission();
+        if (!allowed || !audioRef.current) return;
+        audioRef.current.currentTime = 0;
+        audioRef.current.play();
+        setIsPlaying(true);
+        setPlayInProgress(true);
       }, 4000);
     }
     if (onEnded) onEnded();
@@ -75,9 +163,12 @@ const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
 
   return (
     <div className="rounded-2xl border border-edge bg-surface-1 p-4 md:p-5 mb-5 shadow-sm">
+      {/* makeAssetUrl — audio nisbiy `/media/...` bo'lishi mumkin, u esa
+          frontend origin'iga nisbatan hal qilinib 404 berardi (API alohida
+          domenda). Loyihadagi barcha media havolalari shu yordamchidan o'tadi. */}
       <audio
         ref={audioRef}
-        src={audioUrl}
+        src={globalThis.OlympyApi?.makeAssetUrl?.(audioUrl) || audioUrl}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleAudioEnd}
         onLoadedMetadata={handleTimeUpdate}
@@ -92,7 +183,10 @@ const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
               🎧 Listening Audio ({isIelts ? 'IELTS — 1 marta ijro' : 'CEFR — 2 marta ijro'})
             </div>
             <div className="text-[11px] text-text-secondary">
-              Ijro soni: {playCount} / {maxPlays} {playCount >= maxPlays && isIelts ? "(Tugagan)" : ""}
+              {/* Server hisobi chegaradan oshib ketishi mumkin (sahifa
+                  yangilangandan keyingi urinish ham sanaladi) — "2 / 1" emas,
+                  "1 / 1" ko'rsatamiz. */}
+              Ijro soni: {Math.min(playCount, maxPlays)} / {maxPlays} {exhausted ? "(Tugagan)" : ""}
             </div>
           </div>
         </div>
@@ -105,9 +199,9 @@ const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
         <button
           type="button"
           onClick={togglePlay}
-          disabled={playCount >= maxPlays && isIelts}
+          disabled={playDisabled}
           className={`px-4 py-2 rounded-xl font-semibold text-xs md:text-sm flex items-center gap-2 transition-colors ${
-            playCount >= maxPlays && isIelts
+            playDisabled
               ? 'bg-surface-2 text-text-secondary opacity-50 cursor-not-allowed'
               : isPlaying
               ? 'bg-warning text-white'
@@ -115,7 +209,7 @@ const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
           }`}
         >
           <Icon name={isPlaying ? 'pause' : 'play'} size={14} />
-          {isPlaying ? "To'xtatish" : playCount > 0 ? "Qayta tinglash" : "Tinglashni boshlash"}
+          {checkingGate ? 'Tekshirilmoqda...' : isPlaying ? "To'xtatish" : playCount > 0 ? "Qayta tinglash" : "Tinglashni boshlash"}
         </button>
 
         <input
@@ -145,6 +239,12 @@ const ListeningAudioPlayer = ({ audioUrl, examFormat, onEnded }) => {
           />
         </div>
       </div>
+
+      {gateNote && (
+        <div className={`mt-3 flex items-center gap-1.5 text-[11px] ${serverBlocked ? 'text-warning' : 'text-text-secondary'}`}>
+          <Icon name="info" size={13} /> {gateNote}
+        </div>
+      )}
     </div>
   );
 };
@@ -258,19 +358,108 @@ const ReadingPassageSplitView = ({ passageText, title, children }) => {
 };
 
 // ─── Speaking Voice Recorder ──────────────────────────────────────────
-const SpeakingVoiceRecorder = ({ onAudioRecorded }) => {
+// Yozuv haqiqatan backendga yuklanadi va javob matni sifatida saqlangan fayl
+// URL'i yoziladi. Ilgari bu yerdan qattiq yozilgan 'voice_answer_recorded'
+// satri ketardi — barcha talabalarning speaking javobi bir xil bo'lib qolar,
+// o'qituvchiga tinglaydigan hech narsa yetib bormasdi.
+const SpeakingVoiceRecorder = ({ onAudioRecorded, olympiadId, questionId, onStatusChange, onRegisterStop }) => {
   const [isRecording, setIsRecording] = React.useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = React.useState(null);
   const [seconds, setSeconds] = React.useState(0);
+  // `finalizing` — stop() bilan `onstop` (blob tayyor bo'lib, yuklash
+  // boshlangan payt) ORASIDAGI oyna. Busiz shu oynada `isRecording` ham,
+  // `uploading` ham false bo'lib qolardi va parent "hech narsa bo'layotgani
+  // yo'q" deb hisoblab javobsiz submit qilardi.
+  const [finalizing, setFinalizing] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState('');
+  const [uploaded, setUploaded] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
+  const streamRef = React.useRef(null);
   const chunksRef = React.useRef([]);
   const timerRef = React.useRef(null);
+  // Yuklash muvaffaqiyatsiz bo'lsa talaba qaytadan yozmasin — oxirgi blob shu
+  // yerda turadi va "Qayta yuborish" tugmasi o'shani qayta POST qiladi.
+  const lastBlobRef = React.useRef(null);
+  const blobUrlRef = React.useRef(null);
+  // Backend id'siz (mock/oflayn rejim) yuklaydigan joy yo'q.
+  const canUpload = olympiadId != null && questionId != null;
+
+  // Ota komponentga holatni bildiramiz. `busy` — YOZUV BOSHLANGANIDAN javob
+  // serverga yetguncha bo'lgan BUTUN quvur: parent shu paytda navigatsiya va
+  // yakunlash tugmalarini qulflaydi. Faqat `uploading` ni bersak, talaba
+  // yozib turganda ham chiqib keta olardi. Callback identifikatori har renderda
+  // o'zgarishi mumkinligi uchun ref orqali — effekt qayta ishga tushib holatni
+  // noto'g'ri tozalab yubormasin.
+  const busy = isRecording || finalizing || uploading;
+  const statusCbRef = React.useRef(onStatusChange);
+  statusCbRef.current = onStatusChange;
+  React.useEffect(() => {
+    statusCbRef.current?.({ busy, error: !!uploadError });
+  }, [busy, uploadError]);
+
+  const showPreview = (blob) => {
+    if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    blobUrlRef.current = URL.createObjectURL(blob);
+    setAudioBlobUrl(blobUrlRef.current);
+  };
+
+  const uploadBlob = async (blob) => {
+    if (!canUpload) {
+      // Mock/oflayn rejimda yuklanadigan server yo'q — yozuv faqat brauzerda
+      // qoladi. Javobni belgilab qo'yamiz, lekin buni yashirmaymiz.
+      setUploadError('');
+      setUploaded(false);
+      setFinalizing(false);
+      onAudioRecorded?.('voice_answer_recorded');
+      return;
+    }
+    setUploading(true);
+    setUploadError('');
+    try {
+      const token = globalThis.OlympyApi?.getToken?.();
+      const res = await globalThis.OlympyApi.uploadSpeakingAnswer(olympiadId, questionId, blob, token);
+      // Javob qiymati — `answer_ref` markeri ("speaking-answer:<qid>"), fayl
+      // manzili EMAS: yozuv yopiq storage'da yotadi va server uni
+      // user+olympiad+question bo'yicha o'zi topadi. Ya'ni marker maxfiy emas
+      // va uni boshqa javoblar bilan birga submit qilaverish mumkin.
+      const answerRef = res?.answer_ref || '';
+      if (!answerRef) throw new Error("Server yozuvni qabul qilganini tasdiqlamadi");
+      setUploaded(true);
+      onAudioRecorded?.(answerRef);
+    } catch (err) {
+      console.warn('uploadSpeakingAnswer failed:', err?.message || err);
+      setUploaded(false);
+      setUploadError(
+        globalThis.OlympyApi?.toUserMessage?.(err)
+        || err?.message
+        || "Ovozli javobni yuklab bo'lmadi",
+      );
+    } finally {
+      setUploading(false);
+      setFinalizing(false);
+    }
+  };
+
+  const retryUpload = () => {
+    if (lastBlobRef.current && !uploading) uploadBlob(lastBlobRef.current);
+  };
 
   const startRecording = async () => {
+    setUploadError('');
+    // Brauzer qo'llab-quvvatlamasligi bilan ruxsat rad etilishi — turli
+    // muammolar, xabar ham turlicha bo'lishi kerak.
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      alert("Brauzeringiz ovoz yozishni qo'llab-quvvatlamaydi. Chrome yoki Safari'ning yangi versiyasidan foydalaning.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
+      // Oqim alohida ref'da: unmount tozalashi `onstop` ga TAYANMASDAN
+      // mikrofonni yopa olishi kerak (handler'lar o'sha yerda uziladi).
+      streamRef.current = stream;
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -281,30 +470,93 @@ const SpeakingVoiceRecorder = ({ onAudioRecorded }) => {
 
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        setAudioBlobUrl(url);
-        if (onAudioRecorded) onAudioRecorded('voice_answer_recorded');
+        lastBlobRef.current = blob;
+        showPreview(blob);
         stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+        uploadBlob(blob);
       };
 
       mediaRecorder.start(250);
+      setUploaded(false);
       setIsRecording(true);
       setSeconds(0);
       timerRef.current = setInterval(() => {
         setSeconds(s => s + 1);
       }, 1000);
     } catch (err) {
-      alert("Mikrofonga ruxsat berilmadi: " + (err.message || err));
+      const name = err?.name || '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        alert("Mikrofonga ruxsat berilmadi. Brauzer sozlamalaridan ushbu saytga mikrofon ruxsatini bering va qayta urinib ko'ring.");
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        alert("Mikrofon topilmadi. Qurilmangizga mikrofon ulanganini tekshiring.");
+      } else if (name === 'NotReadableError') {
+        alert("Mikrofonni ochib bo'lmadi — u boshqa dastur tomonidan band bo'lishi mumkin.");
+      } else {
+        alert("Ovoz yozishni boshlab bo'lmadi: " + (err?.message || name || 'nomalum xato'));
+      }
     }
   };
 
+  // `isRecording` state'iga emas, MediaRecorder'ning O'Z holatiga tayanadi:
+  // bu funksiya parent'dan ham chaqiriladi (vaqt tugaganda), u yerda esa
+  // state closure'i eskirgan bo'lishi mumkin.
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state === 'inactive') return;
+    setFinalizing(true);
+    setIsRecording(false);
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    try {
+      mr.stop();
+    } catch (err) {
+      // `onstop` endi kelmaydi — blob ham, yuklash ham bo'lmaydi. Xato
+      // holatini ochiq belgilaymiz: parent buni "javob yo'q" deb hisoblab
+      // submit'ni to'xtatadi (jimgina bo'sh javob ketmasin).
+      console.warn('MediaRecorder.stop failed:', err?.message || err);
+      setFinalizing(false);
+      setUploadError("Yozuvni yakunlab bo'lmadi. Iltimos, qaytadan yozing.");
     }
   };
+
+  // Vaqt tugaganda parent yozuvni O'ZI to'xtatishi kerak (talaba "to'xtatish"ni
+  // bosmagan bo'lishi mumkin) — shu sababli unga stop funksiyasini beramiz.
+  // `stopRecording` har renderda yangi funksiya, shuning uchun parent'ga
+  // barqaror o'ram beriladi va u ichkarida eng oxirgisini chaqiradi.
+  const stopRecordingRef = React.useRef(stopRecording);
+  stopRecordingRef.current = stopRecording;
+  const registerStopRef = React.useRef(onRegisterStop);
+  registerStopRef.current = onRegisterStop;
+  React.useEffect(() => {
+    const stopFn = () => stopRecordingRef.current?.();
+    registerStopRef.current?.(stopFn);
+    return () => registerStopRef.current?.(null);
+  }, []);
+
+  // Unmount tozalashi — mikrofonni yopadigan YAGONA kafolatli joy. Avval bu
+  // yerda faqat blob URL bo'shatilardi: parent bu komponentni yechganda
+  // (masalan "Vaqt tugadi" ekraniga o'tganda) MediaRecorder ham, sekundomer
+  // intervali ham ishlab turaverar va mikrofon indikatori tab yopilgunicha
+  // yonib turardi — to'xtatadigan kod yo'li qolmasdi. Proktoring
+  // monitorlarining (faceMonitorRef/voiceMonitorRef) to'xtatilishi bilan bir
+  // xil naqsh.
+  React.useEffect(() => () => {
+    statusCbRef.current?.({ busy: false, error: false });
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    const mr = mediaRecorderRef.current;
+    if (mr) {
+      // Handler'lar AVVAL uziladi: aks holda stop() `onstop`ni ishga tushirib,
+      // yechilgan komponentdan yuklash so'rovi ketardi.
+      try { mr.ondataavailable = null; mr.onstop = null; } catch {}
+      try { if (mr.state !== 'inactive') mr.stop(); } catch {}
+      mediaRecorderRef.current = null;
+    }
+    if (streamRef.current) {
+      try { streamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+      streamRef.current = null;
+    }
+    if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
+  }, []);
 
   const fmtTime = (s) => `${Math.floor(s / 60)}:${s % 60 < 10 ? '0' : ''}${s % 60}`;
 
@@ -325,9 +577,10 @@ const SpeakingVoiceRecorder = ({ onAudioRecorded }) => {
           <button
             type="button"
             onClick={startRecording}
-            className="btn-primary px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold flex items-center gap-2"
+            disabled={uploading || finalizing}
+            className="btn-primary px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Icon name="mic" size={16} /> Ovoz yozishni boshlash
+            <Icon name="mic" size={16} /> {audioBlobUrl ? 'Qaytadan yozish' : 'Ovoz yozishni boshlash'}
           </button>
         ) : (
           <button
@@ -340,11 +593,43 @@ const SpeakingVoiceRecorder = ({ onAudioRecorded }) => {
         )}
       </div>
 
+      {/* Yuklash holati — bu ko'rinib turishi shart, chunki shu paytda
+          navigatsiya tugmalari ham qulflangan. */}
+      {(uploading || finalizing) && (
+        <div className="flex items-center gap-2 text-xs text-text-secondary bg-surface-2 border border-edge rounded-xl px-3 py-2.5">
+          <Spinner size={14} className="text-accent" />
+          {finalizing && !uploading
+            ? 'Yozuv yakunlanmoqda...'
+            : "Ovozli javob yuklanmoqda — sahifani yopmang va keyingi savolga o'tmang."}
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-wash text-error border border-error/40 rounded-xl px-3 py-2.5 text-xs">
+          <span className="flex items-center gap-1.5"><Icon name="info" size={13} /> {uploadError}</span>
+          <button
+            type="button"
+            onClick={retryUpload}
+            disabled={uploading || !lastBlobRef.current}
+            className="btn-ghost text-xs px-3 py-1.5 rounded-lg disabled:opacity-50"
+          >
+            Qayta yuborish
+          </button>
+        </div>
+      )}
+
       {audioBlobUrl && (
         <div className="pt-3 border-t border-edge space-y-2">
-          <div className="text-xs text-success flex items-center gap-1.5">
-            <Icon name="check" size={13} /> Ovoz yozuvi muvaffaqiyatli saqlandi!
-          </div>
+          {uploaded ? (
+            <div className="text-xs text-success flex items-center gap-1.5">
+              <Icon name="check" size={13} /> Ovozli javob serverga yuklandi.
+            </div>
+          ) : !uploading && !finalizing && !uploadError && (
+            <div className="text-xs text-text-secondary flex items-center gap-1.5">
+              <Icon name="info" size={13} />
+              {canUpload ? 'Yozuv tayyor.' : 'Yozuv faqat shu brauzerda saqlandi — bu rejimda serverga yuklanmaydi.'}
+            </div>
+          )}
           <audio src={audioBlobUrl} controls className="w-full h-10" />
         </div>
       )}
@@ -1092,6 +1377,48 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [submitted, setSubmitted] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState('');
+  // Speaking javobi bilan band — YOZUV BOSHLANGANIDAN javob serverga yetguncha
+  // bo'lgan butun quvur (yozish → yakunlash → yuklash). Shu paytda navigatsiya
+  // va yakunlash tugmalari qulflanadi: aks holda talaba yozib turib keyingi
+  // savolga o'tib ketar yoki testni yakunlar, javob esa umuman olinmasdi.
+  const [speakingBusy, setSpeakingBusy] = React.useState(false);
+  // Yuklash XATO bilan tugagan holat. Bu paytda `speakingBusy` allaqachon
+  // false — ya'ni "band emas" degani "javob joyida" degani EMAS.
+  const [speakingFailed, setSpeakingFailed] = React.useState(false);
+  const handleSpeakingStatus = React.useCallback(({ busy, error }) => {
+    setSpeakingBusy(!!busy);
+    setSpeakingFailed(!!error);
+  }, []);
+  // Vaqt tugaganda yozuvni parent to'xtatadi (talaba "to'xtatish"ni bosmagan
+  // bo'lishi mumkin) — bola shu ref'ga o'z stop funksiyasini yozadi.
+  const speakingStopRef = React.useRef(null);
+  const registerSpeakingStop = React.useCallback((fn) => { speakingStopRef.current = fn; }, []);
+  // Tugmalarni qulflash YETARLI EMAS: vaqt tugaganda taymer `handleSubmit`ni
+  // to'g'ridan-to'g'ri chaqiradi va hech qanday tugmadan o'tmaydi. Shu sababli
+  // qulf handleSubmit ichida ham turadi va u holatni ref orqali o'qiydi
+  // (setState closure'i taymer ichida eskirgan bo'lishi mumkin).
+  // MUHIM: ref effektda yangilanadi — `answersRef` (yuqorida e'lon qilingan)
+  // effekti bu effektdan OLDIN ishlaydi, ya'ni ref `false`ga tushganda
+  // javoblar allaqachon `answersRef`ga yozilgan bo'ladi.
+  const speakingBusyRef = React.useRef(false);
+  React.useEffect(() => { speakingBusyRef.current = speakingBusy; }, [speakingBusy]);
+  const speakingFailedRef = React.useRef(false);
+  React.useEffect(() => {
+    speakingFailedRef.current = speakingFailed;
+    // Xato tuzalgan bo'lsa (qayta yuborish muvaffaqiyatli / yangi yozuv)
+    // "ogohlantirildi" belgisi ham tozalanadi.
+    if (!speakingFailed) speakingFailAckedRef.current = false;
+  }, [speakingFailed]);
+  // Yuklash xatosida BIRINCHI submit urinishi to'xtatiladi va aniq xabar
+  // ko'rsatiladi. Talaba shundan keyin ham "Qayta yuborish"ni bossa — bu ongli
+  // qaror: testni ovozli javobsiz yuboramiz. Aks holda yuklash tiklanmasa
+  // talaba testni UMUMAN topshira olmay, QOLGAN HAMMA javobini ham yo'qotardi.
+  const speakingFailAckedRef = React.useRef(false);
+  // `submitting` state'i taymer interval closure'ida eskirgan bo'lishi mumkin,
+  // yuklashni kutish esa handleSubmit'ning async oynasini kengaytiradi — qayta
+  // kirishni ref bilan to'saymiz (ikki marta submit "allaqachon qatnashgansiz"
+  // xatosiga olib kelardi).
+  const submitInFlightRef = React.useRef(false);
   // Oflayn rejim: submit paytida tarmoq uzilsa javoblar IndexedDB "outbox"'ga
   // navbatga qo'yiladi va aloqa tiklangach avtomatik yuboriladi. Bu holatda
   // foydalanuvchiga xotirjam qiluvchi "saqlandi, tiklangach yuboriladi"
@@ -2259,10 +2586,74 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     return undefined;
   }, [confirmModal]);
 
+  // Ovozli javob tayyor bo'lishini chegaralangan vaqt kutamiz. Talaba hali
+  // yozib turgan bo'lsa (vaqt tugagan payt) yozuvni O'ZIMIZ to'xtatamiz —
+  // aks holda javob umuman olinmasdi. Kutish natijasiz tugasa `false`
+  // qaytaradi: submit BEKOR qilinadi va aniq xato ko'rsatiladi, jimgina
+  // bo'sh javob yuborilmaydi.
+  const SPEAKING_UPLOAD_WAIT_MS = 15000;
+  const waitForSpeakingAnswer = async () => {
+    if (speakingBusyRef.current) {
+      try { speakingStopRef.current?.(); } catch (err) {
+        console.warn('speaking stop failed:', err?.message || err);
+      }
+    }
+    const deadline = Date.now() + SPEAKING_UPLOAD_WAIT_MS;
+    while (speakingBusyRef.current && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    if (speakingBusyRef.current) return false;
+    // Quvur tugadi — React `answers` holatini va `answersRef` ni yozib
+    // ulgurishi uchun bitta tick beramiz, aks holda javob shu zahoti
+    // o'qilganda payloadga tushmay qolishi mumkin edi.
+    await new Promise(resolve => setTimeout(resolve, 150));
+    // "Band emas" hali "javob joyida" degani emas: yuklash xato bilan tugagan
+    // bo'lishi mumkin va bunda `answers` da hech narsa yo'q.
+    return !speakingFailedRef.current;
+  };
+
   const handleSubmit = async () => {
-    if (submitting) return;
-    setSubmitting(true);
+    if (submitting || submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setSubmitError('');
+
+    // Speaking javobi hali tayyor emas (yozilyapti / yakunlanyapti / yuklanyapti)
+    // yoki yuklash xato bilan tugagan bo'lsa — javob `answers`da yo'q va payload
+    // uni umuman o'z ichiga olmasdi (backend "javobsiz" deb hisoblardi). Taymer
+    // avto-submiti ham aynan shu yo'ldan o'tadi, ya'ni tugmalardagi qulf
+    // chetlab o'tilmaydi.
+    //
+    // TARTIB MUHIM: bu blok `setSubmitting`/`setSubmitted` dan OLDIN turadi.
+    // Ular `timeUp && submitting` shartini yoqib "Vaqt tugadi" ekranini
+    // ko'rsatadi, u esa SpeakingVoiceRecorder'ni YECHIB yuboradi — unmount
+    // tozalashi yozuvni bekor qilar va aynan kutayotgan javobimiz yo'qolardi.
+    const speakingBlocking = speakingBusyRef.current
+      || (speakingFailedRef.current && !speakingFailAckedRef.current);
+    if (speakingBlocking) {
+      const answerReady = await waitForSpeakingAnswer();
+      if (!answerReady) {
+        const failed = speakingFailedRef.current;
+        // Xato holatida faqat BIR marta to'xtatamiz: talaba xabarni ko'rgach
+        // "Qayta yuborish"ni qayta bossa, bu ongli qaror bo'ladi va test
+        // ovozli javobsiz ketadi (qolgan javoblar yo'qolmasin).
+        if (failed) speakingFailAckedRef.current = true;
+        setSubmitError(
+          failed
+            ? "Ovozli javob serverga yuklanmadi — u yo'qolmasligi uchun test yuborilmadi. "
+              + "Yozuv panelidagi 'Qayta yuborish' tugmasini bosing. Agar baribir "
+              + "yuklanmasa, quyidagi 'Qayta yuborish' testni ovozli javobsiz yuboradi."
+            : "Ovozli javob hali serverga yuklanmoqda — u yo'qolmasligi uchun test "
+              + "yuborilmadi. Yuklash tugagach 'Qayta yuborish' tugmasini bosing.",
+        );
+        // Modal ochiq qolsa xato banneri uning ORQASIDA ko'rinmay qolardi —
+        // talaba nima bo'lganini bilmasdi.
+        setConfirmModal(false);
+        submitInFlightRef.current = false;
+        return;
+      }
+    }
+
+    setSubmitting(true);
     setConfirmModal(false);
     setSubmitted(true);
 
@@ -2361,6 +2752,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             rank: resp?.rank ?? resp?.position ?? localRank,
             time: resp?.time_spent ?? timeSpent,
             maxScore: resp?.max_score ?? maxPossible,
+            // IELTS/CEFR rasmiy hisoboti — backend submit javobida keladi.
+            // Bularsiz Results sahifasi attemptni qaytadan fetch qilishga
+            // majbur bo'lardi (va tarmoq sekin bo'lsa hisobot chiqmasdi).
+            ielts_band: resp?.ielts_band ?? null,
+            cefr_level: resp?.cefr_level ?? null,
+            section_scores: resp?.section_scores ?? null,
             olympiad: liveOlympiad || olympiad,
             _api: true,
           });
@@ -2457,6 +2854,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       }
     } finally {
       setSubmitting(false);
+      submitInFlightRef.current = false;
     }
   };
 
@@ -2986,7 +3384,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         <div className="question-strip">
           {Array.from({ length: TOTAL }).map((_, i) => (
             <button key={i} onClick={() => setCurrent(i)} aria-pressed={i === current}
-              className={`question-strip-btn font-data ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
+              disabled={speakingBusy}
+              className={`question-strip-btn font-data disabled:opacity-40 ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
               {i+1}
             </button>
           ))}
@@ -3001,7 +3400,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <div className="grid grid-cols-4 gap-1.5 mb-4">
             {Array.from({ length: TOTAL }).map((_, i) => (
               <button key={i} onClick={() => setCurrent(i)} aria-pressed={i === current}
-                className={`question-nav-btn font-data ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
+                disabled={speakingBusy}
+                className={`question-nav-btn font-data disabled:opacity-40 ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
                 {i+1}
               </button>
             ))}
@@ -3106,18 +3506,21 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                     </button>
                   );
                 })}
+                {/* Kod savolida speaking recorder mount bo'lmaydi (kod savol
+                    `section` bilan kelmaydi), lekin qulf bu yerda ham turadi:
+                    navigatsiya yo'llari bir xil himoyalangan bo'lsin. */}
                 <div className="hidden md:flex items-center gap-1.5 ml-auto flex-shrink-0">
-                  <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
+                  <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0 || speakingBusy}
                     className="btn-ghost px-2.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30 flex items-center gap-1">
                     <Icon name="arrowLeft" size={14} /> Oldingi
                   </button>
                   {current < TOTAL-1 ? (
-                    <button onClick={() => setCurrent(current+1)}
-                      className="btn-primary px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1">
+                    <button onClick={() => setCurrent(current+1)} disabled={speakingBusy}
+                      className="btn-primary px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50">
                       Keyingi <Icon name="chevronRight" size={14} />
                     </button>
                   ) : (
-                    <button onClick={() => setConfirmModal(true)} disabled={submitting}
+                    <button onClick={() => setConfirmModal(true)} disabled={submitting || speakingBusy}
                       className="btn-primary px-2.5 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
                       Yakunlash
                     </button>
@@ -3286,15 +3689,25 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               <>
                 {/* Listening audio agar mavjud bo'lsa */}
                 {(q?.audio || q?.audio_url) && (
+                  /* key — savol almashganda ijro hisobi va audio holati
+                     to'liq qayta boshlansin. Kalitsiz React eski instansiyani
+                     qayta ishlatib, oldingi savolning playCount'ini olib
+                     kelardi (IELTS'da 2-savol boshidanoq qulflanardi). */
                   <ListeningAudioPlayer
+                    key={q.id}
                     audioUrl={q.audio || q.audio_url}
                     examFormat={olympiad?.exam_format || olympiad?.examFormat}
+                    olympiadId={liveOlympiad?.backendId}
+                    questionId={q?.id}
                   />
                 )}
 
                 {/* Reading Split-screen yoki odatiy render */}
                 {q?.passage_text ? (
+                  /* key — belgilashlar (highlights) yangi matnga o'tib
+                     ketmasligi uchun passage almashganda qayta o'rnatiladi. */
                   <ReadingPassageSplitView
+                    key={q.id}
                     passageText={q.passage_text}
                     title={q.section === 'writing' ? "Writing Task Ko'rsatmasi" : "Reading Passage (Matn)"}
                   >
@@ -3304,7 +3717,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
                     <div className="mb-6 md:mb-8">
                       {q.section === 'speaking' ? (
-                        <SpeakingVoiceRecorder onAudioRecorded={(data) => handleTextAnswer(data)} />
+                        <SpeakingVoiceRecorder
+                          key={q.id}
+                          onAudioRecorded={(data) => handleTextAnswer(data)}
+                          olympiadId={liveOlympiad?.backendId}
+                          questionId={q?.id}
+                          onStatusChange={handleSpeakingStatus}
+                          onRegisterStop={registerSpeakingStop}
+                        />
                       ) : (
                         <QuestionAnswerArea
                           qType={qType}
@@ -3331,7 +3751,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                     {/* Answer area — savol turiga qarab UI. */}
                     <div className="mb-6 md:mb-8">
                       {q.section === 'speaking' ? (
-                        <SpeakingVoiceRecorder onAudioRecorded={(data) => handleTextAnswer(data)} />
+                        <SpeakingVoiceRecorder
+                          key={q.id}
+                          onAudioRecorded={(data) => handleTextAnswer(data)}
+                          olympiadId={liveOlympiad?.backendId}
+                          questionId={q?.id}
+                          onStatusChange={handleSpeakingStatus}
+                          onRegisterStop={registerSpeakingStop}
+                        />
                       ) : (
                         <QuestionAnswerArea
                           qType={qType}
@@ -3352,19 +3779,23 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               </>
             )}
 
-            {/* Desktop nav buttons (inline) */}
+            {/* Desktop nav buttons (inline) — speaking javobi yuklanayotganda
+                qulflanadi (javob yuklanib ulgurmasdan ketib qolmasin). */}
             <div className="hidden md:flex items-center justify-between">
-              <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
+              <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0 || speakingBusy}
                 className="btn-ghost px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30 flex items-center gap-2">
                 <Icon name="arrowLeft" size={15} /> Oldingi
               </button>
-              <div className="text-xs text-text-secondary font-data">{answered} ta javob berildi</div>
+              <div className="text-xs text-text-secondary font-data">
+                {speakingBusy ? 'Ovozli javob tayyorlanmoqda...' : `${answered} ta javob berildi`}
+              </div>
               {current < TOTAL-1 ? (
-                <button onClick={() => setCurrent(current+1)} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
+                <button onClick={() => setCurrent(current+1)} disabled={speakingBusy}
+                  className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                   Keyingi <Icon name="chevronRight" size={15} />
                 </button>
               ) : (
-                <button onClick={() => setConfirmModal(true)} disabled={submitting}
+                <button onClick={() => setConfirmModal(true)} disabled={submitting || speakingBusy}
                   className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   Testni yakunlash
                 </button>
@@ -3379,18 +3810,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface-1 border-t border-edge px-3 py-3 flex items-center gap-2"
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
         >
-          <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
+          <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0 || speakingBusy}
             className="btn-ghost px-3 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30 flex items-center gap-1.5 flex-shrink-0">
             <Icon name="arrowLeft" size={15} />
           </button>
           {current < TOTAL-1 ? (
-            <button onClick={() => setCurrent(current+1)} className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
-              Keyingi savol <Icon name="chevronRight" size={15} />
+            <button onClick={() => setCurrent(current+1)} disabled={speakingBusy}
+              className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              {speakingBusy ? 'Yuklanmoqda...' : <>Keyingi savol <Icon name="chevronRight" size={15} /></>}
             </button>
           ) : (
-            <button onClick={() => setConfirmModal(true)} disabled={submitting}
+            <button onClick={() => setConfirmModal(true)} disabled={submitting || speakingBusy}
               className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-              Testni yakunlash
+              {speakingBusy ? 'Yuklanmoqda...' : 'Testni yakunlash'}
             </button>
           )}
         </div>
@@ -3443,9 +3875,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         </div>
         <div className="flex gap-3">
           <button onClick={() => setConfirmModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Davom etish</button>
-          <button onClick={handleSubmit} disabled={submitting}
+          {/* Modalni ochadigan tashqi tugma qulflangan bo'lsa ham, modal ochiq
+              turganda yuklash boshlanishi mumkin — ichkarisi ham qulflanadi. */}
+          <button onClick={handleSubmit} disabled={submitting || speakingBusy}
             className="btn-primary flex-1 py-3 rounded-xl font-bold disabled:opacity-50">
-            {submitting ? 'Yuborilmoqda...' : 'Yuborish ✓'}
+            {submitting ? 'Yuborilmoqda...' : speakingBusy ? 'Ovoz tayyorlanmoqda...' : 'Yuborish ✓'}
           </button>
         </div>
       </Modal>
