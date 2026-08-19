@@ -8,9 +8,15 @@ const ADMIN_DASHBOARD_PAGES = [
 ];
 const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
 
-// Rol o'zgartirish modalidagi checkboxlar. `admin` — platform admin huquqi
-// (User.roles emas, is_platform_admin flag'i); qolganlari markazsiz
-// system-wide rollar (backend ALLOWED_ROLE_KEYS bilan mos).
+// Rol o'zgartirish modalidagi variantlar. Dastlabki to'rttasi — markazsiz
+// system-wide rollar (backend ALLOWED_ROLE_KEYS bilan mos). Bitta hisobda
+// ular O'ZARO ISTISNO: modal ularni radio qilib chizadi va bir vaqtda faqat
+// bittasi tanlanadi. `admin` esa rol emas — platform admin huquqi (User.roles
+// ga emas, is_platform_admin flag'iga yoziladi), shuning uchun u radio
+// guruhidan tashqarida, mustaqil toggle bo'lib qoladi.
+// Tartib huquq darajasi bo'yicha o'sadi (student → owner): bir nechta tizim
+// roli bor eski hisoblarda modal shu tartibdagi ENG OXIRGISINI tanlangan
+// holatda ochadi.
 const ROLE_MODAL_KEYS = [
   { value: 'student', label: "O'quvchi (Student)" },
   { value: 'teacher', label: "O'qituvchi (Teacher)" },
@@ -18,6 +24,12 @@ const ROLE_MODAL_KEYS = [
   { value: 'owner', label: 'Direktor (Owner)' },
   { value: 'admin', label: 'Platform Admin' },
 ];
+
+// Radio guruhiga tushadigan rollar (admin — alohida). Ommaviy rol modali ham
+// shu ro'yxatdan foydalanadi, lekin u ATAYIN ko'p tanlovli bo'lib qoladi:
+// u yerda bir amalda bir nechta rol berish mumkin.
+const ROLE_RADIO_KEYS = ROLE_MODAL_KEYS.filter(opt => opt.value !== 'admin');
+const ROLE_ADMIN_KEY = ROLE_MODAL_KEYS.find(opt => opt.value === 'admin');
 
 // Amallar tarixi (audit jurnali) bir sahifada nechta yozuv ko'rsatadi.
 // Backend LargePageNumberPagination'ga `page_size` sifatida yuboriladi.
@@ -1083,7 +1095,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [centerActionBusy, setCenterActionBusy] = React.useState(false);
   const [premiumUser, setPremiumUser] = React.useState(null);
   const [roleModal, setRoleModal] = React.useState(null);
-  const [roleSelection, setRoleSelection] = React.useState([]);
+  // Rol tanlovi — BITTA qiymat (radio), `null` bo'lsa hisob tizim rolisiz
+  // qoladi. Platform admin esa alohida holatda turadi: u User.roles ga emas,
+  // is_platform_admin flag'iga ketadi, ya'ni rol bilan bir savatda saqlansa
+  // ikkalasi chalkashib ketardi.
+  const [roleSelection, setRoleSelection] = React.useState(null);
+  const [roleAdmin, setRoleAdmin] = React.useState(false);
   const [roleSaving, setRoleSaving] = React.useState(false);
   const [premiumDuration, setPremiumDuration] = React.useState(30);
   const [premiumPlanType, setPremiumPlanType] = React.useState('student');
@@ -2154,20 +2171,33 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setPremiumSaving(false));
   };
 
-  // Rol modali: foydalanuvchining joriy rollarini (admin = platform admin
-  // flag'i) checkboxlar uchun boshlang'ich tanlovga aylantiramiz.
+  // Rol modali: boshlang'ich tanlov FAQAT tizim rollaridan (`systemRoleKeys`
+  // — backenddagi xom User.roles) olinadi. Avval bu yerda `roleKeys`
+  // ishlatilardi, u esa markaz a'zoliklari bilan BIRLASHMA: markazdan kelgan
+  // (hatto hali tasdiqlanmagan) rol modalda belgilangan bo'lib ko'rinardi va
+  // "Saqlash" uni tizim roliga aylantirib User.roles ga yozib qo'yardi —
+  // admin so'ramagan huquq kengaytmasi.
   const openRoleModal = (row) => {
-    const selected = (row.roleKeys || []).filter(r => ROLE_MODAL_KEYS.some(k => k.value === r));
-    if (row.isPlatformAdmin && !selected.includes('admin')) selected.push('admin');
-    setRoleSelection(selected);
+    const system = row.systemRoleKeys || [];
+    // Radio bitta qiymat ko'taradi — bir nechta tizim roli bor eski
+    // hisoblarda eng yuqori huquqlisini (ro'yxatdagi oxirgisini) tanlaymiz.
+    const primary = ROLE_RADIO_KEYS.filter(opt => system.includes(opt.value)).pop();
+    setRoleSelection(primary ? primary.value : null);
+    setRoleAdmin(!!row.isPlatformAdmin);
     setRoleModal(row);
   };
 
-  const toggleRoleCheckbox = (value) => {
-    setRoleSelection(prev => prev.includes(value)
-      ? prev.filter(r => r !== value)
-      : [...prev, value]);
+  // Radio, lekin "bo'shatib bo'ladigan": tanlangan rolni qayta bosish tanlovni
+  // bekor qiladi. Bu ataylab — rollarni butunlay olib tashlash imkoni faqat
+  // shu modalda bor, uni yo'qotmaymiz.
+  const pickRole = (value) => {
+    setRoleSelection(prev => (prev === value ? null : value));
   };
+
+  // Saqlash User.roles ni TO'LIQ almashtiradi — tanlanmay qolgan tizim
+  // rollari o'chadi. Ko'p rolli eski hisoblarda buni oldindan aytib qo'yamiz.
+  const droppedSystemRoles = (roleModal?.systemRoleKeys || [])
+    .filter(r => r !== roleSelection && ROLE_RADIO_KEYS.some(opt => opt.value === r));
 
   const handleSaveRoles = () => {
     if (!roleModal) return;
@@ -2175,12 +2205,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const numericUserId = roleModal?.backendId ?? (typeof roleModal?.id === 'string' && roleModal.id.startsWith('api:') ? Number(roleModal.id.slice(4)) : null);
     if (!numericUserId) { showToast('Backend ID topilmadi'); return; }
 
-    // `admin` checkboxi User.roles ga emas, is_platform_admin flag'iga ketadi.
-    const isPlatformAdmin = roleSelection.includes('admin');
-    const roles = roleSelection.filter(r => r !== 'admin');
+    // `admin` toggle'i User.roles ga emas, is_platform_admin flag'iga ketadi.
+    // Rol esa ko'pi bilan bitta: tanlanmagan bo'lsa bo'sh ro'yxat ketadi va
+    // backend barcha tizim rollarini olib tashlaydi (markaz a'zoliklariga
+    // tegmaydi — ular alohida oqim).
+    const roles = roleSelection ? [roleSelection] : [];
 
     setRoleSaving(true);
-    OlympyApi.adminSetUserRoles(numericUserId, { roles, isPlatformAdmin }, OlympyApi.getToken())
+    OlympyApi.adminSetUserRoles(numericUserId, { roles, isPlatformAdmin: roleAdmin }, OlympyApi.getToken())
       .then(() => {
         showToast('Rollar yangilandi');
         setRoleModal(null);
@@ -2358,6 +2390,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     // rol bo'lmasa boshqa har qanday mavjud rol-ni, u ham bo'lmasa "—" qiyofa
     // ko'rsatamiz.
     const roleKeys = Object.keys(u.roles || {});
+    // `roleKeys` — BIRLASHMA (tizim rollari + markaz a'zoliklari). Rol modali
+    // uchun esa faqat tizim rollari kerak, shuning uchun xom ro'yxatni
+    // alohida olib yuramiz. Mock (API'siz) rejimda `systemRoles` bo'lmaydi —
+    // o'shanda eski xulq (birlashma) qoladi, u yerda saqlash baribir ishlamaydi.
+    const systemRoleKeys = Array.isArray(u.systemRoles) ? u.systemRoles : roleKeys;
+    // Markaz a'zoligidan (CenterMembership) kelgan rollar — modalda faqat
+    // o'qish uchun ko'rsatiladi, chunki ular alohida tasdiqlash oqimi bilan
+    // boshqariladi. `centers` ro'yxati FAQAT haqiqiy a'zolikda to'ladi;
+    // markazsiz tizim roli uchun u bo'sh bo'ladi.
+    const membershipRoles = Object.entries(u.roles || {})
+      .filter(([role, info]) => role !== 'admin' && (info?.centers?.length || 0) > 0)
+      .map(([role, info]) => ({ role, status: info?.status || 'pending' }));
     const anyRole = roleKeys[0];
     const primary = (u.activeRole && approved.includes(u.activeRole))
       ? u.activeRole
@@ -2401,9 +2445,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       // ya'ni to'liq ro'yxatda ham bu maydon bor — "Shubhali xavf" chipidagi
       // son shu sababli filtr natijasi bilan mos tushadi.
       riskTier: u.riskTier || null,
-      // Rol o'zgartirish modali uchun: foydalanuvchidagi xom rol kalitlari va
-      // platform admin flag'i (checkboxlarni joriy holat bo'yicha belgilaymiz).
+      // `roleKeys` — birlashma: rol filtri va pastdagi `orgBoundPremium`
+      // hisobi markaz a'zoligidan kelgan rollarni ham hisobga olishi kerak.
       roleKeys,
+      // Rol o'zgartirish modali esa FAQAT shulardan boshlang'ich holat oladi
+      // (+ platform admin flag'i), a'zolik rollari unga aralashmaydi.
+      systemRoleKeys,
+      membershipRoles,
       // O'qituvchi/manager hisobiga shaxsiy premium ta'sir qilmaydi — ularning
       // premium funksiyalari markazning obunasidan keladi (backend ham bunday
       // grantni 400 bilan rad etadi). Direktor (owner) bundan mustasno: unga
@@ -5167,7 +5215,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div>
             <label className="block text-xs text-text-secondary mb-2 font-medium">Rollar</label>
             <div className="space-y-2">
-              {ROLE_MODAL_KEYS.filter(opt => opt.value !== 'admin').map(opt => {
+              {ROLE_RADIO_KEYS.map(opt => {
                 const checked = bulkRoleSelection.includes(opt.value);
                 return (
                   <button
@@ -5246,29 +5294,90 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </div>
 
             <div>
-              <label className="block text-xs text-text-secondary mb-2 font-medium">Rollar</label>
-              <div className="space-y-2">
-                {ROLE_MODAL_KEYS.map(opt => {
-                  const checked = roleSelection.includes(opt.value);
+              <label className="block text-xs text-text-secondary mb-2 font-medium">Rol</label>
+              {/* Radio: hisobda bir vaqtda bitta tizim roli bo'ladi. Belgi
+                  ATAYIN dumaloq — pastdagi kvadrat admin toggle'i mustaqil
+                  ekani shundan ko'rinib tursin. */}
+              <div className="space-y-2" role="radiogroup" aria-label="Rol">
+                {ROLE_RADIO_KEYS.map(opt => {
+                  const checked = roleSelection === opt.value;
                   return (
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => toggleRoleCheckbox(opt.value)}
+                      role="radio"
+                      aria-checked={checked}
+                      onClick={() => pickRole(opt.value)}
                       className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
                         checked
                           ? 'border-accent bg-surface-2 text-text-primary'
                           : 'btn-ghost'
                       }`}
                     >
-                      <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong'}`}>
-                        {checked && <Icon name="check" size={12} />}
+                      <span className={`flex h-4 w-4 items-center justify-center rounded-full border transition ${checked ? 'border-accent-fill' : 'border-edge-strong'}`}>
+                        {checked && <span className="h-2 w-2 rounded-full bg-accent-fill" />}
                       </span>
                       {opt.label}
                     </button>
                   );
                 })}
               </div>
+              <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
+                Faqat bitta rol tanlanadi. Tanlangan rolni qayta bossangiz tanlov
+                bekor bo'ladi va hisob tizim rolisiz qoladi.
+              </p>
+              {droppedSystemRoles.length > 0 && (
+                <p className="mt-1 text-[11px] text-warning leading-relaxed">
+                  Saqlasangiz, hozirgi{' '}
+                  {droppedSystemRoles.map(r => ROLE_META[r]?.label || r).join(', ')}{' '}
+                  {droppedSystemRoles.length > 1 ? 'rollari' : 'roli'} olib tashlanadi.
+                </p>
+              )}
+
+              {/* Markaz a'zoligidan kelgan rollar — bu yerdan boshqarilmaydi,
+                  lekin ilovada ko'rinadi. Ro'yxatlab qo'yamiz: aks holda admin
+                  nega foydalanuvchida boshqa rol chiqayotganini tushunmaydi. */}
+              {roleModal.membershipRoles?.length > 0 && (
+                <div className="mt-3 rounded-xl border border-edge bg-surface-2 px-3 py-2.5">
+                  <div className="text-[11px] font-bold text-text-primary">
+                    Markaz orqali: {roleModal.membershipRoles
+                      .map(m => `${ROLE_META[m.role]?.label || m.role} (${statusLabel(m.status).toLowerCase()})`)
+                      .join(', ')}
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-secondary leading-relaxed">
+                    Bu rollar markaz a'zoligidan keladi va bu yerdan
+                    o'zgartirilmaydi — ular markazning tasdiqlash oqimi orqali
+                    boshqariladi.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Platform Admin — rol EMAS, alohida huquq: radio guruhini bekor
+                qilmaydi, tanlangan rol bilan birga tura oladi. Shuning uchun
+                ajratilgan blokda va kvadrat (checkbox) belgi bilan. */}
+            <div className="border-t border-edge pt-4">
+              <label className="block text-xs text-text-secondary mb-2 font-medium">Qo'shimcha huquq</label>
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={roleAdmin}
+                onClick={() => setRoleAdmin(prev => !prev)}
+                className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
+                  roleAdmin
+                    ? 'border-accent bg-surface-2 text-text-primary'
+                    : 'btn-ghost'
+                }`}
+              >
+                <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${roleAdmin ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong'}`}>
+                  {roleAdmin && <Icon name="check" size={12} />}
+                </span>
+                {ROLE_ADMIN_KEY.label}
+              </button>
+              <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
+                Panelga to'liq kirish huquqi. Yuqoridagi rol bilan birga ham
+                berilishi mumkin.
+              </p>
             </div>
 
             <div className="flex gap-3">

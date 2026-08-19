@@ -1050,6 +1050,14 @@ const mapBackendUser = (user) => {
     password: '',
     roles,
     activeRole,
+    // XOM `User.roles` — markazsiz, TIZIM darajasidagi rollar. Yuqoridagi
+    // `roles` obyekti bu ro'yxatni CenterMembership a'zoliklari
+    // (`roles_detail`) bilan BIRLASHTIRADI, ya'ni undan "bu foydalanuvchining
+    // tizim roli qaysi?" degan savolga javob olib bo'lmaydi. Admin panelidagi
+    // rol modali aynan shu xom ro'yxatga tayanadi: aks holda markazdagi (hatto
+    // hali tasdiqlanmagan) rol modalda belgilangan ko'rinib, "Saqlash" uni
+    // tizim roliga aylantirib yozib qo'yardi.
+    systemRoles: [...backendRoles],
     joined: (user.created_at || '').slice(0, 10),
     isPlatformAdmin: !!user.is_platform_admin,
     // is_premium_active — admin/obuna premiumi YOKI hali amal qiluvchi 1 oylik
