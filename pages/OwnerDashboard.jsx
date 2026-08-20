@@ -2611,7 +2611,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   
                   // Holat belgilari — `.chip badge-*` (src/index.css) bilan bir xil
                   // semantikada: rad etilgan / yakunlangan / kutilmoqda / faol.
-                  if (p.status === 'disqualified') {
+                  if (p.status === 'removed') {
+                    // Tashkilotchi chiqarib yuborgan — qoidabuzarlik EMAS,
+                    // shuning uchun neytral (`badge-finished`) uslub.
+                    statusBadge = (
+                      <span className="chip badge-finished inline-flex items-center gap-1">
+                        🚫 Chiqarib yuborilgan
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="w-2 h-2 rounded-full bg-edge-strong"></span>
+                        Oflayn
+                      </span>
+                    );
+                  } else if (p.status === 'disqualified') {
                     statusBadge = (
                       <span className="chip badge-rejected inline-flex items-center gap-1">
                         ⚠️ Diskvalifikatsiya
@@ -2706,6 +2720,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                               Sabab: {p.cheating_reason}
                             </div>
                           )}
+                          {/* Chiqarib yuborish sababi — qoidabuzarlik emas, neytral uslub. */}
+                          {p.removal_reason && (
+                            <div className="text-[10px] text-text-secondary bg-ground px-2 py-0.5 rounded border border-edge-strong max-w-[200px] truncate" title={p.removal_reason}>
+                              Sabab: {p.removal_reason}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-5 py-4 min-w-[150px]">
@@ -2733,6 +2753,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <span className="font-data font-bold text-success text-base">{p.score}%</span>
                             <div className="text-[10px] font-data text-text-secondary mt-0.5">Sarflandi: {formattedTimeSpent}</div>
                           </div>
+                        ) : p.status === 'removed' ? (
+                          <span className="font-bold text-text-secondary text-xs">Chiqarib yuborilgan</span>
                         ) : p.status === 'disqualified' ? (
                           <span className="font-bold text-error text-xs">Natija bekor qilingan</span>
                         ) : (p.pending_review || p.status === 'pending_review') ? (
@@ -4327,6 +4349,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         sessionId={liveProctorSession?.id}
         studentName={liveProctorSession?.studentName}
         olympiadTitle={liveProctorSession?.olympiadTitle}
+        // Jadval keyingi polling'ni kutmasdan darhol yangilansin.
+        onDisqualify={loadProctoring}
+        onRemove={loadProctoring}
       />
     </div>
   );

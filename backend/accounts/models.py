@@ -1040,6 +1040,12 @@ class AuditLog(models.Model):
         ('admin_send_telegram', "Telegram orqali to'g'ridan-to'g'ri xabar yuborildi"),
         ('admin_flash_alert', "Shaxsiy modal xabar yuborildi"),
         ('admin_live_terminate', "Jonli imtihon majburan to'xtatildi"),
+        # Markaz tashkilotchisi (menejer/o'qituvchi/direktor) jonli nazorat
+        # panelidan qilgan amallar. `remove` — natija bekor, lekin ayblov yo'q;
+        # `disqualify` — qoidabuzarlik. Admin amalidan (`admin_live_terminate`)
+        # alohida yoziladi: kim to'xtatgani jurnaldan ko'rinib tursin.
+        ('manager_live_disqualify', "Menejer jonli imtihonda diskvalifikatsiya qildi"),
+        ('manager_live_remove', "Menejer jonli imtihondan chiqarib yubordi"),
         ('admin_bulk_import_users', "Foydalanuvchilar ommaviy import qilindi"),
         # Django admin (`/olympy-mgmt-2025/`) orqali qilingan profil tahriri.
         # API'dagi admin amallari har biri o'z kodiga ega, Django admin esa

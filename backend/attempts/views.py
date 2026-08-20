@@ -469,11 +469,22 @@ def submit_attempt(request):
                 status=http_status.HTTP_404_NOT_FOUND,
             )
 
-        if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
-            return Response(
-                {'detail': "Siz bu olimpiadaga allaqachon qatnashgansiz"},
-                status=http_status.HTTP_400_BAD_REQUEST,
-            )
+        # Chiqarib yuborilgan o'quvchida attempt ALLAQACHON mavjud
+        # (`finalize_removal` uni darhol yaratadi), ya'ni haqiqiy oqim aynan shu
+        # shoxdan o'tadi — sessiya statusi tekshiruvigacha yetib bormaydi.
+        # `removed` bayrog'isiz frontend "allaqachon qatnashgansiz" deb
+        # ko'rsatib, o'quvchini imtihon ekranida qoldirardi.
+        blocking_attempt = TestAttempt.objects.filter(
+            user=request.user, olympiad=olympiad,
+        ).only('id', 'removed').first()
+        if blocking_attempt is not None:
+            payload = {'detail': "Siz bu olimpiadaga allaqachon qatnashgansiz"}
+            if blocking_attempt.removed:
+                payload = {
+                    'removed': True,
+                    'detail': "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.",
+                }
+            return Response(payload, status=http_status.HTTP_400_BAD_REQUEST)
 
         if olympiad.status != Olympiad.STATUS_ACTIVE:
             return Response({'detail': "Olimpiada faol emas"},
@@ -514,6 +525,20 @@ def submit_attempt(request):
         if session.status == TestSession.STATUS_DISQUALIFIED:
             return Response(
                 {'detail': "Siz cheating qildingiz. Olimpiada yakunlandi."},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+        # Tashkilotchi chiqarib yuborgan — javoblarni qabul qilmaymiz.
+        # (Chiqarish paytida attempt yaratilgani uchun `unique_user_olympiad`
+        # baribir to'sardi; bu tushunarli xabar beruvchi qatlam.)
+        # `removed` bayrog'i SHART: frontend submit-catch bloki xatoni matn
+        # regexi bilan tanidi va bu matn hech biriga tushmasdi — o'quvchi
+        # "qayta urinib ko'ring" xabarini olib cheksiz tsiklda qolardi.
+        if session.status == TestSession.STATUS_REMOVED:
+            return Response(
+                {
+                    'removed': True,
+                    'detail': "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.",
+                },
                 status=http_status.HTTP_403_FORBIDDEN,
             )
         # 60 soniyalik grace period: timer tugaganda yuborilgan submit sekin
@@ -767,13 +792,17 @@ def submit_attempt(request):
 submit_attempt.cls.throttle_scope = 'submit'
 
 
-def _create_disqualified_attempt(user, olympiad, session):
+def _create_disqualified_attempt(user, olympiad, session, removed=False):
     """Diskvalifikatsiya qilingan student uchun iz qoldiruvchi attempt yaratadi.
 
     Aks holda student na leaderboard'da, na manager statistikasida ko'rinmasdi.
     score=0, disqualified=True; time_spent — session boshidan hozirgacha (duration
     bilan cheklangan). Eski `ReportCheatingView` shu mantiqni bajarardi — endi u
     diskvalifikatsiya TASDIQLANGANDA (review yoki auto-timeout) chaqiriladi.
+
+    `removed=True` — tashkilotchi imtihondan chiqarib yuborgan (qoidabuzarlik
+    emas). `disqualified` baribir True bo'ladi, chunki natija bekor qilinadi va
+    statistikadan chiqishi kerak; `removed` faqat yorliqni o'zgartiradi.
     """
     time_spent = max(0, int(
         (timezone.now() - session.started_at).total_seconds()
@@ -792,6 +821,7 @@ def _create_disqualified_attempt(user, olympiad, session):
             time_spent=time_spent,
             rank=None,
             disqualified=True,
+            removed=removed,
         )
     except IntegrityError:
         # Race: bir vaqtda submit bilan kelishi mumkin. E'tibor bermaymiz.
@@ -909,13 +939,35 @@ def finalize_cheating_disqualification(session, olympiad, reviewed_by, now=None)
     session.reviewed_at = now
     session.status = TestSession.STATUS_DISQUALIFIED
     session.disqualified_at = session.disqualified_at or now
+    # `cheating_reason` ham update_fields ichida: chaqiruvchi (masalan jonli
+    # nazoratdagi menejer) sababni shu chaqiruvdan oldin qo'yishi mumkin, u
+    # ro'yxatda bo'lmasa yozuv jimgina tashlab yuborilardi.
     session.save(update_fields=[
-        'reviewed_by', 'reviewed_at', 'status', 'disqualified_at',
+        'reviewed_by', 'reviewed_at', 'status', 'disqualified_at', 'cheating_reason',
     ])
     _create_disqualified_attempt(session.user, olympiad, session)
     # Dalil oxirida: kadr bo'lmasa ham (odatiy hol — yuqoridagi izohga qarang)
     # yuqoridagi mutatsiyalar allaqachon bajarilgan.
     capture_evidence_snapshot(session, EvidenceSnapshot.TRIGGER_DISQUALIFIED)
+
+
+def finalize_removal(session, olympiad, removed_by, reason='', now=None):
+    """Sessiyani STATUS_REMOVED ga o'tkazadi + bekor qilingan attempt yaratadi.
+
+    Diskvalifikatsiyadan farqi: qoidabuzarlik belgilanmaydi va dalil kadri
+    olinmaydi (`capture_evidence_snapshot` chaqirilmaydi) — chiqarib yuborish
+    ayblov emas. Faqat DB mutatsiyasi: chaqiruvchi tranzaksiya ichida ishlatadi.
+    """
+    now = now or timezone.now()
+    session.reviewed_by = removed_by
+    session.reviewed_at = now
+    session.status = TestSession.STATUS_REMOVED
+    session.disqualified_at = session.disqualified_at or now
+    session.removal_reason = (reason or session.removal_reason or '')[:120]
+    session.save(update_fields=[
+        'reviewed_by', 'reviewed_at', 'status', 'disqualified_at', 'removal_reason',
+    ])
+    _create_disqualified_attempt(session.user, olympiad, session, removed=True)
 
 
 def notify_cheating_confirmed(student, olympiad, reason=''):
@@ -927,6 +979,41 @@ def notify_cheating_confirmed(student, olympiad, reason=''):
     except Exception:
         import logging
         logging.getLogger(__name__).exception('cheating confirm notification failed')
+
+
+def notify_terminated_student(student, olympiad, reason='', cheating=False):
+    """Jonli nazoratda to'xtatilgan o'quvchining o'ziga xabar (best-effort).
+
+    `cheating=False` — oddiy chiqarib yuborish: matnda "qoidabuzarlik" so'zi
+    ishlatilmaydi, aks holda aybsiz o'quvchi ayblanayotgandek bo'lardi.
+    """
+    try:
+        from notifications.models import Notification
+
+        if cheating:
+            title = "Imtihon to'xtatildi"
+            message = (
+                f"'{olympiad.title}' olimpiadasidagi ishtirokingiz qoidabuzarlik "
+                f"sababli to'xtatildi."
+            )
+        else:
+            title = "Imtihondan chetlashtirildingiz"
+            message = (
+                f"'{olympiad.title}' olimpiadasidagi ishtirokingiz tashkilotchi "
+                f"tomonidan bekor qilindi."
+            )
+        if reason:
+            message = f"{message} Sabab: {reason}"
+        Notification.objects.create(
+            user=student,
+            center=olympiad.center,
+            type='system',
+            title=title,
+            message=message,
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('termination notification failed')
 
 
 class ReportCheatingView(APIView):
@@ -2415,6 +2502,9 @@ def leaderboard(request):
                 'wrong_count': a.wrong_count,
                 'total_questions': a.total_questions,
                 'disqualified': a.disqualified,
+                # Chiqarib yuborilgan (qoidabuzarlik EMAS) — menejer ko'radigan
+                # reytingda "DQ" o'rniga neytral yorliq chiqarish uchun.
+                'removed': a.removed,
                 'time_spent': a.time_spent,
                 'submitted_at': a.submitted_at.isoformat(),
             })
@@ -2585,6 +2675,20 @@ def test_session_ping(request):
             status=http_status.HTTP_409_CONFLICT,
         )
 
+    # Tashkilotchi imtihondan chiqarib yuborgan. Shakli DQ bilan bir xil (409),
+    # ammo `removed` bayrog'i va neytral matn bilan — frontend shu farq orqali
+    # "cheating aniqlandi" o'rniga boshqa ekran ko'rsatadi.
+    if session.status == TestSession.STATUS_REMOVED:
+        return Response(
+            {
+                'removed': True,
+                'status': session.status,
+                'reviewed_at': session.reviewed_at.isoformat() if session.reviewed_at else None,
+                'detail': "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.",
+            },
+            status=http_status.HTTP_409_CONFLICT,
+        )
+
     # Cacheni yangilash (timeout 60 soniya, agar 60s ichida ping kelmasa oflayn hisoblanadi)
     cache_key = f"test_session_ping:{olympiad_id}:{request.user.id}"
     cache.set(cache_key, {
@@ -2683,9 +2787,17 @@ def olympiad_live_proctoring(request, olympiad_id):
         status = 'active'
         pending_review = False
         if attempt:
-            status = 'disqualified' if attempt.disqualified else 'completed'
+            if attempt.removed:
+                # Chiqarib yuborilgan — `disqualified` ham True, lekin menejerga
+                # "qoidabuzar" deb ko'rsatilmaydi.
+                status = 'removed'
+            else:
+                status = 'disqualified' if attempt.disqualified else 'completed'
             is_online = False
             answered = attempt.total_questions
+        elif s.status == TestSession.STATUS_REMOVED:
+            status = 'removed'
+            is_online = False
         elif s.status == TestSession.STATUS_DISQUALIFIED:
             status = 'disqualified'
             is_online = False
@@ -2705,6 +2817,7 @@ def olympiad_live_proctoring(request, olympiad_id):
             'pending_review': pending_review,
             'review_requested_at': s.review_requested_at.isoformat() if s.review_requested_at else None,
             'cheating_reason': s.cheating_reason,
+            'removal_reason': s.removal_reason,
             # Webkamera proktoring rozilik holati (video EMAS — faqat boolean +
             # vaqt). Menejer "hech qachon rozilik bermagan" ni "rozilik bergan,
             # kamera hech narsa topmagan" dan ajrata olishi uchun.
@@ -2723,6 +2836,118 @@ def olympiad_live_proctoring(request, olympiad_id):
         })
 
     return Response(results)
+
+
+# Sabab ko'rsatilmasa `remove` uchun ishlatiladigan matn. `disqualify` da
+# sabab MAJBURIY (pastda 400 qaytariladi) — ayblov hujjatsiz qolmasligi kerak.
+DEFAULT_REMOVAL_REASON = "Tashkilotchi tomonidan imtihondan chiqarildi"
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def manager_live_proctoring_terminate(request, session_id):
+    """POST /api/manager/live-proctoring/<session_id>/terminate/
+
+    Jonli nazorat panelidan imtihonni to'xtatish. Menejer, o'qituvchi va
+    direktor (owner) uchun — faqat O'Z markazi olimpiadasida
+    (`_user_can_manage_olympiad`).
+
+    Body: {"decision": "remove" | "disqualify", "reason": "<ixtiyoriy matn>"}.
+
+      - `remove` — natija bekor qilinadi, lekin o'quvchi qoidabuzar deb
+        belgilanmaydi (noto'g'ri hisob, xato ro'yxatdan o'tish va h.k.).
+        Sabab ixtiyoriy.
+      - `disqualify` — qoidabuzarlik: `ReviewCheatingCaseView` bilan bir xil
+        yakun, lekin sessiya PENDING_REVIEW bo'lishi SHART emas (menejer
+        cheatingni o'z ko'zi bilan jonli efirda ko'radi). Sabab majburiy.
+
+    Admin'ning `admin_live_proctoring_terminate` endpoint'i alohida qoladi.
+    """
+    from accounts.models import AuditLog
+
+    decision = str(request.data.get('decision') or '').strip()
+    if decision not in ('remove', 'disqualify'):
+        return Response(
+            {'detail': "decision 'remove' yoki 'disqualify' bo'lishi kerak"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    reason = str(request.data.get('reason') or '').strip()[:120]
+    if decision == 'disqualify' and not reason:
+        return Response(
+            {'detail': "Diskvalifikatsiya uchun sabab ko'rsatilishi shart"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    student = None
+    olympiad = None
+    cheating_reason = ''
+    with transaction.atomic():
+        session = (
+            TestSession.objects
+            # `of=('self',)` — faqat sessiya qatorini lock qilamiz;
+            # `olympiad__center__owner` nullable FK LEFT OUTER JOIN hosil
+            # qiladi va PostgreSQL uning ustida FOR UPDATE'ni rad etadi.
+            .select_for_update(of=('self',))
+            .select_related('user', 'olympiad', 'olympiad__center', 'olympiad__center__owner')
+            .filter(pk=session_id)
+            .first()
+        )
+        if not session:
+            return Response({'detail': 'Sessiya topilmadi'}, status=http_status.HTTP_404_NOT_FOUND)
+
+        olympiad = session.olympiad
+        if not _user_can_manage_olympiad(request.user, olympiad):
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+        # Race: boshqa menejer (yoki avtomatik DQ) allaqachon yakunlagan.
+        if session.status in (
+            TestSession.STATUS_DISQUALIFIED,
+            TestSession.STATUS_REMOVED,
+            TestSession.STATUS_COMPLETED,
+        ):
+            return Response(
+                {'detail': 'Bu holat allaqachon hal qilingan.', 'status': session.status},
+                status=http_status.HTTP_409_CONFLICT,
+            )
+
+        now = timezone.now()
+        student = session.user
+        if decision == 'disqualify':
+            session.cheating_reason = reason
+            finalize_cheating_disqualification(session, olympiad, request.user, now=now)
+            cheating_reason = session.cheating_reason
+        else:
+            finalize_removal(
+                session, olympiad, request.user,
+                reason=reason or DEFAULT_REMOVAL_REASON, now=now,
+            )
+
+    # Xabarnomalar tranzaksiyadan TASHQARIDA — tashqi servis (Telegram) sekin
+    # javob bersa DB qulfi ushlanib qolmasin.
+    if decision == 'disqualify':
+        notify_cheating_confirmed(student, olympiad, cheating_reason)
+        notify_terminated_student(student, olympiad, reason, cheating=True)
+    else:
+        notify_terminated_student(student, olympiad, reason, cheating=False)
+
+    AuditLog.log(
+        request,
+        'manager_live_disqualify' if decision == 'disqualify' else 'manager_live_remove',
+        target=student,
+        extra={
+            'session_id': session.id,
+            'olympiad_id': olympiad.id,
+            'olympiad_title': olympiad.title,
+            'reason': reason,
+        },
+    )
+
+    return Response({
+        'ok': True,
+        'decision': decision,
+        'status': session.status,
+        'session_id': session.id,
+    })
 
 
 @api_view(['GET'])

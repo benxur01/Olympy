@@ -112,13 +112,18 @@ def _prior_disqualification_count():
     shu qatorning o'zi. Aks holda har bir DQ qatori o'zini o'zi ko'targan
     bo'lardi.
 
+    `removed=False` — tashkilotchi imtihondan CHIQARIB YUBORGAN urinishlarda
+    ham `disqualified=True` turadi (natija bekor bo'lishi uchun), lekin ular
+    qoidabuzarlik emas. Ularni sanash aybsiz o'quvchini "takroriy qoidabuzar"
+    qilib severity darajasini ko'tarardi.
+
     `.order_by()` — `TestAttempt.Meta.ordering` subquery'ga ORDER BY qo'shib,
     GROUP BY ni buzmasligi uchun (agregat-subquery naqshining sharti).
     """
     return Coalesce(
         Subquery(
             TestAttempt.objects
-            .filter(user_id=OuterRef('user_id'), disqualified=True)
+            .filter(user_id=OuterRef('user_id'), disqualified=True, removed=False)
             .filter(~Q(olympiad_id=OuterRef('olympiad_id')))
             .order_by()
             .values('user_id')

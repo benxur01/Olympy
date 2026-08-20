@@ -1501,8 +1501,13 @@ def compute_user_risk_profile(user):
             'severity': severity,
         })
 
-    # 1. Cheating / Disqualified imtihon urinishlari
-    disqualified_attempts = TestAttempt.objects.filter(user=user, disqualified=True).count()
+    # 1. Cheating / Disqualified imtihon urinishlari.
+    # `removed=False` — tashkilotchi chiqarib yuborgan urinishda ham
+    # `disqualified=True` turadi (natija bekor), lekin bu qoidabuzarlik EMAS
+    # va xavf balliga qo'shilmasligi kerak.
+    disqualified_attempts = TestAttempt.objects.filter(
+        user=user, disqualified=True, removed=False,
+    ).count()
     if disqualified_attempts > 0:
         add(
             'Diskvalifikatsiya qilingan olimpiadalar',

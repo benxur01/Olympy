@@ -1784,15 +1784,38 @@ def olympiad_questions(request, olympiad_id):
         session_timing_payload,
     )
 
-    if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
-        return Response(
-            {'detail': "Siz bu olimpiadaga allaqachon qatnashgansiz"},
-            status=http_status.HTTP_400_BAD_REQUEST,
-        )
+    # Chiqarib yuborilganda attempt darhol yaratiladi, shu sababli qayta kirish
+    # aynan shu tekshiruvda to'xtaydi. `removed` bayrog'i bo'lmasa frontend
+    # "Savollar yuklanmadi" degan chalg'ituvchi ekranni ko'rsatardi.
+    blocking_attempt = TestAttempt.objects.filter(
+        user=request.user, olympiad=olympiad,
+    ).only('id', 'removed').first()
+    if blocking_attempt is not None:
+        payload = {'detail': "Siz bu olimpiadaga allaqachon qatnashgansiz"}
+        if blocking_attempt.removed:
+            payload = {
+                'removed': True,
+                'detail': "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.",
+            }
+        return Response(payload, status=http_status.HTTP_400_BAD_REQUEST)
     session = get_or_create_test_session(request.user, olympiad)
     if session.status == getattr(session, 'STATUS_DISQUALIFIED', 'disqualified'):
         return Response(
             {'detail': "Siz cheating qildingiz. Olimpiada yakunlandi."},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+    # Tashkilotchi chiqarib yuborgan — qayta boshlab bo'lmaydi. Amalda
+    # yuqoridagi TestAttempt tekshiruvi allaqachon to'sadi (chiqarish paytida
+    # attempt darhol yaratiladi); bu ikkinchi qatlam himoya. Matnda "cheating"
+    # so'zi YO'Q — bu qoidabuzarlik emas.
+    # `removed` bayrog'i — frontend shu orqali "Savollar yuklanmadi" o'rniga
+    # "Imtihondan chetlatildingiz" ekranini ko'rsatadi (matn regexiga tayanmasdan).
+    if session.status == getattr(session, 'STATUS_REMOVED', 'removed'):
+        return Response(
+            {
+                'removed': True,
+                'detail': "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.",
+            },
             status=http_status.HTTP_403_FORBIDDEN,
         )
     # Human-in-the-loop tekshiruv kutilmoqda (masalan, student tabni yopib

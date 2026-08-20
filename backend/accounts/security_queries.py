@@ -292,8 +292,14 @@ def annotate_admin_risk(qs):
         user_id=OuterRef('pk'), is_banned=True,
     )
     return qs.annotate(
+        # `attempts__removed=False` — `compute_user_risk_profile` dagi bilan
+        # bir xil shart: chiqarib yuborilgan urinish `disqualified=True`
+        # bo'lsa-da, qoidabuzarlik emas. Ikkala hisob mos bo'lishi SHART —
+        # ro'yxatdagi `?risk=` filtri shu SQL, detal esa Python varianti.
         risk_dq_count=Count(
-            'attempts', filter=Q(attempts__disqualified=True), distinct=True,
+            'attempts',
+            filter=Q(attempts__disqualified=True, attempts__removed=False),
+            distinct=True,
         ),
     ).annotate(
         risk_tier_score=Least(
