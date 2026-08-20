@@ -1326,7 +1326,21 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   let statusBadge = null;
                   let onlineIndicator = null;
 
-                  if (p.status === 'disqualified') {
+                  if (p.status === 'removed') {
+                    // Tashkilotchi chiqarib yuborgan — qoidabuzarlik EMAS,
+                    // shuning uchun neytral (qizil bo'lmagan) uslub.
+                    statusBadge = (
+                      <span className="rounded-lg bg-surface-2 border border-edge-strong px-2 py-1 text-xs font-bold text-text-secondary inline-flex items-center gap-1">
+                        🚫 Chiqarib yuborilgan
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="w-2 h-2 rounded-full bg-edge-strong"></span>
+                        Oflayn
+                      </span>
+                    );
+                  } else if (p.status === 'disqualified') {
                     statusBadge = (
                       <span className="rounded-lg bg-error/10 border border-error/40 px-2 py-1 text-xs font-bold text-error inline-flex items-center gap-1">
                         ⚠️ Diskvalifikatsiya
@@ -1444,6 +1458,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                               Sabab: {cheatingReasonLabel(p.cheating_reason)}
                             </div>
                           )}
+                          {/* Chiqarib yuborish sababi — qoidabuzarlik emas, neytral uslub. */}
+                          {p.removal_reason && (
+                            <div className="text-[10px] text-text-secondary bg-surface-2 px-2 py-0.5 rounded border border-edge-strong max-w-[200px] truncate" title={p.removal_reason}>
+                              Sabab: {p.removal_reason}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-5 py-4 min-w-[150px]">
@@ -1474,6 +1494,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             <span className="font-extrabold text-success text-base">{p.score}%</span>
                             <div className="text-[10px] text-text-secondary mt-0.5">Sarflandi: {formattedTimeSpent}</div>
                           </div>
+                        ) : p.status === 'removed' ? (
+                          <span className="font-bold text-text-secondary text-xs">Chiqarib yuborilgan</span>
                         ) : p.status === 'disqualified' ? (
                           <span className="font-bold text-error text-xs">Natija bekor qilingan</span>
                         ) : (p.pending_review || p.status === 'pending_review') ? (
@@ -2704,7 +2726,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         const wrong = row.wrong_count ?? 0;
                         const pct = typeof row.score === 'number' ? row.score : 0;
                         const tone = scoreTone(pct);
-                        const dq = row.disqualified;
+                        // `removed` — tashkilotchi chiqarib yuborgan. Backend
+                        // `disqualified` ni ham True qo'yadi (statistikadan
+                        // chiqishi uchun), lekin bu yerda "DQ" deb ko'rsatilmaydi.
+                        const removed = Boolean(row.removed);
+                        const dq = Boolean(row.disqualified) && !removed;
+                        const invalid = dq || removed;
                         return (
                           <div
                             key={row.attempt_id ?? idx}
@@ -2714,7 +2741,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStudentReview(row); } }}
                             title="Javoblarini ko'rish"
                             className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-edge transition-colors cursor-pointer hover:bg-surface-2 focus:bg-surface-2 focus:outline-none ${
-                              dq
+                              invalid
                                 ? 'bg-surface-1 opacity-60'
                                 : idx % 2 === 1
                                   ? 'bg-surface-1'
@@ -2723,7 +2750,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                           >
                             {/* Rank (desktop ustun) */}
                             <div className="hidden md:flex md:col-span-1 justify-center">
-                              {dq ? (
+                              {invalid ? (
                                 <span className="text-text-secondary text-sm">—</span>
                               ) : (
                                 <span className="font-data inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md border border-edge bg-surface-2 text-xs font-bold text-text-primary"
@@ -2736,7 +2763,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             {/* Mobil: 1-qator → rank + ism (chap) | ball foizi (o'ng) */}
                             <div className="flex items-center gap-2 md:contents">
                               <span className="md:hidden flex-shrink-0">
-                                {dq ? (
+                                {invalid ? (
                                   <span className="text-text-secondary text-xs">—</span>
                                 ) : (
                                   <span className="font-data inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-md border border-edge bg-surface-2 text-[10px] font-bold text-text-primary"
@@ -2745,12 +2772,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                               </span>
                               {/* O'quvchi */}
                               <div className="min-w-0 flex-1 md:col-span-4 flex items-center">
-                                <span className={`text-sm font-semibold truncate ${dq ? 'text-text-secondary line-through' : 'text-text-primary'}`}>
+                                <span className={`text-sm font-semibold truncate ${invalid ? 'text-text-secondary line-through' : 'text-text-primary'}`}>
                                   {row.name || '—'}
                                 </span>
                               </div>
                               {/* Mobil: ball foizi (o'ngga) */}
-                              <span className={`md:hidden flex-shrink-0 text-sm font-black tabular-nums ${dq ? 'text-text-secondary' : tone.text}`}>{pct}%</span>
+                              <span className={`md:hidden flex-shrink-0 text-sm font-black tabular-nums ${invalid ? 'text-text-secondary' : tone.text}`}>{pct}%</span>
                             </div>
 
                             {/* Mobil: 2-qator → Natija + Holat (bir qator) + progress bar (pastda) */}
@@ -2769,7 +2796,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                                 <div className={`hidden md:block flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
                                   <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
                                 </div>
-                                <span className={`hidden md:inline text-sm font-black tabular-nums ${dq ? 'text-text-secondary' : tone.text}`}>{pct}%</span>
+                                <span className={`hidden md:inline text-sm font-black tabular-nums ${invalid ? 'text-text-secondary' : tone.text}`}>{pct}%</span>
                                 {/* Mobil progress bar (to'liq qatorda, pastda) */}
                                 <div className={`md:hidden flex-1 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
                                   <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
@@ -2778,7 +2805,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
                               {/* Holat */}
                               <div className="flex-shrink-0 md:col-span-2 md:text-center">
-                                {dq ? (
+                                {removed ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-surface-2 text-text-secondary border border-edge-strong">
+                                    <Icon name="info" size={11} /> Chiqarildi
+                                  </span>
+                                ) : dq ? (
                                   <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-error/10 text-error border border-error/40">
                                     <Icon name="info" size={11} /> DQ
                                   </span>
@@ -3055,6 +3086,9 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         sessionId={liveProctorSession?.id}
         studentName={liveProctorSession?.studentName}
         olympiadTitle={liveProctorSession?.olympiadTitle}
+        // Jadval keyingi polling'ni kutmasdan darhol yangilansin.
+        onDisqualify={loadProctoring}
+        onRemove={loadProctoring}
       />
 
       <ToastHost />

@@ -492,7 +492,11 @@ def admin_user_ai_summary(request, user_id):
         return Response({'error': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
 
     total_attempts = TestAttempt.objects.filter(user=user).count()
-    disqualified_count = TestAttempt.objects.filter(user=user, disqualified=True).count()
+    # `removed=False` — chiqarib yuborilgan urinish "diskvalifikatsiya" deb
+    # zaif tomonlar ro'yxatiga tushmasin (u qoidabuzarlik emas).
+    disqualified_count = TestAttempt.objects.filter(
+        user=user, disqualified=True, removed=False,
+    ).count()
     avg_score = TestAttempt.objects.filter(user=user, disqualified=False).aggregate(models.Avg('score'))['score__avg'] or 0
     total_payments = PaymentTransaction.objects.filter(user=user, status='success').count()
     total_spend = PaymentTransaction.objects.filter(user=user, status='success').aggregate(models.Sum('amount'))['amount__sum'] or 0

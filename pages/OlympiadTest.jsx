@@ -1434,6 +1434,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [timeUp, setTimeUp] = React.useState(false);
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
+  // Imtihon nima sababdan tugagani: 'cheating' — qoidabuzarlik; 'removed' —
+  // tashkilotchi imtihondan chiqarib yubordi (ayb emas). Ikkala holatda ham
+  // `cheated=true` bo'ladi (imtihon muzlatiladi), farq faqat MATNDA.
+  const [cheatKind, setCheatKind] = React.useState('cheating');
   // Human-in-the-loop cheating tekshiruvi. Cheating aniqlangach darhol DQ
   // qilinmaydi — student shu holatda "tekshirilmoqda" ekranida kutadi.
   // Menejer/owner qaror qilgach: 'continue' → pendingReview=false (davom),
@@ -1699,8 +1703,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       .catch((err) => {
         if (!cancelled) {
           const detail = err?.data?.detail || err?.message || '';
-          if (/cheating/i.test(detail)) {
+          // Chiqarib yuborilgan o'quvchi — MATN regexidan OLDIN tekshiriladi:
+          // "Sizning ishtirokingiz bekor qilindi" hech bir regexga tushmasdi va
+          // "Savollar yuklanmadi" degan chalg'ituvchi xato chiqardi.
+          if (err?.data?.removed) {
             setCheated(true);
+            setCheatKind('removed');
+            setCheatMessage(detail || "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.");
+          } else if (/cheating/i.test(detail)) {
+            setCheated(true);
+            setCheatKind('cheating');
             setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
           } else if (/boshlanmagan|faol emas|not.*start|not.*active/i.test(detail)) {
             setQuestionsError('__not_started__');
@@ -1823,11 +1835,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       // Ikkala holatda ham cheat ekranini ko'rsatamiz (backend session'ni
       // allaqachon DQ qildi).
       if (err?.status === 409) {
+        // `removed` — menejer/o'qituvchi/direktor imtihondan chiqarib yubordi
+        // (qoidabuzarlik EMAS). Ekran matni shunga qarab tanlanadi.
+        const wasRemoved = Boolean(err?.data?.removed);
         cheatReportedRef.current = true;
         setPendingReview(false);
         setSubmitted(true);
         setCheated(true);
-        setCheatMessage(err?.data?.detail || "Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.");
+        setCheatKind(wasRemoved ? 'removed' : 'cheating');
+        setCheatMessage(err?.data?.detail || (wasRemoved
+          ? "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi."
+          : "Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi."));
         try {
           if (typeof localStorage !== 'undefined') {
             localStorage.removeItem(answersStorageKey);
@@ -2764,8 +2782,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         } catch (err) {
           console.warn('submitAttempt failed:', err?.message);
           const detail = err?.data?.detail || err?.message || '';
+          // Chiqarib yuborilgan o'quvchi — MATN regexlaridan OLDIN. Aks holda
+          // bu javob umumiy fallback'ga tushib "Javoblar yuborilmadi. Qayta
+          // urinib ko'ring." chiqarardi va o'quvchi cheksiz qayta bosardi.
+          if (err?.data?.removed) {
+            setCheated(true);
+            setCheatKind('removed');
+            setCheatMessage(detail || "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi.");
+            return;
+          }
           if (/cheating/i.test(detail)) {
             setCheated(true);
+            setCheatKind('cheating');
             setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
             return;
           }
@@ -3211,8 +3239,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       extra={reviewSpinner} />;
   }
   if (cheated) {
-    return <PendingAccessCard title="Cheating aniqlandi" status="rejected"
-      message={cheatMessage || "Siz cheating qildingiz. Olimpiada yakunlandi."}
+    const wasRemoved = cheatKind === 'removed';
+    return <PendingAccessCard
+      title={wasRemoved ? "Imtihondan chetlatildingiz" : "Cheating aniqlandi"}
+      status="rejected"
+      message={cheatMessage || (wasRemoved
+        ? "Sizning ishtirokingiz bekor qilindi. Olimpiada yakunlandi."
+        : "Siz cheating qildingiz. Olimpiada yakunlandi.")}
       onBack={() => onNavigate('student')} />;
   }
   // Oflayn rejim: submit paytida tarmoq uzildi, javoblar navbatga qo'yildi.

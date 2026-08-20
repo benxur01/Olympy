@@ -38,6 +38,14 @@ class TestAttempt(models.Model):
     # attempt yaratiladi va manager paneli "diskvalifitsiya bo'lgan" deb
     # ko'rsata oladi.
     disqualified = models.BooleanField(default=False)
+    # Tashkilotchi (manager/o'qituvchi/direktor) tomonidan imtihondan
+    # CHIQARIB YUBORILGAN attempt. Qoidabuzarlik EMAS — noto'g'ri hisob bilan
+    # kirish, xato ro'yxatdan o'tish va shunga o'xshash hollar uchun.
+    # `disqualified` baribir True qo'yiladi: shunda statistika, reyting,
+    # yutuqlar va boshqa ~60 ta `filter(disqualified=False)` joyi bu natijani
+    # avtomatik chiqarib tashlaydi. `removed` esa FAQAT ko'rsatiladigan
+    # yorliqni o'zgartiradi — odamga "diskvalifikatsiya" deb ko'rsatilmaydi.
+    removed = models.BooleanField(default=False)
     # IELTS / CEFR baholash natijalari
     ielts_band = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
     cefr_level = models.CharField(max_length=20, blank=True, default='')
@@ -88,11 +96,17 @@ class TestSession(models.Model):
     # tasdiqlashini kutadi. Bu davrda student "tekshirilmoqda" ekranida
     # kutadi va imtihon taymeri to'xtatiladi (paused_seconds hisoblanadi).
     STATUS_PENDING_REVIEW = 'pending_review'
+    # Tashkilotchi imtihondan chiqarib yuborgan sessiya. DISQUALIFIED bilan
+    # bir xil YAKUNIY holat (imtihon tugadi, qayta boshlab bo'lmaydi), lekin
+    # qoidabuzarlik belgisi emas — student va menejer ekranlarida boshqacha
+    # yozuv ko'rsatiladi.
+    STATUS_REMOVED = 'removed'
     STATUS_CHOICES = [
         (STATUS_ACTIVE, 'Active'),
         (STATUS_DISQUALIFIED, 'Disqualified'),
         (STATUS_COMPLETED, 'Completed'),
         (STATUS_PENDING_REVIEW, 'Pending review'),
+        (STATUS_REMOVED, 'Removed'),
     ]
 
     user = models.ForeignKey(
@@ -107,8 +121,15 @@ class TestSession(models.Model):
     )
     started_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    # Sessiya YAKUNLANGAN vaqt: ham diskvalifikatsiya, ham STATUS_REMOVED
+    # uchun shu ustun ishlatiladi (chiqarib yuborish uchun alohida ustun
+    # qo'shilmadi — nomi tarixiy, ma'nosi "terminal holatga o'tgan payt").
     disqualified_at = models.DateTimeField(null=True, blank=True)
     cheating_reason = models.CharField(max_length=120, blank=True)
+    # STATUS_REMOVED sababi. `cheating_reason` dan ALOHIDA: u uchala
+    # dashboardda qizil "qoidabuzarlik" uslubida chiqadi, ya'ni uni qayta
+    # ishlatish aybsiz o'quvchini cheat qilgan qilib ko'rsatardi.
+    removal_reason = models.CharField(max_length=120, blank=True, default='')
     question_order = models.JSONField(default=list, blank=True)
     option_orders = models.JSONField(default=dict, blank=True)
     # Listening audio necha marta ijro etilgani: {"<question_id>": <count>}.

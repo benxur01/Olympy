@@ -2304,6 +2304,14 @@ export const OlympyApi = {
   // yoki 'continue'. 409 — holat allaqachon hal qilingan (boshqa menejer).
   reviewCheatingCase: (sessionId, decision, token) => request('/api/attempts/cheating/review/', { method: 'POST', body: { session_id: sessionId, decision }, token }),
   getOlympiadLiveProctoring: (olympiadId, token) => request(`/api/manager/olympiads/${olympiadId}/live/`, { token }),
+  // Jonli nazoratdan imtihonni to'xtatish (menejer/o'qituvchi/direktor).
+  // decision: 'remove' — natija bekor, qoidabuzarlik belgilanmaydi (sabab
+  // ixtiyoriy); 'disqualify' — qoidabuzarlik (sabab MAJBURIY, aks holda 400).
+  // `reviewCheatingCase` dan farqi: sessiya pending_review bo'lishi shart emas.
+  terminateManagerLiveProctoring: (sessionId, decision, reason, token) => request(
+    `/api/manager/live-proctoring/${sessionId}/terminate/`,
+    { method: 'POST', body: { decision, reason }, token },
+  ),
   // Bitta attemptni olib kelish — Leaderboard "Ko'rish" tugmasi va Results
   // sahifasi uchun. Backend olympiad detail'ni ham qo'shib qaytaradi.
   getAttempt: (attemptId, token) => request(`/api/attempts/${attemptId}/`, { token }),

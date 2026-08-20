@@ -9,6 +9,7 @@ export function LiveProctorModal({
   studentName = 'O\'quvchi',
   olympiadTitle = 'Olimpiada',
   onDisqualify,
+  onRemove,
   onWarning,
 }) {
   const [data, setData] = useState(null);
@@ -16,6 +17,9 @@ export function LiveProctorModal({
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [warningSent, setWarningSent] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  // Ikkala to'xtatish amali uchun umumiy sabab maydoni. Diskvalifikatsiyada
+  // MAJBURIY (backend bo'sh sababda 400 qaytaradi), chiqarishda ixtiyoriy.
+  const [terminateReason, setTerminateReason] = useState('');
   const [viewMode, setViewMode] = useState('both'); // 'both' | 'camera' | 'screen'
   const pollTimerRef = useRef(null);
 
@@ -37,6 +41,7 @@ export function LiveProctorModal({
       setData(null);
       setLoading(true);
       setWarningSent(false);
+      setTerminateReason('');
       return;
     }
 
@@ -71,19 +76,49 @@ export function LiveProctorModal({
     }
   };
 
+  // DIQQAT: avval `reviewCheatingCase` chaqirilardi — u faqat `pending_review`
+  // sessiyani qabul qiladi, ya'ni jonli efirda ko'rib turib bosilgan tugma
+  // 409 bilan qaytardi. Endi menejer endpoint'i ishlatiladi (ACTIVE sessiyada
+  // ham ishlaydi). Ro'yxatdagi "tekshiruvni kutmoqda" qatorlari hamon
+  // `reviewCheatingCase` orqali hal qilinadi — u o'zgarmadi.
   const handleDisqualify = async () => {
+    const reason = terminateReason.trim();
+    if (!reason) {
+      alert("Diskvalifikatsiya uchun sababni yozing.");
+      return;
+    }
     if (!confirm(`${studentName || 'O\'quvchi'}ni qoidabuzarlik (cheating) sababli imtihondan chetlatishni tasdiqlaysizmi?`)) {
       return;
     }
     setActionBusy(true);
     try {
       const token = OlympyApi.getToken();
-      await OlympyApi.reviewCheatingCase(sessionId, 'disqualify', token);
+      await OlympyApi.terminateManagerLiveProctoring(sessionId, 'disqualify', reason, token);
       alert("O'quvchi imtihondan chetlatildi (Disqualified).");
       if (onDisqualify) onDisqualify(sessionId);
       onClose();
     } catch (err) {
       alert("Chetlatishda xatolik: " + err.message);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Chiqarish — natija bekor qilinadi, lekin o'quvchi qoidabuzar deb
+  // belgilanmaydi (noto'g'ri hisob bilan kirgan, xato ro'yxatdan o'tgan va h.k.).
+  const handleRemove = async () => {
+    if (!confirm(`${studentName || 'O\'quvchi'}ni imtihondan chiqarishni tasdiqlaysizmi? Bu diskvalifikatsiya EMAS — o'quvchi qoidabuzar deb belgilanmaydi, faqat natijasi bekor qilinadi.`)) {
+      return;
+    }
+    setActionBusy(true);
+    try {
+      const token = OlympyApi.getToken();
+      await OlympyApi.terminateManagerLiveProctoring(sessionId, 'remove', terminateReason.trim(), token);
+      alert("O'quvchi imtihondan chiqarildi.");
+      if (onRemove) onRemove(sessionId);
+      onClose();
+    } catch (err) {
+      alert("Chiqarishda xatolik: " + err.message);
     } finally {
       setActionBusy(false);
     }
@@ -97,6 +132,9 @@ export function LiveProctorModal({
   const faceDetected = data?.face_detected ?? true;
   const speechDetected = data?.speech_detected ?? (audioLevel > 35);
   const isSwitchedAway = Boolean(data?.app_switched || data?.is_in_background);
+  // Diskvalifikatsiya ayblov — sababsiz qilinmaydi. Chiqarish esa sababsiz ham
+  // mumkin (backend standart matn qo'yadi).
+  const canDisqualify = terminateReason.trim().length > 0;
 
   return (
     <Modal
@@ -144,9 +182,10 @@ export function LiveProctorModal({
             </div>
             <button
               type="button"
-              disabled={actionBusy}
+              disabled={actionBusy || !canDisqualify}
               onClick={handleDisqualify}
-              className="px-3.5 py-2 rounded-xl bg-error text-white font-black text-xs hover:bg-error/90 transition shrink-0 shadow-md"
+              title={canDisqualify ? undefined : "Avval pastda sababni yozing"}
+              className="px-3.5 py-2 rounded-xl bg-error text-white font-black text-xs hover:bg-error/90 transition shrink-0 shadow-md disabled:opacity-50"
             >
               Chetlatish ⛔
             </button>
@@ -283,8 +322,20 @@ export function LiveProctorModal({
           </div>
         )}
 
+        {/* Sabab — ikkala to'xtatish tugmasi uchun umumiy */}
+        <div className="pt-2 border-t border-edge">
+          <input
+            type="text"
+            value={terminateReason}
+            maxLength={120}
+            onChange={(e) => setTerminateReason(e.target.value)}
+            placeholder="Sabab (diskvalifikatsiya uchun majburiy, chiqarish uchun ixtiyoriy)"
+            className="w-full rounded-xl border border-edge bg-surface-1 px-3 py-2 text-xs font-medium text-text-primary placeholder:text-text-secondary/70 focus:border-accent focus:outline-none"
+          />
+        </div>
+
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-edge">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -297,7 +348,7 @@ export function LiveProctorModal({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={actionBusy}
@@ -310,7 +361,18 @@ export function LiveProctorModal({
             <button
               type="button"
               disabled={actionBusy}
+              onClick={handleRemove}
+              title="Natija bekor qilinadi, lekin qoidabuzarlik deb belgilanmaydi"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-edge bg-surface-2 px-3.5 py-2 text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-1 transition disabled:opacity-50"
+            >
+              <span>🚫</span>
+              <span>Chiqarish (natija bekor)</span>
+            </button>
+            <button
+              type="button"
+              disabled={actionBusy || !canDisqualify}
               onClick={handleDisqualify}
+              title={canDisqualify ? undefined : "Avval sababni yozing"}
               className="inline-flex items-center gap-1.5 rounded-xl border border-error/45 bg-error/15 px-3.5 py-2 text-xs font-bold text-error hover:bg-error/25 transition disabled:opacity-50"
             >
               <Icon name="trash" size={13} />
