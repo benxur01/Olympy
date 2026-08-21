@@ -1000,10 +1000,11 @@ def change_member_role(request, center_id, membership_id):
     serializer = ChangeRoleSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     new_role = serializer.validated_data['role']
+    new_subject = serializer.validated_data.get('subject', '')
 
     try:
         membership = change_membership_role(
-            center, membership_id, new_role, request.user,
+            center, membership_id, new_role, request.user, subject=new_subject,
         )
     except RoleChangeError as exc:
         return Response({'detail': exc.message}, status=exc.http_status)

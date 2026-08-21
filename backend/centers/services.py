@@ -151,7 +151,7 @@ class RoleChangeError(Exception):
 
 
 @transaction.atomic
-def change_membership_role(center, membership_id, new_role, actor):
+def change_membership_role(center, membership_id, new_role, actor, subject=''):
     """Mavjud a'zolikning rolini boshqasiga o'zgartiradi.
 
     Eski membership o'chiriladi va yangi (approved) membership yaratiladi —
@@ -214,12 +214,14 @@ def change_membership_role(center, membership_id, new_role, actor):
     old_subject = membership.subject
     membership.delete()
 
+    effective_subject = subject.strip() if subject else (old_subject if new_role == CenterMembership.ROLE_TEACHER else '')
+
     new_membership = CenterMembership.objects.create(
         user=user,
         center=center,
         role=new_role,
         # Fan faqat o'qituvchi roli uchun mantiqiy — boshqa rollarda tozalaymiz.
-        subject=old_subject if new_role == CenterMembership.ROLE_TEACHER else '',
+        subject=effective_subject if new_role == CenterMembership.ROLE_TEACHER else '',
         status=CenterMembership.STATUS_APPROVED,
         approved_by=actor,
     )

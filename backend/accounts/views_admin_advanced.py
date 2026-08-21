@@ -603,6 +603,7 @@ def admin_user_transfer_center(request, user_id):
 
     new_center_id = request.data.get('center_id')
     role = request.data.get('role') or 'student'
+    subject = (request.data.get('subject') or '').strip()
     action_type = request.data.get('action') or 'transfer'
 
     with transaction.atomic():
@@ -629,6 +630,7 @@ def admin_user_transfer_center(request, user_id):
             user=user,
             center=center,
             role=role,
+            subject=subject,
             status=CenterMembership.STATUS_APPROVED,
         )
 
@@ -636,7 +638,7 @@ def admin_user_transfer_center(request, user_id):
             request,
             'admin_transfer_center',
             target=user,
-            extra={'new_center_id': center.id, 'new_center_name': center.name, 'role': role},
+            extra={'new_center_id': center.id, 'new_center_name': center.name, 'role': role, 'subject': subject},
         )
 
     return Response({

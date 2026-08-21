@@ -300,6 +300,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // Rolni o'zgartirish modali: tanlangan a'zolik, yangi rol, holatlar.
   const [roleModalRow, setRoleModalRow] = React.useState(null);
   const [roleModalNewRole, setRoleModalNewRole] = React.useState('manager');
+  const [roleModalSubject, setRoleModalSubject] = React.useState('');
   const [roleModalSaving, setRoleModalSaving] = React.useState(false);
   const [roleModalError, setRoleModalError] = React.useState('');
   const emptyStaffForm = { full_name: '', phone: '+998', password: '', subject: '' };
@@ -1374,6 +1375,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const firstOther = ['student', 'teacher', 'manager'].find(r => r !== row.role) || 'manager';
     setRoleModalRow(row);
     setRoleModalNewRole(firstOther);
+    setRoleModalSubject(row.subject || '');
     setRoleModalError('');
     setRoleModalSaving(false);
   };
@@ -1399,7 +1401,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const token = OlympyApi.getToken();
     setRoleModalSaving(true);
     setRoleModalError('');
-    OlympyApi.changeMemberRole(backendCenterId, membershipId, roleModalNewRole, token)
+    OlympyApi.changeMemberRole(backendCenterId, membershipId, roleModalNewRole, token, roleModalNewRole === 'teacher' ? (roleModalSubject || 'Matematika') : undefined)
       .then(() => {
         setRoleModalRow(null);
         loadApiStaff().catch(() => null);
@@ -3962,6 +3964,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   );
                 })}
               </div>
+              {roleModalNewRole === 'teacher' && (
+                <label className="block mt-3">
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Dars beradigan fani</span>
+                  <select
+                    value={roleModalSubject}
+                    onChange={e => setRoleModalSubject(e.target.value)}
+                    className="input-field"
+                  >
+                    <option value="">Fan tanlanmagan</option>
+                    {store.subjects.map(subject => <option key={subject} value={subject}>{subject}</option>)}
+                  </select>
+                </label>
+              )}
               {roleModalError && (
                 <div className="rounded-lg border border-error/45 border-l-4 border-l-error bg-ground px-3 py-2 text-xs font-bold text-error">
                   {roleModalError}
