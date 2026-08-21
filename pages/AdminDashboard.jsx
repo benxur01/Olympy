@@ -1100,6 +1100,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // is_platform_admin flag'iga ketadi, ya'ni rol bilan bir savatda saqlansa
   // ikkalasi chalkashib ketardi.
   const [roleSelection, setRoleSelection] = React.useState(null);
+  const [roleCenterId, setRoleCenterId] = React.useState('');
   const [roleAdmin, setRoleAdmin] = React.useState(false);
   const [roleSaving, setRoleSaving] = React.useState(false);
   const [premiumDuration, setPremiumDuration] = React.useState(30);
@@ -2184,6 +2185,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const primary = ROLE_RADIO_KEYS.filter(opt => system.includes(opt.value)).pop();
     setRoleSelection(primary ? primary.value : null);
     setRoleAdmin(!!row.isPlatformAdmin);
+    const existingCenterId = row.centerId
+      || row.rawRoles?.teacher?.centerId
+      || row.rawRoles?.manager?.centerId
+      || row.rawRoles?.student?.centerId
+      || '';
+    setRoleCenterId(existingCenterId ? String(existingCenterId) : '');
     setRoleModal(row);
   };
 
@@ -2199,30 +2206,46 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const droppedSystemRoles = (roleModal?.systemRoleKeys || [])
     .filter(r => r !== roleSelection && ROLE_RADIO_KEYS.some(opt => opt.value === r));
 
-  const handleSaveRoles = () => {
+  const handleSaveRoles = async () => {
     if (!roleModal) return;
     if (!isApi) { showToast('Rollar faqat API rejimida boshqariladi'); return; }
     const numericUserId = roleModal?.backendId ?? (typeof roleModal?.id === 'string' && roleModal.id.startsWith('api:') ? Number(roleModal.id.slice(4)) : null);
     if (!numericUserId) { showToast('Backend ID topilmadi'); return; }
 
     // `admin` toggle'i User.roles ga emas, is_platform_admin flag'iga ketadi.
-    // Rol esa ko'pi bilan bitta: tanlanmagan bo'lsa bo'sh ro'yxat ketadi va
-    // backend barcha tizim rollarini olib tashlaydi (markaz a'zoliklariga
-    // tegmaydi — ular alohida oqim).
     const roles = roleSelection ? [roleSelection] : [];
 
     setRoleSaving(true);
-    OlympyApi.adminSetUserRoles(numericUserId, { roles, isPlatformAdmin: roleAdmin }, OlympyApi.getToken())
-      .then(() => {
-        showToast('Rollar yangilandi');
-        setRoleModal(null);
-        reloadUsers();
-      })
-      .catch(err => {
-        console.warn('adminSetUserRoles failed:', err);
-        showToast(OlympyApi.toUserMessage(err));
-      })
-      .finally(() => setRoleSaving(false));
+    try {
+      // 1. Tizim rolini yangilash
+      await OlympyApi.adminSetUserRoles(numericUserId, { roles, isPlatformAdmin: roleAdmin }, OlympyApi.getToken());
+
+      // 2. Markaz bilan bog'liq rol (o'qituvchi, manager, o'quvchi) bo'lsa va markaz tanlangan bo'lsa
+      const isCenterRole = roleSelection === 'teacher' || roleSelection === 'manager' || roleSelection === 'student';
+      if (isCenterRole && roleCenterId) {
+        await OlympyApi.transferAdminUserCenter(
+          numericUserId,
+          { center_id: Number(roleCenterId), role: roleSelection, action: 'transfer' },
+          OlympyApi.getToken(),
+        );
+      } else if (isCenterRole && !roleCenterId && roleModal.centerId) {
+        // Agar markaz tanlovi ataylab olib tashlangan bo'lsa
+        await OlympyApi.transferAdminUserCenter(
+          numericUserId,
+          { action: 'remove' },
+          OlympyApi.getToken(),
+        );
+      }
+
+      showToast('Rollar va markaz biriktiruvi muvaffaqiyatli saqlandi');
+      setRoleModal(null);
+      reloadUsers();
+    } catch (err) {
+      console.warn('adminSetUserRoles/transferAdminUserCenter failed:', err);
+      showToast(OlympyApi.toUserMessage(err));
+    } finally {
+      setRoleSaving(false);
+    }
   };
 
   const openPhoneModal = (row) => {
@@ -2420,6 +2443,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       avatarUrl: u.avatarUrl || '',
       role: roleLabel,
       center: center?.name || (primary ? u.roles?.[primary]?.centerName : '') || '—',
+      centerId: centerId || (center ? (center.backendId || center.id) : null),
+      rawRoles: u.roles || {},
       joined: u.joined,
       status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
       isPremium: !!(u.isPremium ?? u.is_premium),
@@ -5334,21 +5359,48 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </p>
               )}
 
-              {/* Markaz a'zoligidan kelgan rollar — bu yerdan boshqarilmaydi,
-                  lekin ilovada ko'rinadi. Ro'yxatlab qo'yamiz: aks holda admin
-                  nega foydalanuvchida boshqa rol chiqayotganini tushunmaydi. */}
-              {roleModal.membershipRoles?.length > 0 && (
+              {/* Tanlangan rol markaz bilan bog'liq bo'lganda (o'qituvchi, manager, o'quvchi) markaz tanlash bloki */}
+              {(roleSelection === 'teacher' || roleSelection === 'manager' || roleSelection === 'student') && (
+                <div className="mt-3 rounded-xl border border-accent/30 bg-surface-2 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-text-primary flex items-center gap-1.5">
+                      <Icon name="layers" size={13} className="text-accent" />
+                      O'quv markaz / Tashkilotga biriktirish
+                    </label>
+                    {roleSelection === 'teacher' && (
+                      <span className="text-[10px] font-bold text-accent px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20">
+                        O'qituvchi markazi
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    value={roleCenterId}
+                    onChange={e => setRoleCenterId(e.target.value)}
+                    className="w-full h-9 rounded-xl border border-edge bg-surface-1 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+                  >
+                    <option value="">-- Markazsiz (Umumiy platforma) --</option>
+                    {centers.map(c => (
+                      <option key={c.id} value={c.backendId || c.id}>
+                        {c.name} ({c.type || 'Markaz'})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">
+                    {roleSelection === 'teacher'
+                      ? "Foydalanuvchi ushbu tashkilot o'qituvchisi qilib biriktiriladi. O'z akkauntidan kirganida to'g'ridan-to'g'ri shu markazning o'qituvchisi bo'lib kiradi va uning testlari, savollari hamda o'quvchilarini boshqara oladi."
+                      : "Foydalanuvchi tanlangan tashkilotga a'zo qilib biriktiriladi."}
+                  </p>
+                </div>
+              )}
+
+              {/* Markaz a'zoligidan kelgan mavjud boshqa rollar (faqat ko'rsatish) */}
+              {roleModal.membershipRoles?.length > 0 && !roleCenterId && (
                 <div className="mt-3 rounded-xl border border-edge bg-surface-2 px-3 py-2.5">
                   <div className="text-[11px] font-bold text-text-primary">
-                    Markaz orqali: {roleModal.membershipRoles
+                    Mavjud markaz a'zoligi: {roleModal.membershipRoles
                       .map(m => `${ROLE_META[m.role]?.label || m.role} (${statusLabel(m.status).toLowerCase()})`)
                       .join(', ')}
                   </div>
-                  <p className="mt-1 text-[11px] text-text-secondary leading-relaxed">
-                    Bu rollar markaz a'zoligidan keladi va bu yerdan
-                    o'zgartirilmaydi — ular markazning tasdiqlash oqimi orqali
-                    boshqariladi.
-                  </p>
                 </div>
               )}
             </div>
