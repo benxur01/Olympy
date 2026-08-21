@@ -2234,14 +2234,14 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
             <span className="w-px h-4 bg-surface-2" aria-hidden="true" />
             <a href="mailto:sanjarruzmetov017@gmail.com" className="hover:text-text-primary transition-colors">Aloqa</a>
             <span className="w-px h-4 bg-surface-2" aria-hidden="true" />
-            <a href="https://t.me/proskilluz" target="_blank" rel="noreferrer noopener"
+            <a href="https://t.me/BENXUR" target="_blank" rel="noreferrer noopener"
                className="text-text-secondary hover:text-accent transition-colors flex items-center"
                aria-label="Telegram">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.06-.2-.07-.06-.18-.04-.26-.02-.11.02-1.85 1.18-5.22 3.47-.5.34-.94.51-1.34.5-.44-.01-1.29-.25-1.92-.46-.78-.25-1.39-.39-1.34-.83.03-.23.32-.47.85-.71 3.36-1.46 5.59-2.43 6.71-2.89 3.19-1.33 3.86-1.56 4.29-1.57.1 0 .31.02.45.13.12.09.15.21.17.3-.01.06.01.24 0 .38z"/>
               </svg>
             </a>
-            <a href="https://www.instagram.com/proskilluz/" target="_blank" rel="noreferrer noopener"
+            <a href="https://www.instagram.com/benxurrr/" target="_blank" rel="noreferrer noopener"
                className="text-text-secondary hover:text-error transition-colors flex items-center"
                aria-label="Instagram">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
