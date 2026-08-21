@@ -203,6 +203,7 @@ class ChangeRoleSerializer(serializers.Serializer):
             CenterMembership.ROLE_MANAGER,
         ],
     )
+    subject = serializers.CharField(max_length=80, required=False, allow_blank=True)
 
 
 class CreateManagerSerializer(serializers.Serializer):

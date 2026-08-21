@@ -1412,7 +1412,7 @@ export const OlympyApi = {
   approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
   removeMembership: (centerId, membershipId, token) => request(`/api/centers/${centerId}/memberships/${membershipId}/`, { method: 'DELETE', token }),
-  changeMemberRole: (centerId, membershipId, role, token) => request(`/api/centers/${centerId}/members/${membershipId}/change-role/`, { method: 'POST', body: { role }, token }),
+  changeMemberRole: (centerId, membershipId, role, token, subject) => request(`/api/centers/${centerId}/members/${membershipId}/change-role/`, { method: 'POST', body: { role, ...(subject ? { subject } : {}) }, token }),
   // Backend admin_list_centers 100 tadan sahifalab qaytaradi (LargePageNumberPagination),
   // lekin avval bu yerda unwrapList bilan faqat 1-sahifa olinardi — 100 tadan
   // ortiq tashkilot bo'lsa, qolganlari admin panelida umuman ko'rinmasdi.

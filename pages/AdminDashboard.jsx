@@ -1050,7 +1050,7 @@ const AbuseRankTable = ({ rows, countKey, countLabel, dateKey, dateLabel, tone =
             <td className="px-3 py-3 font-mono text-[11px] font-bold text-text-secondary">{i + 1}</td>
             <td className="px-3 py-3">
               <div className="font-bold text-text-primary">{row.full_name || '—'}</div>
-              <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(row.phone, '')}</div>
+              <div className="font-mono text-[10px] text-text-secondary">{row.phone || '—'}</div>
             </td>
             <td className="px-3 py-3">
               <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${ABUSE_COUNT_TONES[tone]}`}>
@@ -1101,6 +1101,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // ikkalasi chalkashib ketardi.
   const [roleSelection, setRoleSelection] = React.useState(null);
   const [roleCenterId, setRoleCenterId] = React.useState('');
+  const [roleSubject, setRoleSubject] = React.useState('');
   const [roleAdmin, setRoleAdmin] = React.useState(false);
   const [roleSaving, setRoleSaving] = React.useState(false);
   const [premiumDuration, setPremiumDuration] = React.useState(30);
@@ -1685,6 +1686,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [showCenterTransferModal, setShowCenterTransferModal] = React.useState(false);
   const [transferTargetCenterId, setTransferTargetCenterId] = React.useState('');
   const [transferRole, setTransferRole] = React.useState('student');
+  const [transferSubject, setTransferSubject] = React.useState('');
   const [transferLoading, setTransferLoading] = React.useState(false);
 
   const [showQuotaModal, setShowQuotaModal] = React.useState(false);
@@ -2191,6 +2193,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       || row.rawRoles?.student?.centerId
       || '';
     setRoleCenterId(existingCenterId ? String(existingCenterId) : '');
+    const existingSubject = row.rawRoles?.teacher?.subject || row.roles?.teacher?.subject || '';
+    setRoleSubject(existingSubject || '');
     setRoleModal(row);
   };
 
@@ -2225,7 +2229,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       if (isCenterRole && roleCenterId) {
         await OlympyApi.transferAdminUserCenter(
           numericUserId,
-          { center_id: Number(roleCenterId), role: roleSelection, action: 'transfer' },
+          {
+            center_id: Number(roleCenterId),
+            role: roleSelection,
+            subject: roleSelection === 'teacher' ? (roleSubject || 'Matematika') : undefined,
+            action: 'transfer',
+          },
           OlympyApi.getToken(),
         );
       } else if (isCenterRole && !roleCenterId && roleModal.centerId) {
@@ -2437,7 +2446,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       id: u.id,
       backendId: u.backendId,
       name: u.name,
-      phone: u.phone,
+      phone: u.phone || u.normalized_phone || '',
       email: u.email || '',
       username: u.username || '',
       avatarUrl: u.avatarUrl || '',
@@ -3514,7 +3523,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs font-bold text-text-primary">{row.full_name || "Foydalanuvchi"}</div>
-                <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(row.phone, '')}</div>
+                <div className="font-mono text-[10px] text-text-secondary">{row.phone || '—'}</div>
               </div>
               <div className="shrink-0 text-right">
                 <span className={`text-[10px] font-bold uppercase tracking-wider ${
@@ -3692,7 +3701,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     setTransferLoading(true);
     OlympyApi.transferAdminUserCenter(
       userId,
-      { center_id: transferTargetCenterId, role: transferRole, action: 'transfer' },
+      {
+        center_id: transferTargetCenterId,
+        role: transferRole,
+        subject: transferRole === 'teacher' ? (transferSubject || 'Matematika') : undefined,
+        action: 'transfer',
+      },
       OlympyApi.getToken(),
     )
       .then(res => {
@@ -4899,7 +4913,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-text-secondary">{maskPhoneDisplay(row.phone, '')}</td>
+                    <td className="px-5 py-4 font-mono text-[11px] text-text-secondary">{row.phone || '—'}</td>
                     <td className="px-5 py-4"><span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">{row.role}</span></td>
                     <td className="px-5 py-4 font-semibold text-text-secondary">{row.center}</td>
                     <td className="px-5 py-4 font-bold text-warning font-mono">
@@ -5361,33 +5375,55 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
               {/* Tanlangan rol markaz bilan bog'liq bo'lganda (o'qituvchi, manager, o'quvchi) markaz tanlash bloki */}
               {(roleSelection === 'teacher' || roleSelection === 'manager' || roleSelection === 'student') && (
-                <div className="mt-3 rounded-xl border border-accent/30 bg-surface-2 p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-text-primary flex items-center gap-1.5">
-                      <Icon name="layers" size={13} className="text-accent" />
-                      O'quv markaz / Tashkilotga biriktirish
-                    </label>
-                    {roleSelection === 'teacher' && (
-                      <span className="text-[10px] font-bold text-accent px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20">
-                        O'qituvchi markazi
-                      </span>
-                    )}
+                <div className="mt-3 rounded-xl border border-accent/30 bg-surface-2 p-3 space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-text-primary flex items-center gap-1.5">
+                        <Icon name="layers" size={13} className="text-accent" />
+                        O'quv markaz / Tashkilot
+                      </label>
+                      {roleSelection === 'teacher' && (
+                        <span className="text-[10px] font-bold text-accent px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20">
+                          O'qituvchi markazi
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={roleCenterId}
+                      onChange={e => setRoleCenterId(e.target.value)}
+                      className="w-full h-9 rounded-xl border border-edge bg-surface-1 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+                    >
+                      <option value="">-- Markazsiz (Umumiy platforma) --</option>
+                      {centers.map(c => (
+                        <option key={c.id} value={c.backendId || c.id}>
+                          {c.name} ({c.type || 'Markaz'})
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <select
-                    value={roleCenterId}
-                    onChange={e => setRoleCenterId(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-edge bg-surface-1 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
-                  >
-                    <option value="">-- Markazsiz (Umumiy platforma) --</option>
-                    {centers.map(c => (
-                      <option key={c.id} value={c.backendId || c.id}>
-                        {c.name} ({c.type || 'Markaz'})
-                      </option>
-                    ))}
-                  </select>
+
+                  {roleSelection === 'teacher' && roleCenterId && (
+                    <div className="space-y-1.5 pt-2 border-t border-edge">
+                      <label className="block text-xs font-bold text-text-primary flex items-center gap-1.5">
+                        <Icon name="book" size={13} className="text-warning" />
+                        Dars beradigan fani
+                      </label>
+                      <select
+                        value={roleSubject}
+                        onChange={e => setRoleSubject(e.target.value)}
+                        className="w-full h-9 rounded-xl border border-edge bg-surface-1 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+                      >
+                        <option value="">-- Fanni tanlang --</option>
+                        {Array.from(new Set([...(subjects || []), 'Matematika', 'Fizika', 'Informatika', 'Ingliz tili', 'Kimyo', 'Biologiya', 'Ona tili va adabiyot', 'Tarix', 'Geografiya', 'Rus tili'])).map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <p className="text-[11px] text-text-secondary leading-relaxed">
                     {roleSelection === 'teacher'
-                      ? "Foydalanuvchi ushbu tashkilot o'qituvchisi qilib biriktiriladi. O'z akkauntidan kirganida to'g'ridan-to'g'ri shu markazning o'qituvchisi bo'lib kiradi va uning testlari, savollari hamda o'quvchilarini boshqara oladi."
+                      ? "Foydalanuvchi ushbu tashkilotga o'qituvchi bo'lib biriktiriladi. O'z akkauntidan kirganida to'g'ridan-to'g'ri shu markaz va fanning o'qituvchisi bo'lib kiradi hamda testlar yarata oladi."
                       : "Foydalanuvchi tanlangan tashkilotga a'zo qilib biriktiriladi."}
                   </p>
                 </div>
@@ -6352,6 +6388,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <option value="manager">Menejer (Manager)</option>
             </select>
           </div>
+          {transferRole === 'teacher' && (
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Dars beradigan fani</label>
+              <select
+                value={transferSubject}
+                onChange={e => setTransferSubject(e.target.value)}
+                className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+              >
+                <option value="">-- Fanni tanlang --</option>
+                {Array.from(new Set([...(subjects || []), 'Matematika', 'Fizika', 'Informatika', 'Ingliz tili', 'Kimyo', 'Biologiya', 'Ona tili va adabiyot', 'Tarix', 'Geografiya', 'Rus tili'])).map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2 pt-2">
             <button
               type="button"
@@ -7154,7 +7205,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <Avatar name={acc.full_name} size={34} gradient="bg-pencil-600" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-bold text-text-primary">{acc.full_name}</div>
-                  <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(acc.phone, '')}</div>
+                  <div className="font-mono text-[10px] text-text-secondary">{acc.phone || '—'}</div>
                 </div>
                 <div className="text-right">
                   <AdminPill status={acc.is_active ? 'approved' : 'rejected'}>
@@ -7771,7 +7822,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           <Avatar name={row.student_name} size={34} gradient="bg-pencil-600" />
                           <div className="min-w-0">
                             <div className="truncate font-bold text-text-primary">{row.student_name}</div>
-                            <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(row.student_phone, '')}</div>
+                            <div className="font-mono text-[10px] text-text-secondary">{row.student_phone || '—'}</div>
                           </div>
                         </div>
                       </td>
