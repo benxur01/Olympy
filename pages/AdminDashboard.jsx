@@ -1849,6 +1849,28 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     [isApi, onlineListOpen],
   );
 
+  // "Foydalanuvchilar" kartasi bosilganda ochiladigan katta modal va uning filtrlari
+  const [usersModalOpen, setUsersModalOpen] = React.useState(false);
+  const [modalUserSearch, setModalUserSearch] = React.useState('');
+  const [modalUserRole, setModalUserRole] = React.useState('all');
+  const [modalUserStatus, setModalUserStatus] = React.useState('all');
+  const [isRefreshingUsers, setIsRefreshingUsers] = React.useState(false);
+
+  const handleRefreshUsers = React.useCallback(() => {
+    setIsRefreshingUsers(true);
+    if (isApi) {
+      apiUsersRes.reload();
+      apiUsersPagedRes.reload();
+      if (onlineListOpen) {
+        apiOnlineUsersRes.reload();
+      }
+    }
+    showToast("Foydalanuvchilar ma'lumotlari yangilandi");
+    setTimeout(() => {
+      setIsRefreshingUsers(false);
+    }, 600);
+  }, [isApi, apiUsersRes, apiUsersPagedRes, apiOnlineUsersRes, onlineListOpen, showToast]);
+
   const apiCenters = isApi && Array.isArray(apiCentersRes.data)
     ? apiCentersRes.data.map(mapApiCenter)
     : null;
@@ -3245,9 +3267,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <AdminMetricCard
           label="Foydalanuvchilar"
           value={allUsers.length.toLocaleString()}
-          delta={`${activeUsersCount} ta faol • ${trialActiveCount} ta trialda`}
+          delta={`${activeUsersCount} ta faol • ${trialActiveCount} ta trialda — ro'yxat uchun bosing`}
           icon={<Icon name="users" size={16} />}
           tone="neutral"
+          onClick={() => setUsersModalOpen(true)}
         />
       </div>
 
@@ -3556,6 +3579,255 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           className="btn-ghost mt-5 w-full rounded-xl py-3 text-xs font-bold">
           Yopish
         </button>
+      </Modal>
+
+      {/* Katta Foydalanuvchilar Modali */}
+      <Modal
+        open={usersModalOpen}
+        onClose={() => setUsersModalOpen(false)}
+        title="Foydalanuvchilar ro'yxati"
+        width="max-w-5xl"
+      >
+        {/* Yuqori Statistika Bloki */}
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Jami Foydalanuvchilar</div>
+            <div className="mt-1 text-lg font-bold text-text-primary">{allUsers.length.toLocaleString()} ta</div>
+          </div>
+          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Faol Hisoblar</div>
+            <div className="mt-1 text-lg font-bold text-success">{activeUsersCount.toLocaleString()} ta</div>
+          </div>
+          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">O'quvchilar</div>
+            <div className="mt-1 text-lg font-bold text-accent">{studentCount.toLocaleString()} ta</div>
+          </div>
+          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Trial / Premium</div>
+            <div className="mt-1 text-lg font-bold text-warning">{allUsers.filter(u => u.isPremium || u.isTrialActive).length.toLocaleString()} ta</div>
+          </div>
+        </div>
+
+        {/* Filtr va Boshqaruv Qatori */}
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+              <Icon name="search" size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+              <input
+                type="text"
+                value={modalUserSearch}
+                onChange={e => setModalUserSearch(e.target.value)}
+                placeholder="Ism, telefon, username bo'yicha qidiruv..."
+                className="h-8 w-full admin-input pl-8 pr-7 text-xs outline-none rounded-lg"
+              />
+              {modalUserSearch && (
+                <button
+                  type="button"
+                  onClick={() => setModalUserSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary"
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              )}
+            </div>
+
+            <select
+              value={modalUserRole}
+              onChange={e => setModalUserRole(e.target.value)}
+              className="h-8 rounded-lg bg-surface-2 border border-edge px-2 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+            >
+              <option value="all">Barcha rollar</option>
+              <option value="student">O'quvchilar</option>
+              <option value="teacher">O'qituvchilar</option>
+              <option value="manager">Menejerlar</option>
+              <option value="owner">Direktorlar</option>
+              <option value="admin">Adminlar</option>
+            </select>
+
+            <select
+              value={modalUserStatus}
+              onChange={e => setModalUserStatus(e.target.value)}
+              className="h-8 rounded-lg bg-surface-2 border border-edge px-2 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+            >
+              <option value="all">Barcha holatlar</option>
+              <option value="active">Faol</option>
+              <option value="blocked">Bloklangan</option>
+              <option value="online">Hozir onlayn</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshUsers}
+              disabled={isRefreshingUsers || (isApi && apiUsersRes.loading)}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-3 text-xs font-bold text-text-primary hover:bg-surface-3 transition disabled:opacity-50"
+              title="Ro'yxatni yangilash"
+            >
+              <Icon name="refresh" size={13} className={isRefreshingUsers || (isApi && apiUsersRes.loading) ? "animate-spin text-accent" : ""} />
+              <span>Yangilash</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setUsersModalOpen(false); setPage('users'); }}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 text-xs font-bold transition hover:opacity-90"
+              title="Foydalanuvchilar boshqaruv sahifasiga o'tish"
+            >
+              <span>To'liq sahifa</span>
+              <Icon name="chevronRight" size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* Foydalanuvchilar Ro'yxati / Jadvali */}
+        <div className="max-h-[50vh] overflow-y-auto admin-scroll rounded-xl border border-edge bg-surface-1">
+          {(() => {
+            if (isApi && apiUsersRes.loading && allUsers.length === 0) {
+              return <div className="py-12 text-center text-xs font-semibold text-text-secondary">Foydalanuvchilar yuklanmoqda...</div>;
+            }
+            if (isApi && apiUsersRes.error && allUsers.length === 0) {
+              return (
+                <div className="py-12 text-center text-xs font-semibold text-text-secondary">
+                  <p>Ma'lumotlarni yuklab bo'lmadi</p>
+                  <button onClick={handleRefreshUsers} className="mt-2 text-accent font-bold underline">Qayta urinish</button>
+                </div>
+              );
+            }
+            const modalSearchLower = modalUserSearch.trim().toLowerCase();
+            const filteredUsers = userRows.filter(u => {
+              if (modalSearchLower) {
+                const matchesName = (u.name || '').toLowerCase().includes(modalSearchLower);
+                const matchesPhone = (u.phone || '').toLowerCase().includes(modalSearchLower);
+                const matchesEmail = (u.email || '').toLowerCase().includes(modalSearchLower);
+                const matchesUsername = (u.username || '').toLowerCase().includes(modalSearchLower);
+                const matchesTag = (u.adminTags || []).some(t => t.toLowerCase().includes(modalSearchLower));
+                if (!matchesName && !matchesPhone && !matchesEmail && !matchesUsername && !matchesTag) {
+                  return false;
+                }
+              }
+              if (modalUserRole !== 'all') {
+                if (modalUserRole === 'admin') {
+                  if (!u.isPlatformAdmin && !u.roleKeys.includes('admin')) return false;
+                } else if (!u.roleKeys.includes(modalUserRole)) {
+                  return false;
+                }
+              }
+              if (modalUserStatus !== 'all') {
+                if (modalUserStatus === 'active' && u.status !== 'Faol') return false;
+                if (modalUserStatus === 'blocked' && u.status !== 'Bloklangan') return false;
+                if (modalUserStatus === 'online') {
+                  const isOnline = u.lastSeenAt && (Date.now() - new Date(u.lastSeenAt).getTime() < 300000);
+                  if (!isOnline) return false;
+                }
+              }
+              return true;
+            });
+
+            if (filteredUsers.length === 0) {
+              return (
+                <div className="py-12 text-center text-xs font-semibold text-text-secondary">
+                  {modalUserSearch || modalUserRole !== 'all' || modalUserStatus !== 'all'
+                    ? 'Qidiruv bo\'yicha foydalanuvchi topilmadi'
+                    : 'Foydalanuvchilar mavjud emas'}
+                </div>
+              );
+            }
+
+            return (
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 z-10 border-b border-edge bg-surface-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                  <tr>
+                    <th className="px-4 py-2.5">Foydalanuvchi</th>
+                    <th className="px-4 py-2.5">Telefon</th>
+                    <th className="px-4 py-2.5">Rol</th>
+                    <th className="px-4 py-2.5">Tashkilot</th>
+                    <th className="px-4 py-2.5">Tangalar</th>
+                    <th className="px-4 py-2.5">Holat</th>
+                    <th className="px-4 py-2.5 text-right">Amal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-edge">
+                  {filteredUsers.map(row => {
+                    const isOnline = row.lastSeenAt && (Date.now() - new Date(row.lastSeenAt).getTime() < 300000);
+                    return (
+                      <tr key={row.id} className="admin-table-row hover:bg-surface-2 transition">
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <div className="relative shrink-0">
+                              <Avatar name={row.name} src={row.avatarUrl || ''} size={30} gradient="bg-pencil-600" />
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface-1 ${
+                                  isOnline ? 'bg-success' : 'bg-edge-strong'
+                                }`}
+                                title={isOnline ? 'Hozir onlayn' : 'Oflayn'}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate font-bold text-text-primary flex items-center gap-1.5">
+                                <span>{row.name}</span>
+                                {row.isPremium && <span className="text-[10px] text-warning" title="Premium">⭐</span>}
+                                {row.telegramLinked && <span className="text-[10px] text-accent" title="Telegram ulangan">✈️</span>}
+                              </div>
+                              <div className="truncate text-[10px] font-semibold text-text-secondary">
+                                {row.username ? `@${row.username}` : (row.email || '—')}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                          {row.phone || '—'}
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span className="rounded bg-surface-2 border border-edge px-2 py-0.5 text-[10px] font-bold text-text-secondary">
+                            {row.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-text-secondary max-w-[140px] truncate" title={row.center}>
+                          {row.center || '—'}
+                        </td>
+                        <td className="px-4 py-2.5 font-bold text-text-primary whitespace-nowrap">
+                          {row.coins} 🪙
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>
+                            {row.status}
+                          </AdminPill>
+                        </td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailUser(row);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-edge bg-surface-2 px-2.5 py-1 text-[11px] font-bold text-text-primary hover:bg-surface-3 transition"
+                            title="Batafsil ma'lumot"
+                          >
+                            <Icon name="eye" size={11} />
+                            <span>Batafsil</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            );
+          })()}
+        </div>
+
+        {/* Modal Pastki Qismi */}
+        <div className="mt-4 flex items-center justify-between">
+          <div className="text-[11px] font-semibold text-text-secondary">
+            Jami: {allUsers.length} ta foydalanuvchi
+          </div>
+          <button
+            type="button"
+            onClick={() => setUsersModalOpen(false)}
+            className="btn-ghost rounded-xl px-5 py-2 text-xs font-bold"
+          >
+            Yopish
+          </button>
+        </div>
       </Modal>
     </div>
     );
@@ -4630,6 +4902,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               className="h-9 w-full admin-input pl-9 pr-3 text-xs outline-none"
               placeholder="Ism, telefon, teg (#vip) bo'yicha..." />
           </div>
+          <button
+            type="button"
+            onClick={handleRefreshUsers}
+            disabled={isRefreshingUsers || (isApi && apiUsersPagedRes.loading)}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-3 text-[11px] font-bold text-text-primary transition hover:bg-surface-3 disabled:opacity-50"
+            title="Ro'yxatni yangilash"
+          >
+            <Icon name="refresh" size={13} className={isRefreshingUsers || (isApi && apiUsersPagedRes.loading) ? "animate-spin text-accent" : ""} />
+            <span>Yangilash</span>
+          </button>
           <button
             type="button"
             onClick={() => { setShowBulkImportModal(true); setBulkImportResults(null); }}
