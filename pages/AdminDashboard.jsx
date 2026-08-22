@@ -1849,12 +1849,40 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     [isApi, onlineListOpen],
   );
 
-  // "Foydalanuvchilar" kartasi bosilganda ochiladigan katta modal va uning filtrlari
+  // "Foydalanuvchilar" kartasi bosilganda ochiladigan Real-Time Jonli Monitor va Boshqaruv modali
   const [usersModalOpen, setUsersModalOpen] = React.useState(false);
+  const [usersModalView, setUsersModalView] = React.useState('counter'); // 'counter' | 'list'
+  const [isLiveFullscreen, setIsLiveFullscreen] = React.useState(false);
+  const [lastLivePollTime, setLastLivePollTime] = React.useState(new Date());
+  const [liveIncrement, setLiveIncrement] = React.useState(0);
   const [modalUserSearch, setModalUserSearch] = React.useState('');
   const [modalUserRole, setModalUserRole] = React.useState('all');
   const [modalUserStatus, setModalUserStatus] = React.useState('all');
   const [isRefreshingUsers, setIsRefreshingUsers] = React.useState(false);
+  const prevLiveCountRef = React.useRef(0);
+
+  // Modal ochiq turganda har 4 soniyada avtomatik so'rov (Real-time Live Polling)
+  React.useEffect(() => {
+    if (!usersModalOpen || !isApi) return;
+    const interval = setInterval(() => {
+      apiUsersRes.reload();
+      if (onlineListOpen) apiOnlineUsersRes.reload();
+      setLastLivePollTime(new Date());
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [usersModalOpen, isApi, apiUsersRes, onlineListOpen, apiOnlineUsersRes]);
+
+  // Jonli foydalanuvchilar soni ortganini aniqlash va o'sish animatsiyasi chiqarish
+  React.useEffect(() => {
+    const count = allUsers.length;
+    if (prevLiveCountRef.current > 0 && count > prevLiveCountRef.current) {
+      const diff = count - prevLiveCountRef.current;
+      setLiveIncrement(diff);
+      const timer = setTimeout(() => setLiveIncrement(0), 4500);
+      return () => clearTimeout(timer);
+    }
+    prevLiveCountRef.current = count;
+  }, [allUsers.length]);
 
   const handleRefreshUsers = React.useCallback(() => {
     setIsRefreshingUsers(true);
@@ -1865,6 +1893,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         apiOnlineUsersRes.reload();
       }
     }
+    setLastLivePollTime(new Date());
     showToast("Foydalanuvchilar ma'lumotlari yangilandi");
     setTimeout(() => {
       setIsRefreshingUsers(false);
@@ -3581,264 +3610,498 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </button>
       </Modal>
 
-      {/* Katta Foydalanuvchilar Modali */}
+      {/* Katta Foydalanuvchilar Modali / Real-Time Jonli Monitor */}
       <Modal
         open={usersModalOpen}
-        onClose={() => setUsersModalOpen(false)}
-        title="Foydalanuvchilar ro'yxati"
-        width="max-w-5xl"
+        onClose={() => { setUsersModalOpen(false); setIsLiveFullscreen(false); }}
+        title=""
+        width={isLiveFullscreen ? "w-[98vw] max-w-none h-[94vh]" : "max-w-5xl"}
+        contentClassName={isLiveFullscreen ? "max-h-[90vh] overflow-y-auto admin-scroll" : ""}
       >
-        {/* Yuqori Statistika Bloki */}
-        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Jami Foydalanuvchilar</div>
-            <div className="mt-1 text-lg font-bold text-text-primary">{allUsers.length.toLocaleString()} ta</div>
+        {/* Yuqori Header & Rejim Almashuvi */}
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-edge pb-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-3.5 w-3.5 items-center justify-center">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-error"></span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-display text-lg font-bold text-text-primary">Foydalanuvchilar Jonli Monitori</h3>
+                <span className="rounded-full bg-error/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-error border border-error/30">
+                  REAL-TIME LIVE
+                </span>
+              </div>
+              <p className="text-[11px] font-semibold text-text-secondary">
+                Har 4 soniyada real vaqtda avtomatik yangilanadi • Oxirgi tekshiruv: {lastLivePollTime.toLocaleTimeString()}
+              </p>
+            </div>
           </div>
-          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Faol Hisoblar</div>
-            <div className="mt-1 text-lg font-bold text-success">{activeUsersCount.toLocaleString()} ta</div>
-          </div>
-          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">O'quvchilar</div>
-            <div className="mt-1 text-lg font-bold text-accent">{studentCount.toLocaleString()} ta</div>
-          </div>
-          <div className="rounded-xl bg-surface-2 p-3 border border-edge">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Trial / Premium</div>
-            <div className="mt-1 text-lg font-bold text-warning">{allUsers.filter(u => u.isPremium || u.isTrialActive).length.toLocaleString()} ta</div>
-          </div>
-        </div>
 
-        {/* Filtr va Boshqaruv Qatori */}
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-1 flex-wrap items-center gap-2">
-            <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
-              <Icon name="search" size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-              <input
-                type="text"
-                value={modalUserSearch}
-                onChange={e => setModalUserSearch(e.target.value)}
-                placeholder="Ism, telefon, username bo'yicha qidiruv..."
-                className="h-8 w-full admin-input pl-8 pr-7 text-xs outline-none rounded-lg"
-              />
-              {modalUserSearch && (
-                <button
-                  type="button"
-                  onClick={() => setModalUserSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary"
-                >
-                  <Icon name="x" size={12} />
-                </button>
-              )}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Rejim Almashuvchi Tablar */}
+            <div className="flex rounded-xl bg-surface-2 p-1 border border-edge">
+              <button
+                type="button"
+                onClick={() => setUsersModalView('counter')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  usersModalView === 'counter'
+                    ? 'bg-accent text-on-accent shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Icon name="activity" size={13} />
+                <span>Jonli Hisoblagich</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUsersModalView('list')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  usersModalView === 'list'
+                    ? 'bg-accent text-on-accent shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Icon name="grid" size={13} />
+                <span>Jadval ({allUsers.length})</span>
+              </button>
             </div>
 
-            <select
-              value={modalUserRole}
-              onChange={e => setModalUserRole(e.target.value)}
-              className="h-8 rounded-lg bg-surface-2 border border-edge px-2 text-xs font-semibold text-text-primary outline-none focus:border-accent"
-            >
-              <option value="all">Barcha rollar</option>
-              <option value="student">O'quvchilar</option>
-              <option value="teacher">O'qituvchilar</option>
-              <option value="manager">Menejerlar</option>
-              <option value="owner">Direktorlar</option>
-              <option value="admin">Adminlar</option>
-            </select>
-
-            <select
-              value={modalUserStatus}
-              onChange={e => setModalUserStatus(e.target.value)}
-              className="h-8 rounded-lg bg-surface-2 border border-edge px-2 text-xs font-semibold text-text-primary outline-none focus:border-accent"
-            >
-              <option value="all">Barcha holatlar</option>
-              <option value="active">Faol</option>
-              <option value="blocked">Bloklangan</option>
-              <option value="online">Hozir onlayn</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
+            {/* Yangilash tugmasi */}
             <button
               type="button"
               onClick={handleRefreshUsers}
               disabled={isRefreshingUsers || (isApi && apiUsersRes.loading)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-3 text-xs font-bold text-text-primary hover:bg-surface-3 transition disabled:opacity-50"
-              title="Ro'yxatni yangilash"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-bold text-text-primary hover:bg-surface-3 transition disabled:opacity-50"
+              title="Serverdan ma'lumotlarni yangilash"
             >
               <Icon name="refresh" size={13} className={isRefreshingUsers || (isApi && apiUsersRes.loading) ? "animate-spin text-accent" : ""} />
-              <span>Yangilash</span>
+              <span className="hidden sm:inline">Yangilash</span>
             </button>
+
+            {/* To'liq Ekran (Fullscreen) tugmasi */}
             <button
               type="button"
-              onClick={() => { setUsersModalOpen(false); setPage('users'); }}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 text-xs font-bold transition hover:opacity-90"
-              title="Foydalanuvchilar boshqaruv sahifasiga o'tish"
+              onClick={() => setIsLiveFullscreen(prev => !prev)}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-edge px-3 text-xs font-bold transition ${
+                isLiveFullscreen
+                  ? 'bg-accent/20 text-accent border-accent/40'
+                  : 'bg-surface-2 text-text-primary hover:bg-surface-3'
+              }`}
+              title={isLiveFullscreen ? "Oynani kichiklashtirish" : "To'liq ekranga yoyish"}
             >
-              <span>To'liq sahifa</span>
-              <Icon name="chevronRight" size={12} />
+              <Icon name="sparkles" size={13} />
+              <span className="hidden sm:inline">{isLiveFullscreen ? "Kichik ekran" : "To'liq ekran"}</span>
             </button>
           </div>
         </div>
 
-        {/* Foydalanuvchilar Ro'yxati / Jadvali */}
-        <div className="max-h-[50vh] overflow-y-auto admin-scroll rounded-xl border border-edge bg-surface-1">
-          {(() => {
-            if (isApi && apiUsersRes.loading && allUsers.length === 0) {
-              return <div className="py-12 text-center text-xs font-semibold text-text-secondary">Foydalanuvchilar yuklanmoqda...</div>;
-            }
-            if (isApi && apiUsersRes.error && allUsers.length === 0) {
-              return (
-                <div className="py-12 text-center text-xs font-semibold text-text-secondary">
-                  <p>Ma'lumotlarni yuklab bo'lmadi</p>
-                  <button onClick={handleRefreshUsers} className="mt-2 text-accent font-bold underline">Qayta urinish</button>
+        {/* 1. JONLI HISOBLAGICH (COUNTER) REJIMI */}
+        {usersModalView === 'counter' && (
+          <div className="space-y-5">
+            {/* Markaziy Ulkan Hisoblagich Bloki */}
+            <div className="relative overflow-hidden rounded-3xl border border-accent/30 bg-gradient-to-b from-surface-2 via-surface-1 to-surface-2 p-6 sm:p-10 text-center shadow-xl">
+              {/* Orqa fondagi ambient nur */}
+              <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-56 w-96 rounded-full bg-accent/15 blur-3xl" />
+
+              <div className="relative z-10 space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-surface-3 px-3 py-1 text-[11px] font-extrabold uppercase tracking-widest text-text-secondary border border-edge">
+                  <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                  JAMI RO'YXATDAN O'TGAN FOYDALANUVCHILAR
                 </div>
-              );
-            }
-            const modalSearchLower = modalUserSearch.trim().toLowerCase();
-            const filteredUsers = userRows.filter(u => {
-              if (modalSearchLower) {
-                const matchesName = (u.name || '').toLowerCase().includes(modalSearchLower);
-                const matchesPhone = (u.phone || '').toLowerCase().includes(modalSearchLower);
-                const matchesEmail = (u.email || '').toLowerCase().includes(modalSearchLower);
-                const matchesUsername = (u.username || '').toLowerCase().includes(modalSearchLower);
-                const matchesTag = (u.adminTags || []).some(t => t.toLowerCase().includes(modalSearchLower));
-                if (!matchesName && !matchesPhone && !matchesEmail && !matchesUsername && !matchesTag) {
-                  return false;
-                }
-              }
-              if (modalUserRole !== 'all') {
-                if (modalUserRole === 'admin') {
-                  if (!u.isPlatformAdmin && !u.roleKeys.includes('admin')) return false;
-                } else if (!u.roleKeys.includes(modalUserRole)) {
-                  return false;
-                }
-              }
-              if (modalUserStatus !== 'all') {
-                if (modalUserStatus === 'active' && u.status !== 'Faol') return false;
-                if (modalUserStatus === 'blocked' && u.status !== 'Bloklangan') return false;
-                if (modalUserStatus === 'online') {
-                  const isOnline = u.lastSeenAt && (Date.now() - new Date(u.lastSeenAt).getTime() < 300000);
-                  if (!isOnline) return false;
-                }
-              }
-              return true;
-            });
 
-            if (filteredUsers.length === 0) {
-              return (
-                <div className="py-12 text-center text-xs font-semibold text-text-secondary">
-                  {modalUserSearch || modalUserRole !== 'all' || modalUserStatus !== 'all'
-                    ? 'Qidiruv bo\'yicha foydalanuvchi topilmadi'
-                    : 'Foydalanuvchilar mavjud emas'}
+                {/* Katta Jonli Raqam */}
+                <div className="py-2">
+                  <div className="font-data text-6xl sm:text-8xl md:text-9xl font-black tracking-tight text-text-primary transition-all duration-300 drop-shadow-sm select-all">
+                    {allUsers.length.toLocaleString()}
+                  </div>
                 </div>
-              );
-            }
 
-            return (
-              <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 z-10 border-b border-edge bg-surface-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-                  <tr>
-                    <th className="px-4 py-2.5">Foydalanuvchi</th>
-                    <th className="px-4 py-2.5">Telefon</th>
-                    <th className="px-4 py-2.5">Rol</th>
-                    <th className="px-4 py-2.5">Tashkilot</th>
-                    <th className="px-4 py-2.5">Tangalar</th>
-                    <th className="px-4 py-2.5">Holat</th>
-                    <th className="px-4 py-2.5 text-right">Amal</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-edge">
-                  {filteredUsers.map(row => {
-                    const isOnline = row.lastSeenAt && (Date.now() - new Date(row.lastSeenAt).getTime() < 300000);
-                    return (
-                      <tr key={row.id} className="admin-table-row hover:bg-surface-2 transition">
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-2.5">
-                            <div className="relative shrink-0">
-                              <Avatar name={row.name} src={row.avatarUrl || ''} size={30} gradient="bg-pencil-600" />
-                              <span
-                                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface-1 ${
-                                  isOnline ? 'bg-success' : 'bg-edge-strong'
-                                }`}
-                                title={isOnline ? 'Hozir onlayn' : 'Oflayn'}
-                              />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate font-bold text-text-primary flex items-center gap-1.5">
-                                <span>{row.name}</span>
-                                {row.isPremium && <span className="text-[10px] text-warning" title="Premium">⭐</span>}
-                                {row.telegramLinked && <span className="text-[10px] text-accent" title="Telegram ulangan">✈️</span>}
-                              </div>
-                              <div className="truncate text-[10px] font-semibold text-text-secondary">
-                                {row.username ? `@${row.username}` : (row.email || '—')}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
-                          {row.phone && row.phone.startsWith('google_') ? (
-                            row.email ? (
-                              <span className="font-sans font-medium text-text-primary flex items-center gap-1" title="Google orqali ro'yxatdan o'tgan">
-                                <span className="rounded bg-accent/15 px-1 py-0.2 text-[9px] font-bold text-accent">Google</span>
-                                <span>{row.email}</span>
-                              </span>
-                            ) : (
-                              <span className="italic text-text-secondary">Google hisobi</span>
-                            )
-                          ) : (
-                            row.phone || '—'
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <span className="rounded bg-surface-2 border border-edge px-2 py-0.5 text-[10px] font-bold text-text-secondary">
-                            {row.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-text-secondary max-w-[140px] truncate" title={row.center}>
-                          {row.center || '—'}
-                        </td>
-                        <td className="px-4 py-2.5 font-bold text-text-primary whitespace-nowrap">
-                          {row.coins} 🪙
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>
-                            {row.status}
-                          </AdminPill>
-                        </td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDetailUser(row);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-edge bg-surface-2 px-2.5 py-1 text-[11px] font-bold text-text-primary hover:bg-surface-3 transition"
-                            title="Batafsil ma'lumot"
-                          >
-                            <Icon name="eye" size={11} />
-                            <span>Batafsil</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            );
-          })()}
-        </div>
+                {/* Yangi qo'shilganlar haqida popup bildirishnoma */}
+                {liveIncrement > 0 && (
+                  <div className="animate-bounce inline-flex items-center gap-2 rounded-full bg-success/20 border border-success/60 px-4 py-1.5 text-xs font-black text-success shadow-lg">
+                    <span>🚀 +{liveIncrement} ta yangi foydalanuvchi hozirgina qo'shildi!</span>
+                  </div>
+                )}
 
-        {/* Modal Pastki Qismi */}
-        <div className="mt-4 flex items-center justify-between">
-          <div className="text-[11px] font-semibold text-text-secondary">
-            Jami: {allUsers.length} ta foydalanuvchi
+                <p className="text-xs font-semibold text-text-secondary max-w-md mx-auto">
+                  Olympy platformasida ro'yxatdan o'tgan barcha talabalar, o'qituvchilar va tashkilot a'zolari.
+                </p>
+              </div>
+            </div>
+
+            {/* 4 ta Jonli Metrikalar Kartalari */}
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="rounded-2xl border border-success/30 bg-surface-2 p-4 transition hover:border-success/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Hozir onlayn</span>
+                  <span className="flex h-2 w-2 rounded-full bg-success animate-ping" />
+                </div>
+                <div className="mt-2 text-2xl font-black text-success font-data">
+                  {presenceOnlineCount.toLocaleString()} ta
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-text-secondary">
+                  Oxirgi 3 daqiqada faol bo'lganlar
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-accent/30 bg-surface-2 p-4 transition hover:border-accent/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Faol hisoblar</span>
+                  <Icon name="zap" size={14} className="text-accent" />
+                </div>
+                <div className="mt-2 text-2xl font-black text-accent font-data">
+                  {activeUsersCount.toLocaleString()} ta
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-text-secondary">
+                  {allUsers.length ? Math.round((activeUsersCount / allUsers.length) * 100) : 100}% faollik darajasi
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-accent-2/30 bg-surface-2 p-4 transition hover:border-accent-2/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">O'quvchilar</span>
+                  <Icon name="users" size={14} className="text-accent-2" />
+                </div>
+                <div className="mt-2 text-2xl font-black text-text-primary font-data">
+                  {studentCount.toLocaleString()} ta
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-text-secondary">
+                  Olimpiada ishtirokchilari
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-warning/30 bg-surface-2 p-4 transition hover:border-warning/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Tashkilot & Ustozlar</span>
+                  <Icon name="building" size={14} className="text-warning" />
+                </div>
+                <div className="mt-2 text-2xl font-black text-warning font-data">
+                  {userRows.filter(r => r.roleKeys.includes('owner') || r.roleKeys.includes('teacher') || r.roleKeys.includes('manager')).length.toLocaleString()} ta
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-text-secondary">
+                  Markaz direktorlari va murabbiylar
+                </div>
+              </div>
+            </div>
+
+            {/* So'nggi Qo'shilganlar (Live Recent Joins Stream) */}
+            <div className="rounded-2xl border border-edge bg-surface-2 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon name="clock" size={14} className="text-accent" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                    So'nggi Ro'yxatdan O'tgan Foydalanuvchilar
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUsersModalView('list')}
+                  className="text-xs font-bold text-accent hover:underline flex items-center gap-1"
+                >
+                  <span>Barchasini jadvalda ko'rish</span>
+                  <Icon name="chevronRight" size={12} />
+                </button>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                {userRows.slice(0, 6).map(u => (
+                  <div
+                    key={u.id}
+                    onClick={() => setDetailUser(u)}
+                    className="flex items-center gap-2.5 rounded-xl border border-edge bg-surface-1 p-2.5 hover:border-accent/40 cursor-pointer transition"
+                  >
+                    <Avatar name={u.name} src={u.avatarUrl} size={32} gradient="bg-pencil-600" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-bold text-text-primary">{u.name}</div>
+                      <div className="truncate text-[10px] text-text-secondary">
+                        {u.phone && u.phone.startsWith('google_')
+                          ? (u.email ? u.email : "Google hisobi")
+                          : (u.phone || '—')}
+                      </div>
+                    </div>
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-accent shrink-0">
+                      {u.role}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pastki Harakatlar Qatori */}
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setUsersModalView('list')}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-edge bg-surface-2 px-4 py-2 text-xs font-bold text-text-primary hover:bg-surface-3 transition"
+              >
+                <Icon name="grid" size={13} />
+                <span>To'liq Foydalanuvchilar Jadvali</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setUsersModalOpen(false); setIsLiveFullscreen(false); }}
+                className="btn-ghost rounded-xl px-5 py-2 text-xs font-bold"
+              >
+                Yopish
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setUsersModalOpen(false)}
-            className="btn-ghost rounded-xl px-5 py-2 text-xs font-bold"
-          >
-            Yopish
-          </button>
-        </div>
+        )}
+
+        {/* 2. JADVAL (LIST) REJIMI */}
+        {usersModalView === 'list' && (
+          <div className="space-y-4">
+            {/* Yuqori Statistika Bloki */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Jami Foydalanuvchilar</div>
+                <div className="mt-1 text-lg font-bold text-text-primary">{allUsers.length.toLocaleString()} ta</div>
+              </div>
+              <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Faol Hisoblar</div>
+                <div className="mt-1 text-lg font-bold text-success">{activeUsersCount.toLocaleString()} ta</div>
+              </div>
+              <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">O'quvchilar</div>
+                <div className="mt-1 text-lg font-bold text-accent">{studentCount.toLocaleString()} ta</div>
+              </div>
+              <div className="rounded-xl bg-surface-2 p-3 border border-edge">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Trial / Premium</div>
+                <div className="mt-1 text-lg font-bold text-warning">{allUsers.filter(u => u.isPremium || u.isTrialActive).length.toLocaleString()} ta</div>
+              </div>
+            </div>
+
+            {/* Filtr va Boshqaruv Qatori */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+                  <Icon name="search" size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+                  <input
+                    type="text"
+                    value={modalUserSearch}
+                    onChange={e => setModalUserSearch(e.target.value)}
+                    placeholder="Ism, telefon, username bo'yicha qidiruv..."
+                    className="h-8 w-full admin-input pl-8 pr-7 text-xs outline-none rounded-lg"
+                  />
+                  {modalUserSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setModalUserSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary"
+                    >
+                      <Icon name="x" size={12} />
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  value={modalUserRole}
+                  onChange={e => setModalUserRole(e.target.value)}
+                  className="h-8 rounded-lg bg-surface-2 border border-edge px-2 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+                >
+                  <option value="all">Barcha rollar</option>
+                  <option value="student">O'quvchilar</option>
+                  <option value="teacher">O'qituvchilar</option>
+                  <option value="manager">Menejerlar</option>
+                  <option value="owner">Direktorlar</option>
+                  <option value="admin">Adminlar</option>
+                </select>
+
+                <select
+                  value={modalUserStatus}
+                  onChange={e => setModalUserStatus(e.target.value)}
+                  className="h-8 rounded-lg bg-surface-2 border border-edge px-2 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+                >
+                  <option value="all">Barcha holatlar</option>
+                  <option value="active">Faol</option>
+                  <option value="blocked">Bloklangan</option>
+                  <option value="online">Hozir onlayn</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setUsersModalOpen(false); setPage('users'); }}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 text-xs font-bold transition hover:opacity-90"
+                  title="Foydalanuvchilar boshqaruv sahifasiga o'tish"
+                >
+                  <span>To'liq sahifa</span>
+                  <Icon name="chevronRight" size={12} />
+                </button>
+              </div>
+            </div>
+
+            {/* Foydalanuvchilar Ro'yxati / Jadvali */}
+            <div className="max-h-[50vh] overflow-y-auto admin-scroll rounded-xl border border-edge bg-surface-1">
+              {(() => {
+                if (isApi && apiUsersRes.loading && allUsers.length === 0) {
+                  return <div className="py-12 text-center text-xs font-semibold text-text-secondary">Foydalanuvchilar yuklanmoqda...</div>;
+                }
+                if (isApi && apiUsersRes.error && allUsers.length === 0) {
+                  return (
+                    <div className="py-12 text-center text-xs font-semibold text-text-secondary">
+                      <p>Ma'lumotlarni yuklab bo'lmadi</p>
+                      <button onClick={handleRefreshUsers} className="mt-2 text-accent font-bold underline">Qayta urinish</button>
+                    </div>
+                  );
+                }
+                const modalSearchLower = modalUserSearch.trim().toLowerCase();
+                const filteredUsers = userRows.filter(u => {
+                  if (modalSearchLower) {
+                    const matchesName = (u.name || '').toLowerCase().includes(modalSearchLower);
+                    const matchesPhone = (u.phone || '').toLowerCase().includes(modalSearchLower);
+                    const matchesEmail = (u.email || '').toLowerCase().includes(modalSearchLower);
+                    const matchesUsername = (u.username || '').toLowerCase().includes(modalSearchLower);
+                    const matchesTag = (u.adminTags || []).some(t => t.toLowerCase().includes(modalSearchLower));
+                    if (!matchesName && !matchesPhone && !matchesEmail && !matchesUsername && !matchesTag) {
+                      return false;
+                    }
+                  }
+                  if (modalUserRole !== 'all') {
+                    if (modalUserRole === 'admin') {
+                      if (!u.isPlatformAdmin && !u.roleKeys.includes('admin')) return false;
+                    } else if (!u.roleKeys.includes(modalUserRole)) {
+                      return false;
+                    }
+                  }
+                  if (modalUserStatus !== 'all') {
+                    if (modalUserStatus === 'active' && u.status !== 'Faol') return false;
+                    if (modalUserStatus === 'blocked' && u.status !== 'Bloklangan') return false;
+                    if (modalUserStatus === 'online') {
+                      const isOnline = u.lastSeenAt && (Date.now() - new Date(u.lastSeenAt).getTime() < 300000);
+                      if (!isOnline) return false;
+                    }
+                  }
+                  return true;
+                });
+
+                if (filteredUsers.length === 0) {
+                  return (
+                    <div className="py-12 text-center text-xs font-semibold text-text-secondary">
+                      {modalUserSearch || modalUserRole !== 'all' || modalUserStatus !== 'all'
+                        ? 'Qidiruv bo\'yicha foydalanuvchi topilmadi'
+                        : 'Foydalanuvchilar mavjud emas'}
+                    </div>
+                  );
+                }
+
+                return (
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 z-10 border-b border-edge bg-surface-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                      <tr>
+                        <th className="px-4 py-2.5">Foydalanuvchi</th>
+                        <th className="px-4 py-2.5">Telefon</th>
+                        <th className="px-4 py-2.5">Rol</th>
+                        <th className="px-4 py-2.5">Tashkilot</th>
+                        <th className="px-4 py-2.5">Tangalar</th>
+                        <th className="px-4 py-2.5">Holat</th>
+                        <th className="px-4 py-2.5 text-right">Amal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-edge">
+                      {filteredUsers.map(row => {
+                        const isOnline = row.lastSeenAt && (Date.now() - new Date(row.lastSeenAt).getTime() < 300000);
+                        return (
+                          <tr key={row.id} className="admin-table-row hover:bg-surface-2 transition">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="relative shrink-0">
+                                  <Avatar name={row.name} src={row.avatarUrl || ''} size={30} gradient="bg-pencil-600" />
+                                  <span
+                                    className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface-1 ${
+                                      isOnline ? 'bg-success' : 'bg-edge-strong'
+                                    }`}
+                                    title={isOnline ? 'Hozir onlayn' : 'Oflayn'}
+                                  />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate font-bold text-text-primary flex items-center gap-1.5">
+                                    <span>{row.name}</span>
+                                    {row.isPremium && <span className="text-[10px] text-warning" title="Premium">⭐</span>}
+                                    {row.telegramLinked && <span className="text-[10px] text-accent" title="Telegram ulangan">✈️</span>}
+                                  </div>
+                                  <div className="truncate text-[10px] font-semibold text-text-secondary">
+                                    {row.username ? `@${row.username}` : (row.email || '—')}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                              {row.phone && row.phone.startsWith('google_') ? (
+                                row.email ? (
+                                  <span className="font-sans font-medium text-text-primary flex items-center gap-1" title="Google orqali ro'yxatdan o'tgan">
+                                    <span className="rounded bg-accent/15 px-1 py-0.2 text-[9px] font-bold text-accent">Google</span>
+                                    <span>{row.email}</span>
+                                  </span>
+                                ) : (
+                                  <span className="italic text-text-secondary">Google hisobi</span>
+                                )
+                              ) : (
+                                row.phone || '—'
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <span className="rounded bg-surface-2 border border-edge px-2 py-0.5 text-[10px] font-bold text-text-secondary">
+                                {row.role}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-text-secondary max-w-[140px] truncate" title={row.center}>
+                              {row.center || '—'}
+                            </td>
+                            <td className="px-4 py-2.5 font-bold text-text-primary whitespace-nowrap">
+                              {row.coins} 🪙
+                            </td>
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>
+                                {row.status}
+                              </AdminPill>
+                            </td>
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailUser(row);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-edge bg-surface-2 px-2.5 py-1 text-[11px] font-bold text-text-primary hover:bg-surface-3 transition"
+                                title="Batafsil ma'lumot"
+                              >
+                                <Icon name="eye" size={11} />
+                                <span>Batafsil</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+
+            {/* Modal Pastki Qismi */}
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setUsersModalView('counter')}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-accent hover:underline"
+              >
+                <Icon name="activity" size={13} />
+                <span>Jonli Hisoblagichga qaytish</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setUsersModalOpen(false); setIsLiveFullscreen(false); }}
+                className="btn-ghost rounded-xl px-5 py-2 text-xs font-bold"
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
     );
