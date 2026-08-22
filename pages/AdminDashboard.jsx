@@ -1849,6 +1849,26 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     [isApi, onlineListOpen],
   );
 
+  const apiCenters = isApi && Array.isArray(apiCentersRes.data)
+    ? apiCentersRes.data.map(mapApiCenter)
+    : null;
+  const rawCenters = apiCenters || store.centers;
+  const centers = rawCenters.filter(c => c.status !== 'rejected');
+  const approvedCenters = centers.filter(c => c.status === 'approved');
+  const pendingCenters = centers.filter(c => c.status === 'pending');
+  // getAdminUsers backend sahifalarini yig'ib {results, count} qaytaradi —
+  // allUsers global statistika/qidiruv uchun TO'LIQ ro'yxatga tayanadi.
+  const apiUsersList = isApi && apiUsersRes.data && Array.isArray(apiUsersRes.data.results)
+    ? apiUsersRes.data.results
+    : (isApi && Array.isArray(apiUsersRes.data) ? apiUsersRes.data : null);
+  const apiAllUsers = apiUsersList
+    ? apiUsersList.map(OlympyApi.mapBackendUser)
+    : null;
+  // Platform adminlar statistika va ro'yxatlarda hisoblanmasin. Backend
+  // admin_users_list ularni allaqachon chiqarib tashlaydi; bu zaxira filtr
+  // mock/store fallback uchun ham adminlarni statistikadan ajratib turadi.
+  const allUsers = (apiAllUsers || store.users).filter(u => !u.isPlatformAdmin);
+
   // "Foydalanuvchilar" kartasi bosilganda ochiladigan Real-Time Jonli Monitor va Boshqaruv modali
   const [usersModalOpen, setUsersModalOpen] = React.useState(false);
   const [usersModalView, setUsersModalView] = React.useState('counter'); // 'counter' | 'list'
@@ -1899,26 +1919,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       setIsRefreshingUsers(false);
     }, 600);
   }, [isApi, apiUsersRes, apiUsersPagedRes, apiOnlineUsersRes, onlineListOpen, showToast]);
-
-  const apiCenters = isApi && Array.isArray(apiCentersRes.data)
-    ? apiCentersRes.data.map(mapApiCenter)
-    : null;
-  const rawCenters = apiCenters || store.centers;
-  const centers = rawCenters.filter(c => c.status !== 'rejected');
-  const approvedCenters = centers.filter(c => c.status === 'approved');
-  const pendingCenters = centers.filter(c => c.status === 'pending');
-  // getAdminUsers backend sahifalarini yig'ib {results, count} qaytaradi —
-  // allUsers global statistika/qidiruv uchun TO'LIQ ro'yxatga tayanadi.
-  const apiUsersList = isApi && apiUsersRes.data && Array.isArray(apiUsersRes.data.results)
-    ? apiUsersRes.data.results
-    : (isApi && Array.isArray(apiUsersRes.data) ? apiUsersRes.data : null);
-  const apiAllUsers = apiUsersList
-    ? apiUsersList.map(OlympyApi.mapBackendUser)
-    : null;
-  // Platform adminlar statistika va ro'yxatlarda hisoblanmasin. Backend
-  // admin_users_list ularni allaqachon chiqarib tashlaydi; bu zaxira filtr
-  // mock/store fallback uchun ham adminlarni statistikadan ajratib turadi.
-  const allUsers = (apiAllUsers || store.users).filter(u => !u.isPlatformAdmin);
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data)
     ? apiOlympiadsRes.data.map(mapApiOlympiad)
     : null;
