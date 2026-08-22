@@ -1276,7 +1276,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
       {/* Byulleten sarlavhasi: ism + sana chap chetdagi shtamp chizig'i bilan
           ajratiladi (imtihon varaqasidagi hoshiya belgisi). */}
-      <div className="flex items-start justify-between flex-wrap gap-3 md:gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-3 md:gap-4">
         <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
           <h2 className="font-display text-xl md:text-2xl font-bold text-text-primary flex items-center gap-2 truncate">
             Salom, {user.name.split(' ')[0]}!
@@ -1295,14 +1295,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <Icon name="star" size={14} /> Premium
           </button>
         )}
-        {!hasCenter && (
-          <div className="glass rounded-2xl p-4 w-full sm:max-w-xs">
-            <div className="text-[11px] uppercase tracking-widest text-text-secondary font-bold mb-1">Maslahat</div>
-            <p className="text-xs text-text-secondary mb-3">Olimpiadalar ochiq, musobaqalar uchun tashkilot tasdig'i kerak</p>
-            <button onClick={() => setPage('centers')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold min-h-[40px]">Tashkilot topish</button>
-          </div>
-        )}
       </div>
+
+      {!hasCenter && (
+        <div className="glass rounded-xl p-3 md:px-4 md:py-2.5 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap border border-edge">
+          <div className="flex items-center gap-2.5 text-xs md:text-sm text-text-secondary min-w-0">
+            <span className="text-[10px] uppercase tracking-widest text-accent font-bold px-2 py-0.5 rounded bg-accent/10 border border-accent/20 flex-shrink-0">Maslahat</span>
+            <span className="truncate sm:whitespace-normal">Olimpiadalar ochiq, musobaqalar uchun tashkilot tasdig&apos;i kerak</span>
+          </div>
+          <button onClick={() => setPage('centers')} className="btn-primary text-xs px-3.5 py-1.5 rounded-lg font-semibold whitespace-nowrap flex-shrink-0">
+            Tashkilot topish
+          </button>
+        </div>
+      )}
 
       {/* Stats row — yangi o'quvchida barcha qiymatlar nol/— bo'lgani uchun
           ko'rsatilmaydi. */}
