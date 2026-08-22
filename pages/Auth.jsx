@@ -198,6 +198,22 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const [restoreTotp, setRestoreTotp] = React.useState('');
   const [restoreBusy, setRestoreBusy] = React.useState(false);
   const [forgotOpen, setForgotOpen] = React.useState(false);
+  const [slowNotice, setSlowNotice] = React.useState(false);
+
+  React.useEffect(() => {
+    OlympyApi?.prewarmApi?.();
+  }, []);
+
+  React.useEffect(() => {
+    let timer;
+    if (loading) {
+      timer = setTimeout(() => setSlowNotice(true), 3500);
+    } else {
+      setSlowNotice(false);
+    }
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   const [forgot, setForgot] = React.useState({
     step: 'phone',
     phone: '+998',
@@ -565,6 +581,11 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               ? (restoreBusy ? <><Spinner size={20} /> Tiklanmoqda...</> : 'Hisobni tiklash')
               : (loading ? <><Spinner size={20} /> Kirish...</> : 'Kirish')}
           </button>
+          {loading && slowNotice && (
+            <p className="text-xs text-text-secondary text-center animate-pulse pt-1">
+              Server javobini kutmoqda (uyg‘onish biroz vaqt olishi mumkin)...
+            </p>
+          )}
           {restoreMode && (
             <button type="button" onClick={() => { setRestoreMode(false); setError(''); setRestoreTotp(''); }}
               className="btn-ghost w-full py-3 rounded-lg font-semibold">← Oddiy kirish</button>

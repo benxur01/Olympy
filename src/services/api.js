@@ -3,7 +3,7 @@
 // so'rovlar frontend saytining o'ziga ketib 404 bo'lardi.
 const DEFAULT_API_BASE_URL = import.meta.env?.PROD
   ? 'https://olympy-api.onrender.com'
-  : 'http://localhost:8000';
+  : 'http://127.0.0.1:8000';
 // API_BASE_URL — yagona manba (single source of truth). store.jsx ham shu
 // qiymatni import qiladi (avval ikkala faylda hardcoded takrorlanardi).
 export const API_BASE_URL = (
@@ -1304,17 +1304,25 @@ export const OlympyApi = {
   // kerakmi?" havolasi) — avtomatik cooldown'dan mustaqil, yuqoridagi izohga
   // qarang.
   openSupportChat,
+  // Serverni orqa fonda uyg'otish (masalan Render free tier cold-start uchun silent ping)
+  prewarmApi: () => {
+    try {
+      if (typeof fetch !== 'undefined' && API_BASE_URL) {
+        fetch(`${API_BASE_URL}/api/health/`, { method: 'GET', keepalive: true }).catch(() => {});
+      }
+    } catch {}
+  },
   // Auth
-  login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload, retryOnAuth: false }),
-  loginWithGoogle: (payload) => request('/api/auth/google/', { method: 'POST', body: payload, retryOnAuth: false }),
-  register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload, retryOnAuth: false }),
-  registerOrganization: (payload) => request('/api/auth/register-organization/', { method: 'POST', body: payload, retryOnAuth: false }),
-  refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false }),
-  startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload, retryOnAuth: false }),
-  startPasswordReset: (payload) => request('/api/auth/password-reset/start/', { method: 'POST', body: payload, retryOnAuth: false }),
-  confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false }),
-  startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
-  verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
+  login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  loginWithGoogle: (payload) => request('/api/auth/google/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  registerOrganization: (payload) => request('/api/auth/register-organization/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  startPasswordReset: (payload) => request('/api/auth/password-reset/start/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   // Email'ni hisobga bog'lash (tiklash kanali, autentifikatsiya emas): start
   // manzilga 6 xonali kod yuboradi, confirm shu kodni tekshirib emailni
   // tasdiqlangan holda yozadi va yangilangan user obyektini qaytaradi.
