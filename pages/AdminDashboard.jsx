@@ -3775,7 +3775,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           </div>
                         </td>
                         <td className="px-4 py-2.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
-                          {row.phone || '—'}
+                          {row.phone && row.phone.startsWith('google_') ? (
+                            row.email ? (
+                              <span className="font-sans font-medium text-text-primary flex items-center gap-1" title="Google orqali ro'yxatdan o'tgan">
+                                <span className="rounded bg-accent/15 px-1 py-0.2 text-[9px] font-bold text-accent">Google</span>
+                                <span>{row.email}</span>
+                              </span>
+                            ) : (
+                              <span className="italic text-text-secondary">Google hisobi</span>
+                            )
+                          ) : (
+                            row.phone || '—'
+                          )}
                         </td>
                         <td className="px-4 py-2.5 whitespace-nowrap">
                           <span className="rounded bg-surface-2 border border-edge px-2 py-0.5 text-[10px] font-bold text-text-secondary">
@@ -4067,6 +4078,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const info = detailUser ? {
       name: fresh?.name || detailUser.name,
       phone: fresh?.phone || detailUser.phone,
+      email: fresh?.email || detailUser.email || '',
       avatarUrl: fresh?.avatarUrl || detailUser.avatarUrl || '',
       joined: fresh?.joined || detailUser.joined,
       isActive: fresh ? fresh.isActive !== false : detailUser.status !== 'Bloklangan',
@@ -4166,7 +4178,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-text-secondary font-mono mt-0.5">{info.phone || '—'}</div>
+                <div className="text-xs text-text-secondary font-mono mt-0.5">
+                  {info.phone && info.phone.startsWith('google_') ? (
+                    info.email ? (
+                      <span className="font-sans font-medium text-text-primary flex items-center gap-1.5">
+                        <span className="rounded bg-accent/15 px-1.5 py-0.2 text-[9px] font-bold text-accent">Google</span>
+                        <span>{info.email}</span>
+                      </span>
+                    ) : (
+                      <span className="italic">Google orqali ro'yxatdan o'tgan</span>
+                    )
+                  ) : (
+                    info.phone || '—'
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <AdminPill status={info.isActive ? 'approved' : 'rejected'}>
@@ -4208,12 +4233,19 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             {/* 1. OVERVIEW SUB-TAB */}
             {detailSubTab === 'overview' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
                     { label: 'ID', value: detailBackendId ? `#${detailBackendId}` : '—' },
                     { label: "Ro'yxatdan o'tgan", value: formatAdminDate(info.joined) || '—' },
                     { label: 'Tashkilot', value: info.center || 'Biriktirilmagan' },
                     { label: 'Tarif', value: info.planName || 'Standart' },
+                    { label: 'Email', value: info.email || '—' },
+                    {
+                      label: 'Telefon',
+                      value: (info.phone && info.phone.startsWith('google_'))
+                        ? "Google orqali (raqamsiz)"
+                        : (info.phone || '—')
+                    },
                   ].map(f => (
                     <div key={f.label} className="rounded-xl bg-surface-2 px-3 py-2.5 border border-edge">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{f.label}</div>
@@ -5195,7 +5227,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-text-secondary">{row.phone || '—'}</td>
+                    <td className="px-5 py-4 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                      {row.phone && row.phone.startsWith('google_') ? (
+                        row.email ? (
+                          <span className="font-sans font-medium text-text-primary flex items-center gap-1.5" title="Google orqali ro'yxatdan o'tgan">
+                            <span className="rounded bg-accent/15 px-1.5 py-0.2 text-[9px] font-bold text-accent">Google</span>
+                            <span>{row.email}</span>
+                          </span>
+                        ) : (
+                          <span className="italic text-text-secondary">Google hisobi</span>
+                        )
+                      ) : (
+                        row.phone || '—'
+                      )}
+                    </td>
                     <td className="px-5 py-4"><span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">{row.role}</span></td>
                     <td className="px-5 py-4 font-semibold text-text-secondary">{row.center}</td>
                     <td className="px-5 py-4 font-bold text-warning font-mono">

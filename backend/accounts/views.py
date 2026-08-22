@@ -788,6 +788,10 @@ def google_login(request):
             )
         if desired_role and desired_role not in current_roles:
             user.add_role(desired_role)
+        if email and (not user.email or not user.email_verified_at):
+            user.email = email
+            user.email_verified_at = timezone.now()
+            user.save(update_fields=['email', 'email_verified_at'])
         return _auth_response(request, user)
 
     try:
@@ -802,6 +806,8 @@ def google_login(request):
                 phone=google_phone,
                 normalized_phone=google_phone,
                 username=google_username,
+                email=email or None,
+                email_verified_at=timezone.now() if email else None,
                 full_name=name or (email.split('@')[0] if email else "Google User"),
                 first_name=given_name,
                 last_name=family_name,
