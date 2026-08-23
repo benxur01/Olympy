@@ -39,6 +39,11 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
+  <!-- Backend API bilan ulanishni oldindan ochish (TCP + TLS preconnect).
+       Foydalanuvchi saytga kirishi bilanoq Render backend bilan ulanish o'rnatiladi,
+       natijada birinchi so'rov (login, ro'yxatdan o'tish) 0.5-1s tezroq ketadi. -->
+  <link rel="preconnect" href="https://olympy-api.onrender.com" crossorigin />
+  <link rel="dns-prefetch" href="https://olympy-api.onrender.com" />
   <!-- Shriftlar self-hosted: `public/fonts/*.woff2` + src/index.css dagi
        @font-face (PT Sans / PT Sans Narrow). Avval bu yerda Google Fonts
        CDN'ga preconnect va Plus Jakarta Sans stylesheet link bor edi —

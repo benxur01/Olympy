@@ -73,6 +73,8 @@ entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n`;
 entry += `globalThis.OlympyOfflineQueue = OlympyOfflineQueue;\n`;
 entry += `globalThis.DOMPurify = DOMPurify;\n\n`;
+entry += `// Ilova yuklanishi bilan backend ulanishini oldindan qizdirish\n`;
+entry += `try { OlympyApi?.prewarmApi?.(); } catch (_) {}\n\n`;
 // Recharts (admin "Tahlil" diagrammalari) va KaTeX (matematik ifodalar)
 // AGARDA kerak bo'lsa lazy tushadi — yuqoridagi `*-loader.js` modullari
 // `globalThis.OlympyRecharts` / `globalThis.OlympyKatex` ni ochadi va
