@@ -54,8 +54,12 @@ fi
 exec gunicorn olympy_api.wsgi:application \
     --bind "0.0.0.0:${PORT:-10000}" \
     --workers "${GUNICORN_WORKERS:-1}" \
-    --threads "${GUNICORN_THREADS:-6}" \
+    --threads "${GUNICORN_THREADS:-8}" \
     --worker-class gthread \
     --timeout 300 \
+    --keep-alive 5 \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    --backlog 2048 \
     --access-logfile - \
     --error-logfile -
