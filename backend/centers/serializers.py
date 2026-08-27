@@ -84,13 +84,18 @@ class CenterMembershipSerializer(serializers.ModelSerializer):
     # avatarini ko'rsatishi uchun qo'shimcha `user_detail` (read-only)
     # nested obyekt: { id, full_name, avatar_url, is_premium }.
     user_detail = serializers.SerializerMethodField()
+    # `center` ham faqat ID qaytaradi. Platforma admini ko'radigan umumiy
+    # arizalar navbati (`admin_pending_memberships`) bir nechta markazni
+    # aralashtiradi, ya'ni qatorda markaz NOMI bo'lishi shart — `user_detail`
+    # bilan bir xil sabab va bir xil shakl.
+    center_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = CenterMembership
-        fields = ['id', 'user', 'user_detail', 'center', 'role', 'subject',
-                  'approval_code', 'status', 'approved_by', 'created_at']
-        read_only_fields = ['id', 'user_detail', 'approval_code', 'status',
-                            'approved_by', 'created_at']
+        fields = ['id', 'user', 'user_detail', 'center', 'center_detail', 'role',
+                  'subject', 'approval_code', 'status', 'approved_by', 'created_at']
+        read_only_fields = ['id', 'user_detail', 'center_detail', 'approval_code',
+                            'status', 'approved_by', 'created_at']
 
     def get_user_detail(self, obj):
         from accounts.utils import avatar_url_for
@@ -104,6 +109,12 @@ class CenterMembershipSerializer(serializers.ModelSerializer):
             'avatar_url': avatar_url_for(user, request),
             'is_premium': bool(getattr(user, 'is_premium', False)),
         }
+
+    def get_center_detail(self, obj):
+        center = getattr(obj, 'center', None)
+        if not center:
+            return None
+        return {'id': center.id, 'name': center.name}
 
 
 class CenterRegisterSerializer(serializers.Serializer):

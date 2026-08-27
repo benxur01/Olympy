@@ -2272,35 +2272,43 @@ def admin_user_warnings(request, user_id):
     qarorini qabul qilishdan oldin admin bu foydalanuvchi avval necha marta
     va nima uchun ogohlantirilganini ko'rishi kerak.
 
-    Sabab (`reason`) bu yerda QAYTARILMAYDI — u ichki izoh bo'lib faqat audit
-    jurnalida qoladi; bu ro'yxat foydalanuvchiga yuborilgan matnning o'zini
-    ko'rsatadi. `is_read` esa xabar o'qilganini bildiradi (ogohlantirish
-    yetib bormagan bo'lsa, blok o'rniga yana bir marta yozish mumkin).
+    Manba — AUDIT JURNALI (`admin_user_warn`), xabarnomalar emas. Avval
+    ro'yxat `Notification` dan o'qilardi va u yerda faqat foydalanuvchiga
+    ketgan matn (`message`) bor: ichki sabab (`reason`) — ya'ni admin
+    ogohlantirishni NIMA UCHUN yozgani — faqat audit yozuvida saqlanadi.
+    Aynan shu sabab keyingi qarorga asos bo'ladi, shuning uchun ikkalasi ham
+    bitta manbadan qaytariladi.
+
+    `total_count` — umumiy soni, `recent_count_30d` — `window_days` ichidagi
+    soni. Chegaralar `moderation.services` dan olinadi (nusxa emas): panel
+    "yana bittasi moderatsiya navbatiga tushiradi" degan ogohlantirishni
+    AYNAN shu chegara bo'yicha ko'rsatadi.
 
     `user_id` javobda qaytariladi — `admin_user_login_history` bilan bir xil
     sabab: ketma-ket ochilgan oynalarda eski javob ko'rinib qolmasin.
     """
     from django.contrib.auth import get_user_model
-    from notifications.models import Notification
+    from moderation.services import WARNING_STRIKE_THRESHOLD, WARNING_STRIKE_WINDOW_DAYS
 
     User = get_user_model()
     if not User.objects.filter(pk=user_id).exists():
         return Response({'detail': 'Foydalanuvchi topilmadi'},
                         status=status.HTTP_404_NOT_FOUND)
-    warnings = (
-        Notification.objects
-        .filter(user_id=user_id, type=Notification.TYPE_ACCOUNT_WARNING)
-        .order_by('-created_at')[:50]
-    )
+    logs = AuditLog.objects.filter(action='admin_user_warn', target_id=user_id)
+    since = timezone.now() - timedelta(days=WARNING_STRIKE_WINDOW_DAYS)
+    warnings = logs.order_by('-created_at')[:50]
     return Response({
         'user_id': int(user_id),
+        'total_count': logs.count(),
+        'recent_count_30d': logs.filter(created_at__gte=since).count(),
+        'window_days': WARNING_STRIKE_WINDOW_DAYS,
+        'threshold': WARNING_STRIKE_THRESHOLD,
         'warnings': [{
-            'id': w.id,
-            'title': w.title,
-            'message': w.message,
-            'is_read': w.is_read,
-            'created_at': w.created_at.isoformat(),
-        } for w in warnings],
+            'id': row.id,
+            'reason': (row.extra or {}).get('reason') or '',
+            'message': (row.extra or {}).get('message') or '',
+            'created_at': row.created_at.isoformat(),
+        } for row in warnings],
     })
 
 
@@ -3800,6 +3808,21 @@ def admin_user_note_delete(request, user_id, note_id):
     return Response({'status': 'ok', 'detail': "Eslatma o'chirildi"})
 
 
+def _clean_tags(raw_tags):
+    """Xom teg ro'yxatini normallashtiradi: bo'sh joysiz, `#` siz, kichik
+    harfda va takrorlarsiz.
+
+    Bitta foydalanuvchilik (`admin_user_tags_update`) va ommaviy
+    (`admin_bulk_update_user_tags`) yo'llar AYNAN bir xil normallashtirishdan
+    o'tishi shart — aks holda `#VIP` va `vip` bir hisobda ikkita alohida teg
+    bo'lib qolardi va teg bo'yicha filtr ularni topa olmasdi.
+    """
+    return list(dict.fromkeys(
+        str(t).strip().lstrip('#').lower()
+        for t in raw_tags if str(t).strip()
+    ))
+
+
 @api_view(['POST'])
 @permission_classes([IsPlatformAdmin])
 def admin_user_tags_update(request, user_id):
@@ -3812,10 +3835,7 @@ def admin_user_tags_update(request, user_id):
     raw_tags = request.data.get('tags', [])
     if not isinstance(raw_tags, list):
         return Response({'detail': "Tags ro'yxat bo'lishi kerak"}, status=status.HTTP_400_BAD_REQUEST)
-    cleaned_tags = list(dict.fromkeys(
-        str(t).strip().lstrip('#').lower()
-        for t in raw_tags if str(t).strip()
-    ))
+    cleaned_tags = _clean_tags(raw_tags)
     target.admin_tags = cleaned_tags
     target.save(update_fields=['admin_tags'])
     AuditLog.log(
@@ -3825,6 +3845,60 @@ def admin_user_tags_update(request, user_id):
         extra={'tags': cleaned_tags},
     )
     return Response({'status': 'ok', 'admin_tags': cleaned_tags})
+
+
+@api_view(['PATCH'])
+@permission_classes([IsPlatformAdmin])
+def admin_bulk_update_user_tags(request):
+    """PATCH /api/admin/users/bulk-set-tags/ — bir nechta hisobga teg qo'yish.
+
+    Body: {"user_ids": [...], "tags": [...], "mode": "add"|"remove"|"replace"}.
+    Javob shakli boshqa ommaviy amallar bilan bir xil:
+    {"succeeded": [id, ...], "failed": [{"id": .., "reason": ".."}]}.
+
+    Standart rejim — `add`: teglar odatda BELGI qo'yish uchun ishlatiladi
+    ("kuzatuvda", "vip"), ya'ni ommaviy amal hisobda allaqachon turgan
+    boshqa teglarni jimgina o'chirib yubormasligi kerak. `replace` — atayin
+    talab qilinadigan buzuvchi rejim, `remove` esa qo'yilgan belgini bir yo'la
+    olib tashlaydi.
+    """
+    ids, error = _parse_bulk_user_ids(request.data.get('user_ids'))
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+    raw_tags = request.data.get('tags')
+    if not isinstance(raw_tags, list):
+        return Response({'detail': "tags ro'yxat (list) bo'lishi kerak"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    mode = str(request.data.get('mode') or 'add').strip().lower()
+    if mode not in ('add', 'remove', 'replace'):
+        return Response({'detail': "mode faqat add, remove yoki replace bo'lishi mumkin"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    tags = _clean_tags(raw_tags)
+
+    targets, failed = _resolve_bulk_targets(request, ids)
+    succeeded = []
+    for target in targets:
+        # Mavjud teglar ham normallashtiriladi: eski yozuvlar (va Django
+        # admin orqali qo'lda kiritilganlari) boshqa registrda bo'lishi mumkin.
+        current = _clean_tags(target.admin_tags or [])
+        if mode == 'replace':
+            updated = tags
+        elif mode == 'remove':
+            updated = [t for t in current if t not in tags]
+        else:
+            updated = current + [t for t in tags if t not in current]
+        # Holat allaqachon kerakli bo'lsa yozuv ham, jurnal ham keraksiz
+        # (`admin_bulk_set_user_roles` dagi bilan bir xil xulq), lekin natija
+        # baribir muvaffaqiyatli.
+        if updated != current:
+            target.admin_tags = updated
+            target.save(update_fields=['admin_tags'])
+            AuditLog.log(request, 'admin_user_tags_update', target=target, extra={
+                'tags': updated,
+                'bulk': True,
+            })
+        succeeded.append(target.id)
+    return Response({'succeeded': succeeded, 'failed': failed})
 
 
 @api_view(['POST'])

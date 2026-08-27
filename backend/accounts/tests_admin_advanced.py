@@ -1,4 +1,6 @@
 """Kengaytirilgan Admin Foydalanuvchi Nazorati testlari (tests_admin_advanced.py)."""
+from datetime import timedelta
+
 from django.db import connection
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
@@ -321,3 +323,107 @@ class AdminAdvancedUserControlTestCase(APITestCase):
         self.assertEqual(resp.data['created_count'], 2)
         self.assertTrue(User.objects.filter(normalized_phone='+998903333333').exists())
         self.assertTrue(User.objects.filter(normalized_phone='+998904444444').exists())
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class AdminSuspiciousUsersQueueTestCase(APITestCase):
+    """GET /api/admin/users/suspicious-queue/ — birlashtirilgan navbat."""
+
+    url = '/api/admin/users/suspicious-queue/'
+
+    def setUp(self):
+        self.admin_user = User.objects.create_superuser(
+            phone='+998901111111',
+            password='AdminPassword123!',
+            full_name='Platform Admin',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Registon O‘quv Markazi',
+            owner=self.admin_user,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Matematika Bahor 2025',
+            subject='Matematika',
+            duration_minutes=30,
+            status=Olympiad.STATUS_ACTIVE,
+        )
+        # Hech qanday signal bermaydigan hisob — navbatda ko'rinmasligi kerak.
+        self.clean_user = User.objects.create_user(
+            phone='+998902222222', password='Pass123!', full_name='Toza Hisob',
+            roles=['student'], last_seen_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _make_churn_user(self, phone, days_inactive):
+        return User.objects.create_user(
+            phone=phone, password='Pass123!', full_name=f'Churn {phone}',
+            roles=['student'],
+            last_seen_at=timezone.now() - timedelta(days=days_inactive),
+        )
+
+    def _make_high_risk_user(self, phone):
+        """Diskvalifikatsiya (+25) va bloklangan qurilma izi (+35) = 60 ball."""
+        user = User.objects.create_user(
+            phone=phone, password='Pass123!', full_name=f'Xavfli {phone}',
+            roles=['student'], last_seen_at=timezone.now(),
+        )
+        TestAttempt.objects.create(
+            user=user, olympiad=self.olympiad, score=0, disqualified=True,
+        )
+        DeviceFingerprint.objects.create(
+            user=user, fingerprint_hash=f'hash-{phone}', is_banned=True,
+        )
+        return user
+
+    def _make_shared_device_users(self, phones, device_id):
+        """Bitta qurilmadan imtihon topshirgan hisoblar (ko'p-hisob signali)."""
+        users = []
+        for phone in phones:
+            user = User.objects.create_user(
+                phone=phone, password='Pass123!', full_name=f'Qurilma {phone}',
+                roles=['student'], last_seen_at=timezone.now(),
+            )
+            TestSession.objects.create(
+                user=user, olympiad=self.olympiad, last_device_id=device_id,
+            )
+            users.append(user)
+        return users
+
+    def test_only_users_with_signals_are_returned(self):
+        churn_user = self._make_churn_user('+998903333333', 10)
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        returned_ids = [row['id'] for row in resp.data['results']]
+        self.assertIn(churn_user.id, returned_ids)
+        self.assertNotIn(self.clean_user.id, returned_ids)
+        self.assertNotIn(self.admin_user.id, returned_ids)
+        self.assertEqual(resp.data['count'], len(resp.data['results']))
+
+    def test_results_are_ordered_by_priority_score(self):
+        risk_user = self._make_high_risk_user('+998904444444')
+        device_users = self._make_shared_device_users(
+            ['+998905555555', '+998906666666', '+998907777777'], 'device-abc',
+        )
+        churn_user = self._make_churn_user('+998908888888', 10)
+
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        rows = {row['id']: row for row in resp.data['results']}
+
+        self.assertEqual(rows[risk_user.id]['priority_score'], 60)
+        self.assertEqual(rows[risk_user.id]['risk_tier'], 'yuqori')
+        for user in device_users:
+            self.assertEqual(rows[user.id]['priority_score'], 30)
+            self.assertTrue(rows[user.id]['multi_account_device'])
+        self.assertEqual(rows[churn_user.id]['priority_score'], 20)
+        self.assertEqual(rows[churn_user.id]['churn_risk'], 'medium')
+        self.assertTrue(rows[churn_user.id]['signals'])
+
+        scores = [row['priority_score'] for row in resp.data['results']]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.clean_user)
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)

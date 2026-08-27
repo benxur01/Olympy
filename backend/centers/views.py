@@ -1161,6 +1161,49 @@ def admin_reject_center(request, center_id):
 
 
 @api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_pending_memberships(request):
+    """GET /api/admin/centers/pending-memberships/ — Platform Admin only.
+
+    Kutayotgan a'zolik (rol) arizalari BARCHA markazlar bo'yicha bitta
+    ro'yxatda. `pending_memberships` dan farqi shundaki u BITTA markazniki
+    va markaz xodimlari uchun; bu esa platforma admini uchun umumiy navbat:
+    o'z markazi bo'lmagan admin har bir markazni alohida ochib chiqmasin.
+
+    Faqat O'QIYDI. Tasdiqlash/rad etish markaz endpointlarida qoladi
+    (`approve-student` / `approve-teacher` / `approve-manager`) — ular
+    `user_can_approve_membership` orqali platforma adminini allaqachon
+    o'tkazadi, ya'ni bu yerda ikkinchi qaror yo'li yaratilmaydi.
+
+    Ixtiyoriy filtrlar: `?role=`, `?center_id=`.
+    """
+    qs = (
+        CenterMembership.objects
+        .filter(status=CenterMembership.STATUS_PENDING)
+        .select_related('user', 'center')
+        .order_by('-created_at')
+    )
+    role = (request.query_params.get('role') or '').strip()
+    if role:
+        qs = qs.filter(role=role)
+    center_id = (request.query_params.get('center_id') or '').strip()
+    if center_id.isdigit():
+        qs = qs.filter(center_id=int(center_id))
+
+    from olympy_api.pagination import LargePageNumberPagination
+
+    # Navbat butun platforma bo'yicha yig'iladi, ya'ni markazlar soni bilan
+    # birga o'sadi — boshqa admin ro'yxatlaridagidek sahifalanadi.
+    paginator = LargePageNumberPagination()
+    page = paginator.paginate_queryset(qs, request)
+    if page is not None:
+        return paginator.get_paginated_response(
+            CenterMembershipSerializer(page, many=True, context={'request': request}).data
+        )
+    return Response(CenterMembershipSerializer(qs, many=True, context={'request': request}).data)
+
+
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def center_ratings(request):
     """GET /api/centers/ratings/ — markazlarni o'rtacha ball bo'yicha reytinglash.

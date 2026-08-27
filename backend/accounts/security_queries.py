@@ -153,6 +153,75 @@ def get_device_account_ids(device_id):
     }
 
 
+def get_multi_account_user_ids(min_ip_accounts=5, min_device_accounts=3, window_days=30):
+    """Ko'p-hisob signaliga tushgan foydalanuvchi id'lari.
+
+    Qaytadi: `(ip_user_ids, device_user_ids)` — IKKI alohida to'plam, chunki
+    signallar teng emas va panel ularni alohida ko'rsatadi (bitta IP ortida
+    sinfxona bo'lishi mumkin, bitta qurilmadan imtihon topshirish esa ancha
+    aniqroq belgi).
+
+    N+1 yo'q: `get_shared_ip_accounts` / `get_shared_device_accounts` chegaradan
+    oshgan manzil va qurilmalar RO'YXATINI beradi, keyin har bir signal turi
+    uchun BITTA `__in` so'rovi id'larni yig'adi (har bir IP uchun alohida
+    `get_ip_account_ids` chaqirish ro'yxat uzunligiga teng so'rov bo'lardi).
+    """
+    from attempts.models import TestSession  # lokal import — aylanma bog'liqlik
+
+    cutoff = timezone.now() - timedelta(days=window_days)
+    ips = [row['ip_address'] for row in get_shared_ip_accounts(
+        min_accounts=min_ip_accounts, window_days=window_days)]
+    devices = [row['last_device_id'] for row in get_shared_device_accounts(
+        min_accounts=min_device_accounts, window_days=window_days)]
+
+    ip_user_ids = set()
+    if ips:
+        # Vaqt oynasi yana qo'yiladi: agregat oynadagi kirishlar bo'yicha
+        # chegaradan oshgan, lekin shu IP'ning yillik tarixidagi hamma hisob
+        # emas — aks holda oyna filtri ma'nosini yo'qotardi.
+        ip_user_ids.update(
+            LoginEvent.objects
+            .filter(created_at__gte=cutoff, ip_address__in=ips)
+            .values_list('user_id', flat=True)
+        )
+    device_user_ids = set()
+    if devices:
+        device_user_ids.update(
+            TestSession.objects
+            .filter(started_at__gte=cutoff, last_device_id__in=devices)
+            .values_list('user_id', flat=True)
+        )
+    ip_user_ids.discard(None)
+    device_user_ids.discard(None)
+    return ip_user_ids, device_user_ids
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Churn (platformadan ketib qolish) xavfi
+# ─────────────────────────────────────────────────────────────────────────────
+# Hisob "ketib qolmoqda" deb sanaladigan sukunat oralig'i. Quyi chegara —
+# oddiy dam olish kunlaridan farq qilsin uchun; yuqori chegara — bundan
+# uzoq sukut allaqachon KETGAN hisob, uni qaytarish kampaniyasi boshqa
+# masala.
+CHURN_MIN_INACTIVE_DAYS = 7
+CHURN_MAX_INACTIVE_DAYS = 30
+
+
+def churn_risk_filter():
+    """Churn xavfidagi hisoblar sharti (`Q`).
+
+    `admin_churn_risk_users` ham, shubhali foydalanuvchilar navbati ham AYNAN
+    shu ta'rifdan foydalanadi — ikki ekranda ikki xil ro'yxat chiqmasin.
+    """
+    now = timezone.now()
+    return Q(
+        is_active=True,
+        is_platform_admin=False,
+        last_seen_at__lte=now - timedelta(days=CHURN_MIN_INACTIVE_DAYS),
+        last_seen_at__gte=now - timedelta(days=CHURN_MAX_INACTIVE_DAYS),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Admin ro'yxatidagi xavf darajasi (risk_tier)
 # ─────────────────────────────────────────────────────────────────────────────
