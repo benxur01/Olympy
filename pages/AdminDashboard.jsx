@@ -31,6 +31,17 @@ const ROLE_MODAL_KEYS = [
 const ROLE_RADIO_KEYS = ROLE_MODAL_KEYS.filter(opt => opt.value !== 'admin');
 const ROLE_ADMIN_KEY = ROLE_MODAL_KEYS.find(opt => opt.value === 'admin');
 
+// Ommaviy premium modalidagi muddat variantlari — bitta foydalanuvchilik
+// premium modalidagilar bilan bir xil, faqat "Bekor qilish" (-1) yo'q: uni
+// alohida "olib tashlash" tugmasi bajaradi.
+const BULK_PREMIUM_DURATIONS = [
+  { value: 30, label: '1 oy (30 kun)' },
+  { value: 90, label: '3 oy (90 kun)' },
+  { value: 180, label: '6 oy (180 kun)' },
+  { value: 365, label: '1 yil (365 kun)' },
+  { value: 0, label: 'Umrbod (Cheksiz)' },
+];
+
 // Amallar tarixi (audit jurnali) bir sahifada nechta yozuv ko'rsatadi.
 // Backend LargePageNumberPagination'ga `page_size` sifatida yuboriladi.
 const AUDIT_PAGE_SIZE = 50;
@@ -1170,6 +1181,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [bulkTagsInput, setBulkTagsInput] = React.useState('');
   const [bulkTagsMode, setBulkTagsMode] = React.useState('add');
   const [bulkBusy, setBulkBusy] = React.useState(false);
+  // "Premium boshqaruvi": id tanlash yo'q — amal bazadagi BARCHA `student`
+  // rolli hisoblarga qo'llanadi. Ikki bosqichli tasdiq: `premiumBulkMode`
+  // sozlash oynasi (faqat berishda), keyin `premiumBulkConfirm` — serverdan
+  // olingan haqiqiy qamrov soni (`premiumBulkCount`) ko'rsatilgan oyna.
+  const [premiumBulkMode, setPremiumBulkMode] = React.useState(null); // 'grant'
+  const [premiumBulkConfirm, setPremiumBulkConfirm] = React.useState(null); // 'grant' | 'revoke'
+  const [premiumBulkCount, setPremiumBulkCount] = React.useState(0);
+  const [premiumBulkDuration, setPremiumBulkDuration] = React.useState(30);
+  const [premiumBulkPlanType, setPremiumBulkPlanType] = React.useState('student');
+  const [premiumBulkPlanName, setPremiumBulkPlanName] = React.useState('Pro');
+  const [premiumBulkBusy, setPremiumBulkBusy] = React.useState(false);
   // Qaysi rol arizasi bo'yicha qaror yuborilmoqda (faqat o'sha qatorning
   // tugmalari bloklanadi, butun ro'yxat emas).
   const [membershipDecisionId, setMembershipDecisionId] = React.useState(null);
@@ -2775,6 +2797,69 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(OlympyApi.toUserMessage(err));
       })
       .finally(() => { setBulkBusy(false); setBulkTagsModal(false); });
+  };
+
+  const openPremiumBulkGrantModal = () => {
+    setPremiumBulkDuration(30);
+    setPremiumBulkPlanType('student');
+    setPremiumBulkPlanName('Pro');
+    setPremiumBulkMode('grant');
+  };
+
+  // Tasdiqlashning 2-bosqichi. Qamrov sonini SERVERDAN olamiz: jadval faqat
+  // joriy sahifani biladi va undan chamalangan son adminni chalg'itardi.
+  const openPremiumBulkConfirm = (mode) => {
+    if (premiumBulkBusy) return;
+    if (!isApi) { showToast('Ommaviy amallar faqat API rejimida ishlaydi'); return; }
+    setPremiumBulkBusy(true);
+    OlympyApi.getAdminPremiumBulkPreview(mode, OlympyApi.getToken())
+      .then(res => {
+        const count = res?.count ?? 0;
+        if (!count) {
+          showToast(mode === 'grant'
+            ? "O'quvchi rolidagi foydalanuvchi topilmadi"
+            : "Premiumi bor o'quvchi topilmadi");
+          setPremiumBulkMode(null);
+          return;
+        }
+        setPremiumBulkCount(count);
+        setPremiumBulkMode(null);
+        setPremiumBulkConfirm(mode);
+      })
+      .catch(err => {
+        console.warn('getAdminPremiumBulkPreview failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setPremiumBulkBusy(false));
+  };
+
+  // Amalning o'zi backendda Celery worker'ga topshiriladi — javobdagi `count`
+  // navbatga qo'yish paytidagi qamrov soni, shuning uchun xabar "qo'llanmoqda".
+  const runPremiumBulk = () => {
+    if (premiumBulkBusy) return;
+    const mode = premiumBulkConfirm;
+    if (!mode) return;
+    setPremiumBulkBusy(true);
+    const pending = mode === 'grant'
+      ? OlympyApi.adminBulkGrantPremiumStudents({
+          duration: premiumBulkDuration,
+          plan_type: premiumBulkPlanType,
+          plan_name: premiumBulkPlanName,
+        }, OlympyApi.getToken())
+      : OlympyApi.adminBulkRevokePremiumStudents(OlympyApi.getToken());
+    pending
+      .then(res => {
+        const count = res?.count ?? 0;
+        showToast(mode === 'grant'
+          ? `${count} ta o'quvchiga premium qo'llanmoqda`
+          : `${count} ta o'quvchidan premium olib tashlanmoqda`);
+        reloadUsers();
+      })
+      .catch(err => {
+        console.warn('adminBulkPremiumStudents failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => { setPremiumBulkBusy(false); setPremiumBulkConfirm(null); });
   };
 
   // CSV eksporti: backend AYNAN shu qidiruv matnini `admin_users_list` bilan
@@ -5446,6 +5531,36 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </div>
 
+      {/* Premium boshqaruvi — jadvaldagi tanlovdan MUSTAQIL: amal bazadagi
+          barcha o'quvchi rolli hisoblarga qo'llanadi. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-edge bg-surface-2 px-4 py-3 md:flex-row md:items-center">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-text-primary">
+            <Icon name="star" size={13} className="text-warning" />
+            <span>Premium boshqaruvi</span>
+          </div>
+          <p className="mt-0.5 text-[11px] font-semibold text-text-secondary">
+            Amal jadvaldagi tanlovga emas, bazadagi BARCHA o'quvchi rolli hisoblarga qo'llanadi.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:ml-auto">
+          <button
+            type="button"
+            onClick={openPremiumBulkGrantModal}
+            disabled={premiumBulkBusy}
+            className="rounded-lg border border-accent bg-accent/15 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent hover:text-on-accent disabled:opacity-50">
+            Barcha o'quvchilarga premium berish
+          </button>
+          <button
+            type="button"
+            onClick={() => openPremiumBulkConfirm('revoke')}
+            disabled={premiumBulkBusy}
+            className="rounded-lg border border-error/45 bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-error transition hover:bg-surface-1 disabled:opacity-50">
+            Barcha o'quvchilardan premiumni olib tashlash
+          </button>
+        </div>
+      </div>
+
       {/* Tezkor Segment Filtrlar (Quick Presets) */}
       <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto admin-scroll pb-1">
         {[
@@ -6154,6 +6269,107 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         </div>
       </Modal>
+
+      {/* Ommaviy premium — 1-bosqich: tarif va muddatni tanlash. */}
+      <Modal
+        open={premiumBulkMode === 'grant'}
+        onClose={() => !premiumBulkBusy && setPremiumBulkMode(null)}
+        title="Barcha o'quvchilarga premium berish">
+        <div className="space-y-5">
+          <p className="text-sm text-text-secondary">
+            Tanlangan tarif bazadagi barcha o'quvchi rolli hisoblarga qo'llanadi.
+            Keyingi qadamda aniq qamrov soni ko'rsatiladi.
+          </p>
+
+          <div>
+            <label className="block text-xs text-text-secondary mb-1.5 font-medium">Premium turi</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: 'student', label: "O'quvchi (Student)" },
+                { value: 'organization', label: 'Tashkilot (Organization)' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPremiumBulkPlanType(opt.value)}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                    premiumBulkPlanType === opt.value ? 'btn-primary font-bold' : 'btn-ghost'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {premiumBulkDuration > 0 && (
+            <div>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Tarif turi (Darajasi)</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['Standart', 'Plus', 'Pro'].map(name => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => setPremiumBulkPlanName(name)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                      premiumBulkPlanName === name ? 'btn-primary font-bold' : 'btn-ghost'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs text-text-secondary mb-1.5 font-medium">Muddat</label>
+            <div className="grid grid-cols-3 gap-2">
+              {BULK_PREMIUM_DURATIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPremiumBulkDuration(opt.value)}
+                  className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                    premiumBulkDuration === opt.value ? 'btn-primary font-bold' : 'btn-ghost'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setPremiumBulkMode(null)}
+              disabled={premiumBulkBusy}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+              Bekor qilish
+            </button>
+            <button
+              onClick={() => openPremiumBulkConfirm('grant')}
+              disabled={premiumBulkBusy}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+              {premiumBulkBusy ? 'Hisoblanmoqda...' : 'Davom etish'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Ommaviy premium — 2-bosqich: serverdan olingan qamrov soni bilan tasdiq. */}
+      <ConfirmModal
+        open={!!premiumBulkConfirm}
+        onClose={() => !premiumBulkBusy && setPremiumBulkConfirm(null)}
+        onConfirm={runPremiumBulk}
+        title={premiumBulkConfirm === 'revoke' ? 'Premiumni olib tashlash' : 'Premium berish'}
+        message={premiumBulkConfirm === 'revoke'
+          ? `${premiumBulkCount} ta o'quvchiga qo'llaniladi — ularning barchasidan premium olib tashlanadi. Amalni qaytarib bo'lmaydi.`
+          : `${premiumBulkCount} ta o'quvchiga qo'llaniladi — ${BULK_PREMIUM_DURATIONS.find(o => o.value === premiumBulkDuration)?.label}${premiumBulkDuration > 0 ? `, ${premiumBulkPlanName}` : ''}. Amalni qaytarib bo'lmaydi.`}
+        confirmText="Ha, tasdiqlayman"
+        danger={premiumBulkConfirm === 'revoke'}
+        busy={premiumBulkBusy}
+      />
 
       <ConfirmModal
         open={!!rejectCenterConfirm}

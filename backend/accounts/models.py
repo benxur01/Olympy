@@ -1047,6 +1047,12 @@ class AuditLog(models.Model):
         ('manager_live_disqualify', "Menejer jonli imtihonda diskvalifikatsiya qildi"),
         ('manager_live_remove', "Menejer jonli imtihondan chiqarib yubordi"),
         ('admin_bulk_import_users', "Foydalanuvchilar ommaviy import qilindi"),
+        # "Barcha o'quvchilarga premium" / "premiumni olib tashlash" — id
+        # ro'yxatiga emas, `student` roliga qo'llanadigan ommaviy amal. Har bir
+        # o'quvchiga alohida yozuv qoldirish jurnalni bosib ketardi, shu sababli
+        # BITTA xulosa yoziladi: `extra.mode` (grant/revoke), `extra.count` —
+        # haqiqiy son, `extra.user_ids` — kesilgan ro'yxat.
+        ('admin_bulk_premium_students', "O'quvchilarga ommaviy premium qo'llanildi"),
         # Django admin (`/olympy-mgmt-2025/`) orqali qilingan profil tahriri.
         # API'dagi admin amallari har biri o'z kodiga ega, Django admin esa
         # hech narsa yozmasdi — ya'ni jurnalda ko'rinmaydigan yagona tahrir

@@ -692,6 +692,45 @@ def expire_stale_premium():
     }
 
 
+# ─── Ommaviy premium (barcha o'quvchilar) ──────────────────────────────────
+#
+# Admin panelidagi "Premium boshqaruvi" bo'limi shu ikki task'ni navbatga
+# qo'yadi. Amal minglab hisobga tegishi mumkin — `grant_premium`/
+# `revoke_premium` to'plamli SQL bilan ishlasa ham, `bulk_create` paketlari
+# gunicorn thread'ini ushlab turmasligi uchun ish worker'da bajariladi
+# (view faqat navbatga qo'yadi va darhol javob qaytaradi).
+
+
+@shared_task(name='accounts.bulk_grant_premium_students')
+def bulk_grant_premium_students(duration, plan_type='student', plan_name=None):
+    """Barcha `student` rolli hisoblarga premium beradi."""
+    import logging
+
+    from .utils import grant_premium, student_premium_targets
+
+    logger = logging.getLogger(__name__)
+    user_ids = list(student_premium_targets('grant').values_list('id', flat=True))
+    count = grant_premium(user_ids, duration, plan_type, plan_name)
+    logger.info(
+        'bulk_grant_premium_students: %s students, duration=%s plan_type=%s',
+        count, duration, plan_type,
+    )
+    return {'count': count}
+
+
+@shared_task(name='accounts.bulk_revoke_premium_students')
+def bulk_revoke_premium_students():
+    """Premiumi bor barcha `student` rolli hisoblardan premiumni olib tashlaydi."""
+    import logging
+
+    from .utils import revoke_premium, student_premium_targets
+
+    logger = logging.getLogger(__name__)
+    user_ids = list(student_premium_targets('revoke').values_list('id', flat=True))
+    count = revoke_premium(user_ids)
+    logger.info('bulk_revoke_premium_students: %s students', count)
+    return {'count': count}
+
 
 # ─── Sekin AI (Gemini) endpointlari — Celery task'lari ──────────────────────
 #

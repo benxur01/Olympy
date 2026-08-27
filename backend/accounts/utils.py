@@ -179,6 +179,25 @@ def invalidate_user_subscription_cache(user_id):
         pass
 
 
+def invalidate_user_subscription_caches(user_ids):
+    """`invalidate_user_subscription_cache` ning toplu varianti.
+
+    Ommaviy premium amali minglab hisobga tegishi mumkin — har biri uchun
+    alohida `cache.delete()` shuncha Redis borib-kelishini anglatardi.
+    """
+    if not user_ids:
+        return
+    try:
+        from django.core.cache import cache
+        keys = []
+        for user_id in user_ids:
+            keys.append(subscription_cache_key(user_id))
+            keys.append(premium_realtime_cache_key(user_id))
+        cache.delete_many(keys)
+    except Exception:
+        pass
+
+
 def premium_realtime_cache_key(user_id):
     return f"user_premium_rt_{user_id}"
 
@@ -242,6 +261,172 @@ def is_user_premium(user):
         except Exception:
             pass
     return active
+
+
+# ─── Premium berish / bekor qilish ────────────────────────────────────────────
+# Bitta foydalanuvchilik admin toggle (`admin_toggle_user_premium`) ham,
+# "barcha o'quvchilarga" ommaviy amali ham AYNAN shu ikki funksiyani chaqiradi
+# — semantika (eski obunani yopish, yangi yozuv yaratish, markaz bayrog'i,
+# sinov muddatini so'ndirish) bitta joyda turadi.
+#
+# Ikkalasi ham id RO'YXATI ustida to'plamli (set-based) SQL bilan ishlaydi:
+# foydalanuvchilar soni bir bo'ladimi, o'n ming bo'ladimi — so'rovlar soni
+# o'zgarmaydi (`bulk_create` paketlari bundan mustasno).
+
+# `UserSubscription.end_date` NOT NULL, shu sababli "umrbod" premium juda
+# uzoq kelajakdagi sana bilan ifodalanadi — barcha `end_date > now`
+# taqqoslashlari (is_premium sync, /me lazy expiry, billing) uni doim amal
+# qiluvchi deb sanaydi.
+PREMIUM_LIFETIME_DAYS = 365 * 100
+
+# `0` — umrbod; qolganlari kun hisobida. `-1` (bekor qilish) bu yerda yo'q,
+# uni `revoke_premium` bajaradi.
+PREMIUM_GRANT_DURATIONS = (30, 90, 180, 365, 0)
+
+PREMIUM_BULK_BATCH_SIZE = 500
+
+
+def resolve_premium_plan(duration, plan_type, plan_name=None):
+    """Muddat va tarifga mos `SubscriptionPlan` (topilmasa `None`).
+
+    Mos plan topilmasligi xato emas: obuna `plan=None` bilan ham yaratiladi va
+    premium bayroqlari baribir qo'yiladi.
+    """
+    from billing.models import SubscriptionPlan
+
+    if duration == 0:
+        return SubscriptionPlan.objects.filter(
+            plan_type=plan_type, is_active=True,
+        ).order_by('-duration_days').first()
+    plan = None
+    if plan_name:
+        plan = SubscriptionPlan.objects.filter(
+            plan_type=plan_type,
+            duration_days=duration,
+            name__istartswith=plan_name,
+            is_active=True,
+        ).first()
+    if not plan:
+        plan = SubscriptionPlan.objects.filter(
+            plan_type=plan_type, duration_days=duration, is_active=True,
+        ).order_by('-price').first()
+    return plan
+
+
+def grant_premium(user_ids, duration, plan_type='student', plan_name=None):
+    """Berilgan hisoblarga premium beradi. Qaytaradi: ta'sirlangan hisoblar soni.
+
+    `duration` — `PREMIUM_GRANT_DURATIONS` dan biri (`0` — umrbod).
+    """
+    from django.contrib.auth import get_user_model
+    from django.db import transaction
+    from django.utils import timezone
+    from datetime import timedelta
+
+    from billing.models import UserSubscription
+    from centers.models import EducationCenter
+
+    user_ids = list(user_ids)
+    if not user_ids:
+        return 0
+
+    User = get_user_model()
+    now = timezone.now()
+    days = PREMIUM_LIFETIME_DAYS if duration == 0 else duration
+    end_date = now + timedelta(days=days)
+    plan = resolve_premium_plan(duration, plan_type, plan_name)
+
+    with transaction.atomic():
+        # Bir nechta aktiv obuna /me lazy-expiry mantig'ini chalkashtiradi —
+        # yangisini yaratishdan oldin eskilarini yopamiz.
+        UserSubscription.objects.filter(user_id__in=user_ids, is_active=True).update(
+            is_active=False, end_date=now,
+        )
+        UserSubscription.objects.bulk_create(
+            [
+                UserSubscription(
+                    user_id=user_id,
+                    plan=plan,
+                    start_date=now,
+                    end_date=end_date,
+                    is_active=True,
+                )
+                for user_id in user_ids
+            ],
+            batch_size=PREMIUM_BULK_BATCH_SIZE,
+        )
+        # `bulk_create` `save()` ni chaqirmaydi, ya'ni
+        # `UserSubscription.sync_premium_status()` ishlamaydi — bayroqlarni
+        # o'zimiz qo'yamiz.
+        User.objects.filter(id__in=user_ids).update(is_premium=True)
+        # Markaz bayrog'i: tashkilot obunasida sync o'zi qo'yardi; umrbodda esa
+        # plan_type'dan qat'i nazar qo'yiladi (aks holda 'student' plan bilan
+        # umrbod olgan markaz egasi markaz premiumisiz qolardi).
+        if duration == 0 or (plan and plan.plan_type == 'organization'):
+            EducationCenter.objects.filter(owner_id__in=user_ids).update(is_premium=True)
+
+    invalidate_user_subscription_caches(user_ids)
+    return len(user_ids)
+
+
+def revoke_premium(user_ids):
+    """Berilgan hisoblardan premiumni olib tashlaydi. Qaytaradi: hisoblar soni."""
+    from django.contrib.auth import get_user_model
+    from django.db import transaction
+    from django.utils import timezone
+
+    from billing.models import UserSubscription
+    from centers.models import EducationCenter
+
+    user_ids = list(user_ids)
+    if not user_ids:
+        return 0
+
+    User = get_user_model()
+    now = timezone.now()
+
+    with transaction.atomic():
+        User.objects.filter(id__in=user_ids).update(is_premium=False)
+        # Sinov muddati hali tugamagan bo'lsa `is_premium_active`
+        # (is_premium OR trial_active) hamon True qaytarardi va foydalanuvchi
+        # bekor qilingandan keyin ham Premium bo'lib ko'rinaverardi.
+        User.objects.filter(id__in=user_ids, premium_trial_end__gt=now).update(
+            premium_trial_end=now,
+        )
+        UserSubscription.objects.filter(user_id__in=user_ids, is_active=True).update(
+            is_active=False, end_date=now,
+        )
+        EducationCenter.objects.filter(owner_id__in=user_ids).update(is_premium=False)
+
+    invalidate_user_subscription_caches(user_ids)
+    return len(user_ids)
+
+
+def student_premium_targets(scope='grant'):
+    """Ommaviy premium amali qamrab oladigan hisoblar (`student` rolli).
+
+    `scope='grant'` — barcha o'quvchilar; `scope='revoke'` — hozir premiumi
+    bor o'quvchilar (`User.is_premium_active` property'sining queryset
+    varianti: bayroq YOKI amal qiluvchi sinov muddati).
+
+    Platforma admini va staff hisoblari xavfsizlik to'ri sifatida chetlab
+    o'tiladi — odatda ularda `student` roli bo'lmaydi, lekin himoya id
+    ro'yxatiga asoslangan ommaviy amallardagi (`_resolve_bulk_targets`) bilan
+    bir xil bo'lishi kerak. Rol filtri `roles__icontains` — `admin_users_list`
+    dagi rol filtri bilan aynan bir xil lookup (`roles` — JSON ro'yxat).
+    """
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+    from django.utils import timezone
+
+    User = get_user_model()
+    qs = User.objects.filter(roles__icontains='student').exclude(
+        Q(is_platform_admin=True) | Q(is_staff=True) | Q(is_superuser=True)
+    )
+    if scope == 'revoke':
+        now = timezone.now()
+        qs = qs.filter(Q(is_premium=True) | Q(premium_trial_end__gt=now))
+    return qs
 
 
 # E.164 xalqaro raqam: '+' + davlat kodi + abonent raqami. ITU-T E.164

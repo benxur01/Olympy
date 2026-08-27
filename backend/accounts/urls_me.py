@@ -118,6 +118,15 @@ urlpatterns = [
          name='admin-bulk-set-user-roles'),
     path('admin/users/bulk-set-tags/', views.admin_bulk_update_user_tags,
          name='admin-bulk-set-user-tags'),
+    # Ommaviy premium — id ro'yxati emas, `student` ROLI bo'yicha butun
+    # queryset. Avval `premium-bulk-preview` (hech narsani o'zgartirmaydi,
+    # tasdiqlash oynasidagi haqiqiy sonni beradi), keyin amalning o'zi.
+    path('admin/users/premium-bulk-preview/', views.admin_premium_bulk_preview,
+         name='admin-premium-bulk-preview'),
+    path('admin/users/bulk-grant-premium-students/', views.admin_bulk_grant_premium_students,
+         name='admin-bulk-grant-premium-students'),
+    path('admin/users/bulk-revoke-premium-students/', views.admin_bulk_revoke_premium_students,
+         name='admin-bulk-revoke-premium-students'),
     # Takrorlangan hisoblarni birlashtirish (SIM yo'qotib qayta ro'yxatdan
     # o'tgan o'quvchi). Avval `preview` — hech narsani o'zgartirmaydigan quruq
     # yurish, keyin `commit` — bitta tranzaksiyadagi haqiqiy amal.
