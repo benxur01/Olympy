@@ -41,7 +41,13 @@ from accounts.models import (
     UserFlashAlert,
 )
 from accounts.permissions import IsPlatformAdmin
-from accounts.security_queries import annotate_admin_risk, risk_tier_from_score
+from accounts.security_queries import (
+    ADMIN_RISK_TIER_RANGES,
+    annotate_admin_risk,
+    churn_risk_filter,
+    get_multi_account_user_ids,
+    risk_tier_from_score,
+)
 from accounts.utils import normalize_phone
 from attempts.models import TestAttempt, TestSession
 from billing.models import PaymentTransaction, UserSubscription
@@ -552,16 +558,8 @@ def admin_user_ai_summary(request, user_id):
 def admin_churn_risk_users(request):
     """Platformadan chiqib ketish xavfi (Churn Risk) yuqori bo'lgan foydalanuvchilar ro'yxati."""
     now = timezone.now()
-    seven_days_ago = now - timedelta(days=7)
-    thirty_days_ago = now - timedelta(days=30)
-
     inactive_users = (
-        User.objects.filter(
-            is_active=True,
-            is_platform_admin=False,
-            last_seen_at__lte=seven_days_ago,
-            last_seen_at__gte=thirty_days_ago,
-        )
+        User.objects.filter(churn_risk_filter())
         .order_by('last_seen_at')[:50]
     )
 
@@ -581,6 +579,113 @@ def admin_churn_risk_users(request):
             'last_seen_at': u.last_seen_at.isoformat() if u.last_seen_at else None,
             'days_inactive': days_inactive,
             'churn_risk': risk_level,
+        })
+
+    return Response({
+        'count': len(results),
+        'results': results,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7b. SHUBHALI FOYDALANUVCHILAR NAVBATI (birlashtirilgan signallar)
+# ─────────────────────────────────────────────────────────────────────────────
+# Ustuvorlik ballining qo'shimchalari. Xavf darajasining o'zi 0..100 shkalada
+# (`annotate_admin_risk`), qo'shimchalar esa undan KICHIK: ular mustaqil
+# ayblov emas, faqat navbatda yuqoriroq turishga asos.
+MULTI_ACCOUNT_PRIORITY_BONUS = 30
+CHURN_PRIORITY_BONUS = 20
+
+# Navbat "tekshirish uchun ro'yxat", to'liq hisobot emas — `SHARED_IP_MAX_ROWS`
+# bilan bir xil siyosat (admin bir o'tirishda ko'rib chiqadigan hajm).
+SUSPICIOUS_QUEUE_MAX_ROWS = 100
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsPlatformAdmin])
+def admin_suspicious_users_queue(request):
+    """GET /api/admin/users/suspicious-queue/ — bitta birlashtirilgan navbat.
+
+    Avval admin uchta alohida ekranni (xavf darajasi bo'yicha filtr, bir xil
+    IP/qurilma ro'yxati, churn segmenti) qo'lda solishtirib chiqishi kerak
+    edi. Bu endpoint uchala signalni bitta ustuvorlikka yig'adi:
+
+        priority_score = risk_tier_score + 30 (ko'p-hisob) + 20 (churn)
+
+    Ro'yxatga faqat KAMIDA BITTA signal bergan hisob tushadi: xavf darajasi
+    'yuqori'/'kritik', yoki ko'p-hisob (IP/qurilma), yoki churn. Hech qanday
+    chora ko'rilmaydi — boshqa xavfsizlik bloklaridagi bilan bir xil qoida,
+    qaror adminniki.
+    """
+    now = timezone.now()
+    ip_user_ids, device_user_ids = get_multi_account_user_ids()
+    multi_account_ids = ip_user_ids | device_user_ids
+    # 'yuqori' darajasining quyi chegarasi — nusxa emas, yagona manbadan
+    # (`ADMIN_RISK_TIER_RANGES`) o'qiladi: chegara siljisa navbat ham siljiydi.
+    high_risk_min_score = ADMIN_RISK_TIER_RANGES['yuqori'][0]
+
+    qs = (
+        annotate_admin_risk(User.objects.filter(is_active=True, is_platform_admin=False))
+        .annotate(
+            multi_account_bonus=models.Case(
+                models.When(pk__in=multi_account_ids, then=models.Value(MULTI_ACCOUNT_PRIORITY_BONUS)),
+                default=models.Value(0),
+                output_field=models.IntegerField(),
+            ),
+            churn_bonus=models.Case(
+                models.When(churn_risk_filter(), then=models.Value(CHURN_PRIORITY_BONUS)),
+                default=models.Value(0),
+                output_field=models.IntegerField(),
+            ),
+        )
+        .annotate(
+            priority_score=(
+                models.F('risk_tier_score') + models.F('multi_account_bonus') + models.F('churn_bonus')
+            ),
+        )
+        # Shart ANNOTATSIYALARGA emas, xom ustunlarga tayanadi (`pk__in`,
+        # `churn_risk_filter`): faqat `risk_tier_score` agregatga bog'liq va
+        # HAVING'ga tushadi, qolgani oddiy WHERE bo'lib qoladi.
+        .filter(
+            models.Q(risk_tier_score__gte=high_risk_min_score)
+            | models.Q(pk__in=multi_account_ids)
+            | churn_risk_filter()
+        )
+        # `id` — ikkinchi darajali tartib: bir xil ballli hisoblar kesib
+        # olinganda (LIMIT) natija barqaror bo'lsin.
+        .order_by('-priority_score', 'id')[:SUSPICIOUS_QUEUE_MAX_ROWS]
+    )
+
+    results = []
+    for u in qs:
+        risk_tier = risk_tier_from_score(u.risk_tier_score)
+        multi_ip = u.id in ip_user_ids
+        multi_device = u.id in device_user_ids
+        is_churn = u.churn_bonus > 0
+        days_inactive = (now - u.last_seen_at).days if u.last_seen_at else 0
+        signals = []
+        if u.risk_tier_score >= high_risk_min_score:
+            signals.append(f'Xavf darajasi: {risk_tier}')
+        if multi_ip:
+            signals.append("Bir xil IP'dan bir nechta hisob")
+        if multi_device:
+            signals.append('Bir xil qurilmadan bir nechta hisob')
+        if is_churn:
+            signals.append(f'{days_inactive} kundan beri faol emas')
+        results.append({
+            'id': u.id,
+            'full_name': u.full_name,
+            'phone': u.phone,
+            'risk_score': u.risk_tier_score,
+            'risk_tier': risk_tier,
+            'multi_account_ip': multi_ip,
+            'multi_account_device': multi_device,
+            # `admin_churn_risk_users` bilan bir xil so'zlashuv: daraja nomi
+            # yoki signal yo'q bo'lsa `null`.
+            'churn_risk': ('high' if days_inactive >= 14 else 'medium') if is_churn else None,
+            'days_inactive': days_inactive,
+            'priority_score': u.priority_score,
+            'signals': signals,
         })
 
     return Response({

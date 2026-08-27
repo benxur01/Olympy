@@ -1442,6 +1442,11 @@ export const OlympyApi = {
   ),
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
+  // Kutayotgan rol arizalari BARCHA markazlar bo'yicha (platforma admini
+  // uchun umumiy navbat). Qaror qabul qilish markaz endpointlarida qoladi:
+  // approveStudent / approveTeacher / approveManager. Sahifalangan javob,
+  // shuning uchun getPendingMemberships bilan bir xil naqsh.
+  getAdminPendingMemberships: (token) => requestAllPages('/api/admin/centers/pending-memberships/', { token }),
   // Admin users
   // AdminDashboard'da `allUsers` bu ro'yxatga tayanib global statistika
   // (faol/talaba soni, "Foydalanuvchilar" stat karta) va owner/so'rov
@@ -1567,6 +1572,12 @@ export const OlympyApi = {
     '/api/admin/users/bulk-set-roles/',
     { method: 'PATCH', body: { user_ids: userIds, roles: roles || [] }, token },
   ),
+  // Ommaviy teg belgilash. `mode`: 'add' (standart — mavjud teglar saqlanadi),
+  // 'remove' yoki 'replace'. Javob shakli yuqoridagilar bilan bir xil.
+  adminBulkUpdateUserTags: (userIds, tags, mode, token) => request(
+    '/api/admin/users/bulk-set-tags/',
+    { method: 'PATCH', body: { user_ids: userIds, tags: tags || [], mode: mode || 'add' }, token },
+  ),
   // Foydalanuvchilar ro'yxatini CSV qilib yuklab beradi. `search` ro'yxat
   // endpoint'i bilan BIR XIL filtr — admin ekranda ko'rgan to'plam eksportga
   // tushadi. Yuklash usuli downloadOlympiadResults bilan bir xil (fetch → blob
@@ -1665,6 +1676,10 @@ export const OlympyApi = {
   getAdminUserHeatmap: (userId, token) => request(`/api/admin/users/${userId}/heatmap/`, { token }),
   getAdminUserAiSummary: (userId, token) => request(`/api/admin/users/${userId}/ai-summary/`, { token }),
   getAdminChurnRiskUsers: (token) => request('/api/admin/users/churn-risk/', { token }),
+  // Birlashtirilgan shubhali foydalanuvchilar navbati: xavf darajasi,
+  // ko'p-hisob (IP/qurilma) va churn signallari bitta ustuvorlik bo'yicha
+  // saralangan holda (eng kattasi birinchi).
+  getAdminSuspiciousQueue: (token) => request('/api/admin/users/suspicious-queue/', { token }),
   transferAdminUserCenter: (userId, payload, token) => request(
     `/api/admin/users/${userId}/transfer-center/`,
     { method: 'POST', body: payload, token },

@@ -40,6 +40,10 @@ const AUDIT_PAGE_SIZE = 50;
 // `securitySectionRenderers` ga o'sha kalitli renderer qo'shiladi, tabning
 // qolgan qismi (segment tugmalari, sarlavha, tanlov holati) o'zgarmaydi.
 const SECURITY_SECTIONS = [
+  // Birinchi o'rinda: qolgan bloklar bitta-bitta signal ko'rsatadi, bu esa
+  // ularni bitta ustuvorlikka yig'adi — admin tabni ochishi bilan eng
+  // muhim ro'yxatni ko'radi.
+  { key: 'suspicious-queue', label: 'Shubhali foydalanuvchilar' },
   { key: 'shared-ip', label: "Bir xil IP'dan kirish" },
   { key: 'live-proctoring', label: 'Jonli Proktoring' },
   { key: 'auto-flags', label: 'Avtomatik bayroqlar' },
@@ -1159,7 +1163,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [bulkBlockModal, setBulkBlockModal] = React.useState(null); // 'block' | 'unblock'
   const [bulkRoleModal, setBulkRoleModal] = React.useState(false);
   const [bulkRoleSelection, setBulkRoleSelection] = React.useState([]);
+  // Ommaviy teg belgilash: vergul bilan ajratilgan teglar va rejim
+  // ('add' — mavjudlariga qo'shadi, 'remove' — olib tashlaydi, 'replace' —
+  // butunlay almashtiradi).
+  const [bulkTagsModal, setBulkTagsModal] = React.useState(false);
+  const [bulkTagsInput, setBulkTagsInput] = React.useState('');
+  const [bulkTagsMode, setBulkTagsMode] = React.useState('add');
   const [bulkBusy, setBulkBusy] = React.useState(false);
+  // Qaysi rol arizasi bo'yicha qaror yuborilmoqda (faqat o'sha qatorning
+  // tugmalari bloklanadi, butun ro'yxat emas).
+  const [membershipDecisionId, setMembershipDecisionId] = React.useState(null);
   const [csvBusy, setCsvBusy] = React.useState(false);
   // Yangi parol backenddan faqat BIR MARTA ochiq matnda keladi — uni hech
   // qayerda saqlamaymiz, modal yopilishi bilan state'dan ham o'chiriladi.
@@ -1303,6 +1316,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getNotifications(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Barcha markazlar bo'yicha kutayotgan rol arizalari — faqat "Arizalar"
+  // tabi ochilganda so'raladi (markazlar soni bilan birga o'sadigan ro'yxat).
+  const apiPendingMembershipsRes = useApiData(
+    () => (isApi && page === 'requests')
+      ? OlympyApi.getAdminPendingMemberships(OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, page],
+  );
   // TO'LIQ (sahifalanmagan) ro'yxat — FAQAT global ko'rsatkichlar uchun:
   // stat kartalari, owner/so'rov egasini ID bo'yicha qidirish, teglar
   // ro'yxati va broadcast qamrovi. Jadval bunga TAYANMAYDI (pastdagi
@@ -1432,6 +1453,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )
       : Promise.resolve(null),
     [isApi, page, auditPage, debouncedAuditSearch],
+  );
+  // Birlashtirilgan shubhali foydalanuvchilar navbati — faqat "security"
+  // tabining shu bo'limi ochilganda (uchala signalni bir yo'la hisoblaydi).
+  const apiSuspiciousQueueRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'suspicious-queue')
+      ? OlympyApi.getAdminSuspiciousQueue(OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, page, securitySection],
   );
   // Bir xil IP'dan kirgan hisoblar — faqat "security" tabining shu bo'limi
   // ochilganda so'raladi (agregat so'rov arzon emas). Filtr o'zgarsa qayta
@@ -1991,6 +2020,33 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (req) OlympyStore.rejectRequest(req.id);
     else OlympyStore.updateCenter(center.id, { status: 'rejected' });
     showToast('Tashkilot rad etildi va ro\'yxatlardan olib tashlandi');
+  };
+
+  // Rol arizasi bo'yicha qaror. Alohida admin endpointi YO'Q — markazning
+  // o'z tasdiqlash yo'llari ishlatiladi (`user_can_approve_membership`
+  // platforma adminini allaqachon o'tkazadi), ya'ni ikkinchi qaror yo'li
+  // yaratilmaydi. `owner` roli bu ro'yxatga umuman tushmaydi: u markaz
+  // tasdiqlash bilan hal bo'ladi ("Direktor arizalari" bloki).
+  const MEMBERSHIP_APPROVERS = {
+    student: OlympyApi.approveStudent,
+    teacher: OlympyApi.approveTeacher,
+    manager: OlympyApi.approveManager,
+  };
+
+  const decideMembershipRequest = (row, decision) => {
+    const approver = MEMBERSHIP_APPROVERS[row.role];
+    if (!approver) { showToast('Bu rol uchun tasdiqlash yo\'li yo\'q'); return; }
+    setMembershipDecisionId(row.id);
+    approver(row.center, { membership_id: row.id, decision }, OlympyApi.getToken())
+      .then(() => {
+        showToast(decision === 'approve' ? 'Ariza tasdiqlandi' : 'Ariza rad etildi');
+        apiPendingMembershipsRes.reload();
+      })
+      .catch(err => {
+        console.warn('decideMembershipRequest failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setMembershipDecisionId(null));
   };
 
   const togglePremium = (center) => {
@@ -2645,6 +2701,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     setBulkRoleModal(true);
   };
 
+  const openBulkTagsModal = () => {
+    setBulkTagsInput('');
+    setBulkTagsMode('add');
+    setBulkTagsModal(true);
+  };
+
   const runBulkSetActive = () => {
     if (bulkBusy) return;
     const nextActive = bulkBlockModal === 'unblock';
@@ -2691,6 +2753,28 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(OlympyApi.toUserMessage(err));
       })
       .finally(() => { setBulkBusy(false); setBulkRoleModal(false); });
+  };
+
+  const runBulkUpdateTags = () => {
+    if (bulkBusy) return;
+    if (!isApi) { showToast('Ommaviy amallar faqat API rejimida ishlaydi'); return; }
+    if (!selectedBackendIds.length) { showToast('Backend ID topilmadi'); return; }
+    // Normallashtirishni (kichik harf, `#` siz, takrorsiz) backend qiladi —
+    // bu yerda faqat matnni ro'yxatga ajratamiz.
+    const tags = bulkTagsInput.split(',').map(t => t.trim()).filter(Boolean);
+    if (!tags.length && bulkTagsMode !== 'replace') { showToast('Kamida bitta teg kiriting'); return; }
+    setBulkBusy(true);
+    OlympyApi.adminBulkUpdateUserTags(selectedBackendIds, tags, bulkTagsMode, OlympyApi.getToken())
+      .then(res => {
+        showBulkResult(res, 'teglari yangilandi');
+        setSelectedUserIds([]);
+        reloadUsers();
+      })
+      .catch(err => {
+        console.warn('adminBulkUpdateUserTags failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => { setBulkBusy(false); setBulkTagsModal(false); });
   };
 
   // CSV eksporti: backend AYNAN shu qidiruv matnini `admin_users_list` bilan
@@ -4107,15 +4191,89 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
-  const renderRequests = () => (
-    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
-      <div>
-        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Direktor arizalari</h1>
-        <p className="mt-1 text-[11px] font-bold text-text-secondary">Direktor tashkilot yoki markaz ro'yxatdan o'tkazish uchun yuborgan arizalari.</p>
+  const renderRequests = () => {
+    // `owner` arizasi ATAYLAB chiqarib tashlanadi: u markazning o'zini
+    // tasdiqlash bilan hal bo'ladi (yuqoridagi "Direktor arizalari" bloki),
+    // shu sababli bu yerda tugmasi ishlamaydigan qator paydo bo'lmaydi.
+    const roleRequests = (apiPendingMembershipsRes.data || [])
+      .filter(m => MEMBERSHIP_APPROVERS[m.role]);
+    return (
+      <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Direktor arizalari</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">Direktor tashkilot yoki markaz ro'yxatdan o'tkazish uchun yuborgan arizalari.</p>
+        </div>
+        <CenterApprovalList />
+
+        <div className="pt-2">
+          <h2 className="text-[13px] font-bold uppercase tracking-wider text-text-secondary">Rol so'rovlari</h2>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            Barcha markazlar bo'yicha kutayotgan o'quvchi/o'qituvchi/manager arizalari.
+          </p>
+        </div>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[760px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                  {['Foydalanuvchi', 'Tashkilot', 'Rol', 'Sana', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge">
+                {!isApi ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Rol so'rovlari faqat API rejimida ko'rinadi</td></tr>
+                ) : apiPendingMembershipsRes.loading ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
+                ) : apiPendingMembershipsRes.error ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Rol so'rovlarini yuklab bo'lmadi</td></tr>
+                ) : roleRequests.length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Kutayotgan rol so'rovi yo'q</td></tr>
+                ) : roleRequests.map(row => {
+                  const busy = membershipDecisionId === row.id;
+                  return (
+                    <tr key={row.id} className="text-xs admin-table-row text-text-primary">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={row.user_detail?.full_name || '—'} src={row.user_detail?.avatar_url || ''} size={32} gradient="bg-pencil-600" />
+                          <span className="font-bold text-text-primary">{row.user_detail?.full_name || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary">{row.center_detail?.name || '—'}</td>
+                      <td className="px-5 py-4">
+                        <span className="rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1 text-[10px] font-bold text-accent">
+                          {ROLE_META[row.role]?.label || row.role}
+                        </span>
+                        {row.subject ? <span className="ml-2 text-[10px] font-bold text-text-secondary">{row.subject}</span> : null}
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(row.created_at)}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => decideMembershipRequest(row, 'approve')}
+                            className="inline-flex items-center gap-1.5 rounded-lg btn-success px-3 py-1.5 text-[11px] font-bold transition disabled:opacity-50">
+                            <Icon name="check" size={12} /> Tasdiqlash
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => decideMembershipRequest(row, 'reject')}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-error border border-error/45 hover:bg-surface-2 transition disabled:opacity-50">
+                            <Icon name="x" size={12} /> Rad etish
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
-      <CenterApprovalList />
-    </div>
-  );
+    );
+  };
 
   const renderCenters = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
@@ -4767,6 +4925,63 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     )}
                   </div>
                 </div>
+
+                {/* Ogohlantirishlar tarixi. Manba — audit jurnali, ya'ni
+                    foydalanuvchi ko'rgan matn bilan birga admin yozgan ICHKI
+                    sabab ham ko'rinadi. `user_id` tekshiruvi: ketma-ket
+                    ochilgan oynalarda eski javob ko'rinib qolmasin. */}
+                {(() => {
+                  const warnData = apiUserWarningsRes.data?.user_id === detailBackendId
+                    ? apiUserWarningsRes.data
+                    : null;
+                  const recent = warnData?.recent_count_30d ?? 0;
+                  const threshold = warnData?.threshold ?? 0;
+                  const nearThreshold = !!threshold && recent >= threshold - 1;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                          ⚠️ Ogohlantirishlar tarixi (Strikes)
+                        </div>
+                        {warnData && (
+                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold border ${
+                            nearThreshold
+                              ? 'bg-surface-2 border-error/45 text-error'
+                              : 'bg-surface-2 border-edge text-text-secondary'
+                          }`}>
+                            {recent}/{threshold} · oxirgi {warnData.window_days} kun
+                          </span>
+                        )}
+                      </div>
+                      {nearThreshold && (
+                        <p className="text-[11px] font-semibold leading-relaxed text-error">
+                          Keyingi ogohlantirish bu hisobni moderatsiya navbatiga tushiradi.
+                        </p>
+                      )}
+                      <div className="max-h-56 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
+                        {apiUserWarningsRes.loading ? (
+                          <div className="p-5 text-center text-xs text-text-secondary">Yuklanmoqda...</div>
+                        ) : !warnData?.warnings?.length ? (
+                          <div className="p-5 text-center text-xs text-text-secondary">Ogohlantirish yuborilmagan</div>
+                        ) : (
+                          warnData.warnings.map(w => (
+                            <div key={w.id} className="p-3 text-xs space-y-1">
+                              <div className="font-bold text-text-primary break-words">{w.reason || '—'}</div>
+                              <div className="text-[11px] text-text-secondary break-words">{w.message}</div>
+                              <div className="text-[10px] font-semibold text-text-secondary">
+                                {formatAdminDateTime(w.created_at)}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <p className="text-[11px] text-text-secondary leading-relaxed">
+                        Qalin matn — admin yozgan ICHKI sabab (foydalanuvchi ko'rmaydi),
+                        pastdagisi — unga yuborilgan xabar.
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -5412,6 +5627,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </button>
             <button
               type="button"
+              onClick={openBulkTagsModal}
+              className="rounded-lg border border-accent/45 bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-surface-1">
+              Teglarni belgilash
+            </button>
+            <button
+              type="button"
               onClick={() => setSelectedUserIds([])}
               className="rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary transition hover:bg-surface-2 hover:text-text-primary">
               Tanlovni bekor qilish
@@ -5874,6 +6095,60 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="flex gap-3">
             <button onClick={() => setBulkRoleModal(false)} disabled={bulkBusy} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
             <button onClick={runBulkSetRoles} disabled={bulkBusy} className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+              {bulkBusy ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Ommaviy teg belgilash */}
+      <Modal open={bulkTagsModal} onClose={() => !bulkBusy && setBulkTagsModal(false)} title="Ommaviy teg belgilash">
+        <div className="space-y-5">
+          <p className="text-sm text-text-secondary">
+            Tanlangan {selectedUserIds.length} ta foydalanuvchining teglari yangilanadi.
+          </p>
+          <div>
+            <label className="block text-xs text-text-secondary mb-1.5 font-medium">Teglar (vergul bilan)</label>
+            <input
+              type="text"
+              value={bulkTagsInput}
+              onChange={e => setBulkTagsInput(e.target.value)}
+              placeholder="vip, kuzatuvda"
+              className="w-full rounded-xl border border-edge bg-surface-2 px-3.5 py-2.5 text-xs font-semibold text-text-primary placeholder:text-text-secondary focus:border-accent focus:outline-none"
+            />
+            <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
+              Teglar kichik harfga keltiriladi va `#` belgisi olib tashlanadi.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-text-secondary mb-2 font-medium">Rejim</label>
+            <div className="space-y-2">
+              {[
+                { value: 'add', label: "Qo'shish (mavjud teglar saqlanadi)" },
+                { value: 'remove', label: 'Olib tashlash' },
+                { value: 'replace', label: "To'liq almashtirish" },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setBulkTagsMode(opt.value)}
+                  className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
+                    bulkTagsMode === opt.value
+                      ? 'border-accent bg-surface-2 text-text-primary'
+                      : 'btn-ghost'
+                  }`}
+                >
+                  <span className={`flex h-4 w-4 items-center justify-center rounded-full border transition ${bulkTagsMode === opt.value ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong'}`}>
+                    {bulkTagsMode === opt.value && <Icon name="check" size={11} />}
+                  </span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setBulkTagsModal(false)} disabled={bulkBusy} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+            <button onClick={runBulkUpdateTags} disabled={bulkBusy} className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
               {bulkBusy ? 'Saqlanmoqda...' : 'Saqlash'}
             </button>
           </div>
@@ -7668,6 +7943,87 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setUnblockIpBusy(false));
   };
 
+  const renderSuspiciousQueueSection = () => {
+    const rows = Array.isArray(apiSuspiciousQueueRes.data?.results)
+      ? apiSuspiciousQueueRes.data.results
+      : [];
+    return (
+      <>
+        <section className="admin-card p-5">
+          <p className="text-[11px] text-text-secondary leading-relaxed">
+            Uchala signal — xavf darajasi, bir xil IP/qurilmadan bir nechta hisob va
+            faollikning pasayishi — bitta ustuvorlik balliga yig'ilgan. Ro'yxatga
+            kamida bitta signal bergan hisob tushadi. Hech kim avtomatik bloklanmaydi:
+            bu faqat qo'lda tekshirish navbati.
+          </p>
+        </section>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[860px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                  {['Foydalanuvchi', 'Telefon', 'Ustuvorlik', 'Xavf', 'Signallar', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge">
+                {!isApi ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                ) : apiSuspiciousQueueRes.loading ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
+                ) : apiSuspiciousQueueRes.error ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Signal bergan hisob topilmadi</td></tr>
+                ) : rows.map(row => {
+                  const riskMeta = RISK_TIER_META[row.risk_tier];
+                  return (
+                    <tr key={row.id} className="text-xs admin-table-row text-text-primary">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={row.full_name} size={32} gradient="bg-pencil-600" />
+                          <span className="font-bold text-text-primary">{row.full_name || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-mono text-[11px] font-bold text-text-secondary">{row.phone || '—'}</td>
+                      <td className="px-5 py-4">
+                        <span className="rounded-md bg-surface-2 border border-warning/45 px-2 py-0.5 text-[10px] font-bold text-warning font-data">
+                          {row.priority_score}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        {riskMeta ? (
+                          <AdminPill status={riskMeta.pill}>{riskMeta.label}</AdminPill>
+                        ) : (
+                          <span className="text-[11px] font-bold text-text-secondary">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {(row.signals || []).map(sig => (
+                            <span key={sig} className="rounded-md bg-surface-2 border border-edge px-2 py-0.5 text-[10px] font-bold text-text-secondary">
+                              {sig}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <button
+                          onClick={() => openUserFromSecurity(row.id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
+                          <Icon name="eye" size={12} /> Batafsil
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    );
+  };
+
   const renderSharedIpSection = () => {
     const res = isApi ? apiSharedIpRes.data : null;
     const rows = Array.isArray(res?.results) ? res.results : [];
@@ -8732,6 +9088,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const securitySectionRenderers = {
+    'suspicious-queue': renderSuspiciousQueueSection,
     'shared-ip': renderSharedIpSection,
     'live-proctoring': renderLiveProctoringSection,
     'auto-flags': renderAutoFlagsSection,

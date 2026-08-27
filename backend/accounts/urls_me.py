@@ -116,6 +116,8 @@ urlpatterns = [
          name='admin-bulk-set-user-active'),
     path('admin/users/bulk-set-roles/', views.admin_bulk_set_user_roles,
          name='admin-bulk-set-user-roles'),
+    path('admin/users/bulk-set-tags/', views.admin_bulk_update_user_tags,
+         name='admin-bulk-set-user-tags'),
     # Takrorlangan hisoblarni birlashtirish (SIM yo'qotib qayta ro'yxatdan
     # o'tgan o'quvchi). Avval `preview` — hech narsani o'zgartirmaydigan quruq
     # yurish, keyin `commit` — bitta tranzaksiyadagi haqiqiy amal.
@@ -248,6 +250,7 @@ urlpatterns = [
     path('admin/users/<int:user_id>/heatmap/', views_admin_advanced.admin_user_activity_heatmap, name='admin-user-heatmap'),
     path('admin/users/<int:user_id>/ai-summary/', views_admin_advanced.admin_user_ai_summary, name='admin-user-ai-summary'),
     path('admin/users/churn-risk/', views_admin_advanced.admin_churn_risk_users, name='admin-churn-risk-users'),
+    path('admin/users/suspicious-queue/', views_admin_advanced.admin_suspicious_users_queue, name='admin-suspicious-users-queue'),
     path('admin/users/<int:user_id>/transfer-center/', views_admin_advanced.admin_user_transfer_center, name='admin-user-transfer-center'),
     path('admin/users/<int:user_id>/set-quota/', views_admin_advanced.admin_user_set_quota, name='admin-user-set-quota'),
     path('admin/users/<int:user_id>/coin-transactions/', views_admin_advanced.admin_user_coin_transactions, name='admin-user-coin-transactions'),

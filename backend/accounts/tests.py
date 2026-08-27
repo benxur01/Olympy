@@ -2718,29 +2718,24 @@ class AdminUserWarningTestCase(APITestCase):
         res = self.client.get(self.list_url)
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_list_returns_newest_first_for_this_user_only(self):
-        from notifications.models import Notification
-
-        now = timezone.now()
-        for i, text in enumerate(['Birinchi', 'Ikkinchi', 'Uchinchi']):
-            note = Notification.objects.create(
-                user=self.target,
-                type=Notification.TYPE_ACCOUNT_WARNING,
-                title='Ogohlantirish',
-                message=text,
-            )
-            # created_at — auto_now_add, aniq tartib uchun qo'lda suramiz
-            # (i=0 eng eskisi).
-            Notification.objects.filter(pk=note.pk).update(created_at=now - timedelta(minutes=10 - i))
-        # Boshqa foydalanuvchining ogohlantirishi va shu foydalanuvchining
-        # boshqa turdagi xabarnomasi ro'yxatga tushmasligi kerak.
-        Notification.objects.create(
-            user=self.other, type=Notification.TYPE_ACCOUNT_WARNING,
-            title='Ogohlantirish', message="Boshqa hisob",
+    def _log_warning(self, user, text, minutes_ago):
+        log = AuditLog.objects.create(
+            action='admin_user_warn', target_id=user.id, target_type='User',
+            extra={'reason': f'{text} sababi', 'message': text},
         )
-        Notification.objects.create(
-            user=self.target, type=Notification.TYPE_OLYMPIAD_PUBLISHED,
-            title='Yangi olimpiada', message="Olimpiada boshlandi",
+        # created_at — auto_now_add, aniq tartib uchun qo'lda suramiz.
+        AuditLog.objects.filter(pk=log.pk).update(
+            created_at=timezone.now() - timedelta(minutes=minutes_ago),
+        )
+
+    def test_list_returns_newest_first_for_this_user_only(self):
+        for i, text in enumerate(['Birinchi', 'Ikkinchi', 'Uchinchi']):
+            self._log_warning(self.target, text, 10 - i)
+        # Boshqa foydalanuvchining ogohlantirishi va shu foydalanuvchining
+        # boshqa turdagi audit yozuvi ro'yxatga tushmasligi kerak.
+        self._log_warning(self.other, 'Boshqa hisob', 1)
+        AuditLog.objects.create(
+            action='user_block', target_id=self.target.id, target_type='User',
         )
         self.client.force_authenticate(user=self.admin)
         res = self.client.get(self.list_url)
@@ -2750,7 +2745,18 @@ class AdminUserWarningTestCase(APITestCase):
             [w['message'] for w in res.data['warnings']],
             ['Uchinchi', 'Ikkinchi', 'Birinchi'],
         )
-        self.assertFalse(res.data['warnings'][0]['is_read'])
+        # Ichki sabab AYNAN shu ro'yxatda ko'rinadi — u faqat audit
+        # jurnalida saqlanadi, xabarnomada yo'q.
+        self.assertEqual(res.data['warnings'][0]['reason'], 'Uchinchi sababi')
+
+    def test_list_counts_total_and_recent_window_separately(self):
+        self._log_warning(self.target, 'Yaqinda', 5)
+        self._log_warning(self.target, 'Eski', 60 * 24 * 40)
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['total_count'], 2)
+        self.assertEqual(res.data['recent_count_30d'], 1)
 
     def test_list_is_empty_not_error_for_user_without_warnings(self):
         self.client.force_authenticate(user=self.admin)
