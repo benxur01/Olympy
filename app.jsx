@@ -642,6 +642,10 @@ const App = () => {
     setTestResult(null);
     setActiveOlympiad(null);
     setSwitcherOpen(false);
+    // Push so'rovi logout paytida ekranda ochiq turgan bo'lishi mumkin
+    // (login'dan 3s o'tib chiqadi) — logout'dan keyin landing'ga
+    // "ko'chib o'tib" qolmasligi uchun uni ham yopamiz.
+    setShowPushPrompt(false);
     // Logout'da faol test ID'sini ham tozalaymiz — boshqa foydalanuvchi
     // shu brauzerda kirsa eski testga tiklanib qolmasligi uchun.
     writeActiveTestId(null);
@@ -1171,7 +1175,7 @@ const App = () => {
           suzadi — shuning uchun u qattiq yozilgan qora paneldan token
           qatlamiga ko'chirildi. `backdrop-blur`, gradient va rangli soya yo'q;
           suzuvchi panel fondan `edge-strong` hoshiya bilan ajraladi. */}
-      {showPushPrompt && page !== 'test' && (
+      {showPushPrompt && user && page !== 'test' && (
         <div
           className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[9999] max-w-sm md:w-[384px] p-5 rounded-2xl bg-surface-1 border border-edge-strong"
           style={{ animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}
