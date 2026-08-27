@@ -427,3 +427,142 @@ class AdminSuspiciousUsersQueueTestCase(APITestCase):
         self.client.force_authenticate(user=self.clean_user)
         resp = self.client.get(self.url)
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class AdminBulkStudentPremiumTestCase(APITestCase):
+    """Ommaviy premium: barcha `student` rolli hisoblarga berish/olib tashlash.
+
+    Test muhitida Celery EAGER rejimida ishlaydi (broker yo'q), ya'ni
+    `.delay()` task'ni sinxron bajaradi va endpointdan keyin DB holatini
+    to'g'ridan-to'g'ri tekshirish mumkin.
+    """
+
+    preview_url = '/api/admin/users/premium-bulk-preview/'
+    grant_url = '/api/admin/users/bulk-grant-premium-students/'
+    revoke_url = '/api/admin/users/bulk-revoke-premium-students/'
+
+    def setUp(self):
+        self.admin_user = User.objects.create_superuser(
+            phone='+998901111111', password='AdminPass123!', full_name='Platform Admin',
+        )
+        self.student_a = User.objects.create_user(
+            phone='+998902222222', password='Pass123!', full_name="O'quvchi A",
+            roles=['student'],
+        )
+        self.student_b = User.objects.create_user(
+            phone='+998903333333', password='Pass123!', full_name="O'quvchi B",
+            roles=['student'],
+        )
+        # O'qituvchi va markaz egasi — ommaviy amal ularga TEGMASLIGI kerak.
+        self.teacher = User.objects.create_user(
+            phone='+998904444444', password='Pass123!', full_name="O'qituvchi",
+            roles=['teacher'], is_premium=True,
+        )
+        self.owner = User.objects.create_user(
+            phone='+998905555555', password='Pass123!', full_name='Markaz egasi',
+            roles=['owner'], is_premium=True,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.student_a)
+        self.assertEqual(
+            self.client.get(self.preview_url, {'scope': 'grant'}).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post(self.grant_url, {'duration': 30}, format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post(self.revoke_url, {}, format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_preview_counts_only_students(self):
+        resp = self.client.get(self.preview_url, {'scope': 'grant'})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['count'], 2)
+
+        # Revoke qamrovi — hozir premiumi bor o'quvchilar (hozircha yo'q).
+        resp = self.client.get(self.preview_url, {'scope': 'revoke'})
+        self.assertEqual(resp.data['count'], 0)
+
+        self.student_a.is_premium = True
+        self.student_a.save(update_fields=['is_premium'])
+        resp = self.client.get(self.preview_url, {'scope': 'revoke'})
+        self.assertEqual(resp.data['count'], 1)
+
+    def test_preview_rejects_unknown_scope(self):
+        resp = self.client.get(self.preview_url, {'scope': 'delete'})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_grant_applies_to_every_student_only(self):
+        resp = self.client.post(
+            self.grant_url,
+            {'duration': 30, 'plan_type': 'student', 'plan_name': 'Pro'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['count'], 2)
+
+        for student in (self.student_a, self.student_b):
+            student.refresh_from_db()
+            self.assertTrue(student.is_premium)
+            sub = UserSubscription.objects.get(user=student, is_active=True)
+            self.assertEqual(sub.plan.plan_type, 'student')
+            self.assertEqual(sub.plan.duration_days, 30)
+            self.assertTrue(sub.plan.name.startswith('Pro'))
+            self.assertGreater(sub.end_date, timezone.now())
+
+        # Admin hisobiga ham, o'quvchi bo'lmagan rollarga ham obuna berilmaydi.
+        self.assertFalse(
+            UserSubscription.objects.filter(
+                user__in=[self.admin_user, self.teacher, self.owner],
+            ).exists()
+        )
+
+        log = AuditLog.objects.get(action='admin_bulk_premium_students')
+        self.assertEqual(log.extra['mode'], 'grant')
+        self.assertEqual(log.extra['count'], 2)
+        self.assertCountEqual(
+            log.extra['user_ids'], [self.student_a.id, self.student_b.id],
+        )
+
+    def test_grant_rejects_unknown_duration(self):
+        resp = self.client.post(self.grant_url, {'duration': 45}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(UserSubscription.objects.exists())
+
+    def test_revoke_clears_students_but_not_other_roles(self):
+        self.client.post(
+            self.grant_url, {'duration': 30, 'plan_type': 'student'}, format='json',
+        )
+        # Sinov muddati ham so'ndirilishi kerak — aks holda `is_premium_active`
+        # (is_premium OR trial_active) hamon Premium ko'rsatardi.
+        self.student_b.premium_trial_end = timezone.now() + timedelta(days=5)
+        self.student_b.save(update_fields=['premium_trial_end'])
+
+        resp = self.client.post(self.revoke_url, {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['count'], 2)
+
+        for student in (self.student_a, self.student_b):
+            student.refresh_from_db()
+            self.assertFalse(student.is_premium_active)
+        self.assertFalse(UserSubscription.objects.filter(is_active=True).exists())
+
+        self.teacher.refresh_from_db()
+        self.owner.refresh_from_db()
+        self.assertTrue(self.teacher.is_premium)
+        self.assertTrue(self.owner.is_premium)
+
+    def test_revoke_without_premium_students_is_noop(self):
+        resp = self.client.post(self.revoke_url, {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['count'], 0)
+        self.assertFalse(resp.data['queued'])
+        self.assertFalse(
+            AuditLog.objects.filter(action='admin_bulk_premium_students').exists()
+        )

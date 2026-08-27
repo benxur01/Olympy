@@ -48,7 +48,16 @@ from .serializers import (
     UserSerializer,
     VerifyOtpSerializer,
 )
-from .utils import delete_replaced_image_file, mask_phone, normalize_phone, verify_totp_code
+from .utils import (
+    PREMIUM_GRANT_DURATIONS,
+    delete_replaced_image_file,
+    grant_premium,
+    mask_phone,
+    normalize_phone,
+    revoke_premium,
+    student_premium_targets,
+    verify_totp_code,
+)
 
 
 # Pillow decompression-bomb limitini modul yuklanishida BIR MARTA o'rnatamiz.
@@ -2763,7 +2772,7 @@ def admin_toggle_user_premium(request, user_id):
     Payload: { "duration": 30|90|180|365|0|-1, "plan_type": "student"|"organization" }
     """
     from django.contrib.auth import get_user_model
-    from billing.models import SubscriptionPlan, UserSubscription
+    from billing.models import UserSubscription
     from centers.models import EducationCenter
 
     User = get_user_model()
@@ -2820,107 +2829,16 @@ def admin_toggle_user_premium(request, user_id):
     except ValueError:
         return Response({'detail': "Davomiylik butun son bo'lishi kerak"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Amalning o'zi `accounts.utils` dagi umumiy yordamchilarda — ommaviy
+    # ("barcha o'quvchilarga") endpointlar ham AYNAN shularni chaqiradi, ya'ni
+    # premium semantikasi (eski obunani yopish, yangi yozuv, markaz bayrog'i,
+    # sinov muddatini so'ndirish, cache tozalash) bitta joyda turadi.
     if duration == -1:
-        # Premium bekor qilish. Atomic: is_premium flag, UserSubscription va
-        # EducationCenter yangilanishlari yarmida xatolik bo'lsa nomuvofiq
-        # holat (masalan flag o'chgan, lekin obuna aktivligicha) qolmasin.
-        with transaction.atomic():
-            target.is_premium = False
-            update_fields = ['is_premium']
-            # Trial muddati hali tugamagan bo'lsa `is_premium_active` property
-            # (is_premium OR trial_active) hamon True qaytarardi va admin
-            # "bekor qilgan"dan keyin ham foydalanuvchi Premium bo'lib
-            # ko'rinaverardi (frontend shu maydondan foydalanadi).
-            if target.premium_trial_end and target.premium_trial_end > timezone.now():
-                target.premium_trial_end = timezone.now()
-                update_fields.append('premium_trial_end')
-            target.save(update_fields=update_fields)
-            UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
-            EducationCenter.objects.filter(owner=target).update(is_premium=False)
-    elif duration == 0:
-        # Cheksiz premium (Umrbod). Atomic: flag, UserSubscription va
-        # EducationCenter birga.
-        # plan_type'dan qat'iy nazar, foydalanuvchi markaz egasi bo'lsa
-        # markaz ham premium bo'lishi kerak (aks holda 'student' plan bilan
-        # umrbod bergan markaz egasiga markaz premiumlari berilmay qolardi).
-        #
-        # MUHIM: avval bu yerda UserSubscription yozuvi YARATILMASDI — faqat
-        # `is_premium` flag o'rnatilardi. Natijada foydalanuvchida boshqa,
-        # muddati o'tgan obuna bo'lsa /me endpoint'idagi lazy expiry
-        # (still_active=[] bo'lganda) `is_premium`ni qaytarib False qilib,
-        # umrbod premium o'z-o'zidan o'chib qolardi. Endi amal qiluvchi obuna
-        # yozuvi yaratamiz.
-        #
-        # Eslatma: UserSubscription.end_date NOT NULL (modelni o'zgartirib
-        # migration qilmaslik uchun) — shu sababli "umrbod"ni juda uzoq
-        # kelajakdagi sana (~100 yil) bilan ifodalaymiz. Mavjud barcha
-        # `end_date__gt=now` / `end_date > now` taqqoslashlari (is_premium
-        # sync, lazy expiry, billing) buni doim amal qiluvchi deb sanaydi.
-        now = timezone.now()
-        lifetime_end = now + timedelta(days=365 * 100)
-        # Umrbod uchun plan'ni topishga harakat qilamiz (organization markaz
-        # premiumlari uchun plan_type='organization' bo'lishi muhim). Topilmasa
-        # plan=None bilan ham obuna yaratamiz — markaz premiumini quyida
-        # to'g'ridan-to'g'ri o'rnatamiz.
-        lifetime_plan = SubscriptionPlan.objects.filter(
-            plan_type=plan_type, is_active=True,
-        ).order_by('-duration_days').first()
-        with transaction.atomic():
-            target.is_premium = True
-            target.save(update_fields=['is_premium'])
-            # Avvalgi aktiv obunalarni yopamiz — bir nechta aktiv obuna
-            # lazy expiry'ni chalkashtirmasin.
-            UserSubscription.objects.filter(
-                user=target, is_active=True,
-            ).update(is_active=False, end_date=now)
-            UserSubscription.objects.create(
-                user=target,
-                plan=lifetime_plan,
-                start_date=now,
-                end_date=lifetime_end,
-                is_active=True,
-            )
-            EducationCenter.objects.filter(owner=target).update(is_premium=True)
-    elif duration in [30, 90, 180, 365]:
-        # Muddatli premium. Atomic: eski obunani yopish va yangisini yaratish
-        # bitta tranzaksiyada — yarim holatda (eski yopilgan, yangi yaratilmagan)
-        # foydalanuvchi premiumsiz qolib ketmasin.
-        with transaction.atomic():
-            UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
-
-            plan_name = request.data.get('plan_name')
-            plan = None
-            if plan_name:
-                plan = SubscriptionPlan.objects.filter(
-                    plan_type=plan_type,
-                    duration_days=duration,
-                    name__istartswith=plan_name,
-                    is_active=True
-                ).first()
-
-            if not plan:
-                plan = SubscriptionPlan.objects.filter(
-                    plan_type=plan_type,
-                    duration_days=duration,
-                    is_active=True
-                ).order_by('-price').first()
-
-            now = timezone.now()
-            end_date = now + timedelta(days=duration)
-            UserSubscription.objects.create(
-                user=target,
-                plan=plan,
-                start_date=now,
-                end_date=end_date,
-                is_active=True
-            )
+        revoke_premium([target.id])
+    elif duration in PREMIUM_GRANT_DURATIONS:
+        grant_premium([target.id], duration, plan_type, request.data.get('plan_name'))
     else:
         return Response({'detail': "Noma'lum muddat ko'rsatildi (faqat 30, 90, 180, 365, 0 yoki -1 bo'lishi mumkin)"}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Obuna/premium holati o'zgardi — /me endpoint'dagi subscription cache'ni
-    # bekor qilamiz, aks holda foydalanuvchi 60 soniya eski holatni ko'rardi.
-    from .utils import invalidate_user_subscription_cache
-    invalidate_user_subscription_cache(target.id)
 
     target.refresh_from_db()
     AuditLog.log(request, 'user_premium_toggle', target=target, extra={
@@ -2930,6 +2848,120 @@ def admin_toggle_user_premium(request, user_id):
         'is_premium': target.is_premium,
     })
     return Response(UserSerializer(target, context={'request': request}).data)
+
+
+# ─── Ommaviy premium: barcha o'quvchilar ──────────────────────────────────────
+#
+# `BULK_ACTION_MAX_USERS` (200) chegarasi bu yerda ATAYLAB qo'llanmaydi: o'sha
+# chegara id RO'YXATI bo'yicha ishlaydigan amallar uchun (har id alohida
+# UPDATE + AuditLog yozuvidan o'tadi). Bu yerdagi amal esa rol bo'yicha
+# querysetga qo'llanadi va `grant_premium`/`revoke_premium` ichida to'plamli
+# SQL bilan bajariladi — o'quvchilar soni qancha bo'lsa ham so'rovlar soni
+# o'zgarmaydi, ya'ni ro'yxatni kesishning ma'nosi yo'q.
+
+# Audit `extra` ga tushadigan id'lar chegarasi. Haqiqiy son (`count`) baribir
+# to'liq yoziladi — faqat ro'yxat kesiladi, jurnal qatori o'n minglab id
+# bilan shishmasin.
+AUDIT_BULK_ID_LIMIT = 500
+
+BULK_PREMIUM_QUEUE_ERROR = (
+    "Amalni navbatga qo'yib bo'lmadi — biroz kutib qayta urinib ko'ring."
+)
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_premium_bulk_preview(request):
+    """GET /api/admin/users/premium-bulk-preview/?scope=grant|revoke → {"count": N}.
+
+    Tasdiqlash oynasi ta'sirlanadigan o'quvchilar sonini shu yerdan oladi:
+    paneldagi jadval faqat joriy sahifani biladi, undan chamalangan son
+    adminni chalg'itardi.
+    """
+    scope = str(request.query_params.get('scope') or 'grant').strip().lower()
+    if scope not in ('grant', 'revoke'):
+        return Response({'detail': "scope faqat grant yoki revoke bo'lishi mumkin"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    return Response({'scope': scope, 'count': student_premium_targets(scope).count()})
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_bulk_grant_premium_students(request):
+    """POST /api/admin/users/bulk-grant-premium-students/ — barcha o'quvchilarga premium.
+
+    Body: {"duration": 30|90|180|365|0, "plan_type": "student"|"organization",
+    "plan_name": "Pro"}. `duration` semantikasi bitta foydalanuvchilik
+    `admin_toggle_user_premium` bilan bir xil; bekor qilish (-1) bu yerda
+    qabul qilinmaydi — u alohida endpoint.
+
+    Javob: {"queued": true, "count": N} — ish Celery worker'ida bajariladi.
+    """
+    from .tasks import bulk_grant_premium_students
+
+    try:
+        duration = int(request.data.get('duration'))
+    except (TypeError, ValueError):
+        return Response({'detail': "Davomiylik butun son bo'lishi kerak"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if duration not in PREMIUM_GRANT_DURATIONS:
+        return Response(
+            {'detail': "Noma'lum muddat ko'rsatildi (faqat 30, 90, 180, 365 yoki 0 bo'lishi mumkin)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    plan_type = request.data.get('plan_type', 'student')
+    plan_name = request.data.get('plan_name')
+
+    target_ids = list(student_premium_targets('grant').values_list('id', flat=True))
+    if not target_ids:
+        return Response({'queued': False, 'count': 0})
+
+    try:
+        bulk_grant_premium_students.delay(duration, plan_type, plan_name)
+    except Exception:
+        logger.exception('bulk_grant_premium_students enqueue failed')
+        return Response({'detail': BULK_PREMIUM_QUEUE_ERROR},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    AuditLog.log(request, 'admin_bulk_premium_students', extra={
+        'mode': 'grant',
+        'count': len(target_ids),
+        'duration': duration,
+        'plan_type': plan_type,
+        'plan_name': plan_name,
+        'user_ids': target_ids[:AUDIT_BULK_ID_LIMIT],
+    })
+    return Response({'queued': True, 'count': len(target_ids)})
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_bulk_revoke_premium_students(request):
+    """POST /api/admin/users/bulk-revoke-premium-students/ — o'quvchilardan premiumni olib tashlash.
+
+    Body talab qilinmaydi. Faqat HOZIR premiumi bor o'quvchilar (bayroq yoki
+    amal qiluvchi sinov muddati) qamrab olinadi — ya'ni preview'dagi
+    `?scope=revoke` soni bilan bir xil to'plam.
+    """
+    from .tasks import bulk_revoke_premium_students
+
+    target_ids = list(student_premium_targets('revoke').values_list('id', flat=True))
+    if not target_ids:
+        return Response({'queued': False, 'count': 0})
+
+    try:
+        bulk_revoke_premium_students.delay()
+    except Exception:
+        logger.exception('bulk_revoke_premium_students enqueue failed')
+        return Response({'detail': BULK_PREMIUM_QUEUE_ERROR},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    AuditLog.log(request, 'admin_bulk_premium_students', extra={
+        'mode': 'revoke',
+        'count': len(target_ids),
+        'user_ids': target_ids[:AUDIT_BULK_ID_LIMIT],
+    })
+    return Response({'queued': True, 'count': len(target_ids)})
 
 
 # Admin paneldan boshqariladigan system-wide rollar. `admin` checkboxi

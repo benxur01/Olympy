@@ -1578,6 +1578,24 @@ export const OlympyApi = {
     '/api/admin/users/bulk-set-tags/',
     { method: 'PATCH', body: { user_ids: userIds, tags: tags || [], mode: mode || 'add' }, token },
   ),
+  // Ommaviy premium — id ro'yxati bilan emas, `student` ROLI bo'yicha butun
+  // bazaga qo'llanadi. Tasdiqlashdan oldin `scope` ('grant' | 'revoke')
+  // bo'yicha haqiqiy son serverdan olinadi: { count } — panel jadvalining
+  // joriy sahifasidan chamalash noto'g'ri son ko'rsatardi.
+  getAdminPremiumBulkPreview: (scope, token) => request(
+    `/api/admin/users/premium-bulk-preview/?scope=${encodeURIComponent(scope)}`,
+    { token },
+  ),
+  // Ikkalasi ham { queued, count } qaytaradi — amalning o'zi Celery worker'da
+  // bajariladi, `count` esa navbatga qo'yish paytidagi qamrov soni.
+  adminBulkGrantPremiumStudents: (payload, token) => request(
+    '/api/admin/users/bulk-grant-premium-students/',
+    { method: 'POST', body: payload, token },
+  ),
+  adminBulkRevokePremiumStudents: (token) => request(
+    '/api/admin/users/bulk-revoke-premium-students/',
+    { method: 'POST', token },
+  ),
   // Foydalanuvchilar ro'yxatini CSV qilib yuklab beradi. `search` ro'yxat
   // endpoint'i bilan BIR XIL filtr — admin ekranda ko'rgan to'plam eksportga
   // tushadi. Yuklash usuli downloadOlympiadResults bilan bir xil (fetch → blob
