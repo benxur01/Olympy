@@ -21,7 +21,10 @@ const FIELD_LABEL = 'block text-[11px] font-bold uppercase tracking-[0.1em] text
 // Telefon input endi shared.jsx dagi `PhoneField` komponenti orqali ishlanadi
 // (davlat kodi tanlash + xalqaro E.164, defolt O'zbekiston +998).
 
-const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoading }) => {
+// `role` — faqat ro'yxatdan o'tish niyati ('student' yoki 'owner'). Login
+// sahifasida u BERILMAYDI: kirish mavjud hisobning rolini o'zgartirmasligi
+// kerak (backend rol yuborilmasa hisobga tegmaydi).
+const GoogleAuthButton = ({ role = '', onLogin, setError, loading, setLoading }) => {
   // Google'ning haqiqiy tugmasini shu konteynerga render qilamiz. U ko'rinadigan
   // custom tugma ustida shaffof (opacity:0) qatlam sifatida turadi va foydalanuvchi
   // bosganda bosish to'g'ridan-to'g'ri Google'ning o'z tugmasiga tushadi.
@@ -46,7 +49,7 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
     // deb ko'rsatilardi.
     let data;
     try {
-      data = await OlympyApi.loginWithGoogle({ credential, role });
+      data = await OlympyApi.loginWithGoogle(role ? { credential, role } : { credential });
     } catch (err) {
       setError(OlympyApi.toUserMessage(err) || "Google orqali kirishda xatolik yuz berdi");
       setLoading(false);
@@ -121,7 +124,7 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
           type: 'standard',
           theme: 'filled_black',
           size: 'large',
-          text: role === 'student' ? 'signin_with' : 'signup_with',
+          text: role === 'owner' ? 'signup_with' : 'signin_with',
           width: btnWidth,
         });
       } catch (e) {
@@ -591,7 +594,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               className="btn-ghost w-full py-3 rounded-lg font-semibold">← Oddiy kirish</button>
           )}
           {!restoreMode && (
-            <GoogleAuthButton role="student" onLogin={onLogin} setError={setError} loading={loading} setLoading={setLoading} />
+            <GoogleAuthButton onLogin={onLogin} setError={setError} loading={loading} setLoading={setLoading} />
           )}
         </form>
         )}
@@ -759,6 +762,12 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const [apiCenters, setApiCenters] = React.useState(null);
   // Yosh siyosati: 13+ yoki ota-ona/vasiy roziligi.
   const [ageConfirmed, setAgeConfirmed] = React.useState(false);
+  // Tashkilot Google orqali ro'yxatdan o'tayotgan bo'lsa — hisob allaqachon
+  // yaratilgan (GoogleAuthButton saveAuth qilgan), lekin ARIZA hali yo'q.
+  // Shu bayroq bilan sehrgar telefon/parol bosqichini o'tkazib, to'g'ridan-
+  // to'g'ri tashkilot ma'lumotlariga o'tadi va yakunda `registerCenter`
+  // chaqiriladi (`register-organization` emas — u yangi hisob yaratadi).
+  const [googleOrgAuthed, setGoogleOrgAuthed] = React.useState(false);
 
   const normalizedRegisterPhone = OlympyStore.normalizePhone(form.phone);
   const phoneValidForVerify = !!normalizedRegisterPhone && !phoneError;
@@ -821,6 +830,21 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
     setPhoneError('');
   };
 
+  // Google orqali tashkilot ro'yxatdan o'tishi: hisob yaratildi, endi
+  // foydalanuvchini panelga emas, tashkilot arizasi formasiga o'tkazamiz.
+  // Avval bu yerda ham `onLogin` chaqirilardi va foydalanuvchi markazsiz
+  // direktor panelida "tasdiq kutilmoqda" ekranida qolib ketardi — ariza
+  // yuboradigan joy umuman yo'q edi.
+  const startGoogleOrganization = () => {
+    setGoogleOrgAuthed(true);
+    setPhoneError('');
+    // GoogleAuthButton muvaffaqiyatda `loading` ni o'chirmaydi (odatda
+    // sahifadan chiqib ketiladi) — bu yerda sehrgar davom etgani uchun o'zimiz
+    // tozalaymiz, aks holda "Arizani yuborish" tugmasi bloklangan qoladi.
+    setLoading(false);
+    setStep(3);
+  };
+
   const goNext = () => {
     if (step === 1) {
       if (!registrationType) return;
@@ -866,6 +890,21 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         city: newCenter.district || newCenter.region,
         subjects: newCenter.subjects,
       };
+
+      if (selectedType === 'organization' && googleOrgAuthed) {
+        // Google bilan kirgan foydalanuvchi uchun faqat markaz arizasi
+        // qoladi. Ariza yaratilgach `owner` a'zoligi `pending` bo'ladi va
+        // /me shuni qaytaradi — direktor paneli tasdiqni kutish ekranini
+        // ko'rsatadi (telefon orqali ro'yxatdan o'tish bilan bir xil holat).
+        const token = OlympyApi.getToken();
+        await OlympyApi.registerCenter(organizationPayload, token);
+        const freshUser = await OlympyApi.getMe(token);
+        const mappedUser = OlympyApi.mapBackendUser(freshUser);
+        OlympyApi.saveAuth({ token, user: mappedUser });
+        setSuccess(true);
+        setTimeout(() => onLogin(mappedUser), 1600);
+        return;
+      }
 
       if (selectedType === 'organization') {
         const data = await OlympyApi.registerOrganization({
@@ -1081,6 +1120,12 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                 </button>
               );
             })}
+            {/* Google tugmasining xatosi (masalan "bu Gmail allaqachon
+                o'quvchi sifatida ro'yxatdan o'tgan") shu bosqichda ham
+                ko'rsatilishi shart — avval `phoneError` faqat 2- va
+                3-bosqichda chizilardi, ya'ni bu yerda bosish hech qanday
+                javobsiz qolardi. */}
+            {phoneError && <ErrorBanner message={<span className="flex items-start gap-2"><Icon name="info" size={16} className="flex-shrink-0 mt-0.5" />{phoneError}</span>} />}
             <div className="flex gap-3 pt-2">
               <button onClick={() => onNavigate('login')} className="btn-ghost flex-1 py-3.5 rounded-lg font-semibold">Kirish</button>
               <button onClick={goNext} disabled={!registrationType} className="btn-primary flex-1 py-3.5 rounded-lg font-bold disabled:opacity-50">Davom etish →</button>
@@ -1088,7 +1133,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             {registrationType && (
               <GoogleAuthButton
                 role={registrationType === 'organization' ? 'owner' : 'student'}
-                onLogin={onLogin}
+                onLogin={registrationType === 'organization' ? startGoogleOrganization : onLogin}
                 setError={setPhoneError}
                 loading={loading}
                 setLoading={setLoading}
@@ -1245,7 +1290,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             </label>
             {phoneError && <ErrorBanner message={<span className="flex items-start gap-2"><Icon name="info" size={16} className="flex-shrink-0 mt-0.5" />{phoneError}</span>} />}
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-lg font-semibold">← Orqaga</button>
+              <button onClick={() => setStep(googleOrgAuthed ? 1 : 2)} className="btn-ghost flex-1 py-3.5 rounded-lg font-semibold">← Orqaga</button>
               <button onClick={submit} disabled={loading || !ageConfirmed || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="btn-primary flex-1 py-3.5 rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50">
                 {loading ? <Spinner size={16} /> : 'Arizani yuborish'}
               </button>

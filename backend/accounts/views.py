@@ -758,9 +758,15 @@ def google_login(request):
     given_name = (token_info.get('given_name') or '').strip()
     family_name = (token_info.get('family_name') or '').strip()
 
-    desired_role = (request.data.get('role') or 'student').strip().lower()
+    # `role` — RO'YXATDAN O'TISH niyati, kirish tasdig'i emas: uni faqat
+    # ro'yxatdan o'tish sahifasi yuboradi. Login sahifasidagi "Google orqali
+    # kirish" hech qanday rol yubormaydi, aks holda mavjud hisob har kirishda
+    # qayta "o'quvchi sifatida ro'yxatdan o'tayotgan" deb qaralib, quyidagi
+    # student/owner istisnosiga tushardi — ya'ni Google orqali ro'yxatdan
+    # o'tgan tashkilot egasi boshqa hech qachon kira olmasdi (400).
+    desired_role = (request.data.get('role') or '').strip().lower()
     if desired_role not in ('student', 'teacher', 'manager', 'owner'):
-        desired_role = 'student'
+        desired_role = ''
 
     # Google `sub` bevosita `phone`/`normalized_phone` (max_length=20) ga
     # sig'maydi (haqiqiy sub ~21 raqam → "google_" bilan ~28 belgi) va email
@@ -820,7 +826,7 @@ def google_login(request):
                 full_name=name or (email.split('@')[0] if email else "Google User"),
                 first_name=given_name,
                 last_name=family_name,
-                roles=[desired_role],
+                roles=[desired_role or 'student'],
                 is_active=True,
                 is_premium=True,
                 premium_trial_end=timezone.now() + timedelta(days=30),
