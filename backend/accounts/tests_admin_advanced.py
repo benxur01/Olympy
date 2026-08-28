@@ -566,3 +566,90 @@ class AdminBulkStudentPremiumTestCase(APITestCase):
         self.assertFalse(
             AuditLog.objects.filter(action='admin_bulk_premium_students').exists()
         )
+
+    def test_collusion_detection(self):
+        """Collusion detection finds pairs with matching answers."""
+        center = EducationCenter.objects.create(name='Test Center', owner=self.admin_user)
+        olympiad = Olympiad.objects.create(
+            center=center, title='Matematika Test', subject='Matematika', duration_minutes=30, status=Olympiad.STATUS_ACTIVE,
+        )
+        answers = {
+            'q1': {'answer': 'A', 'is_correct': True},
+            'q2': {'answer': 'B', 'is_correct': False},
+            'q3': {'answer': 'C', 'is_correct': False},
+            'q4': {'answer': 'D', 'is_correct': False},
+        }
+        TestAttempt.objects.create(user=self.student_a, olympiad=olympiad, answers=answers, score=25)
+        TestAttempt.objects.create(user=self.student_b, olympiad=olympiad, answers=answers, score=25)
+
+        resp = self.client.get('/api/admin/security/collusion/?days=30&min_similarity=70')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(resp.data['detected_pairs_count'], 1)
+        pair = resp.data['results'][0]
+        self.assertEqual(pair['similarity_pct'], 100.0)
+        self.assertEqual(pair['identical_wrong_answers'], 3)
+
+    def test_anomalies_speedrun_and_score_jump(self):
+        """Speedrun and score jump detection."""
+        center = EducationCenter.objects.create(name='Test Center Speedrun', owner=self.admin_user)
+        olympiad = Olympiad.objects.create(
+            center=center, title='Fizika Test', subject='Fizika', duration_minutes=30, status=Olympiad.STATUS_ACTIVE,
+        )
+        TestAttempt.objects.create(
+            user=self.student_a,
+            olympiad=olympiad,
+            score=90,
+            time_spent=10,
+            total_questions=10,
+        )
+        resp = self.client.get('/api/admin/security/anomalies/?days=30')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(resp.data['count'], 1)
+        speedrun = [r for r in resp.data['results'] if r['type'] == 'speedrun']
+        self.assertTrue(len(speedrun) >= 1)
+
+    def test_user_passport(self):
+        """Student 360 passport endpoint returns complete profile."""
+        resp = self.client.get(f'/api/admin/users/{self.student_a.id}/passport/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn('passport_id', resp.data)
+        self.assertIn('academic_summary', resp.data)
+        self.assertIn('security_integrity', resp.data)
+        self.assertIn('financials', resp.data)
+
+    def test_realtime_presence_and_kill_sessions(self):
+        """Realtime presence and kill sessions."""
+        self.student_a.last_seen_at = timezone.now()
+        self.student_a.save(update_fields=['last_seen_at'])
+
+        resp = self.client.get('/api/admin/presence/live/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(resp.data['total_active'], 1)
+
+        prev_token_version = self.student_a.token_version
+        kill_resp = self.client.post(f'/api/admin/users/{self.student_a.id}/kill-all-sessions/')
+        self.assertEqual(kill_resp.status_code, status.HTTP_200_OK)
+        self.student_a.refresh_from_db()
+        self.assertEqual(self.student_a.token_version, prev_token_version + 1)
+
+    def test_auto_moderation_rules_and_broadcast_flash_alert(self):
+        """Auto moderation rules and broadcast flash alert."""
+        rules_resp = self.client.get('/api/admin/security/rules/')
+        self.assertEqual(rules_resp.status_code, status.HTTP_200_OK)
+        self.assertIn('rules', rules_resp.data)
+
+        up_resp = self.client.post('/api/admin/security/rules/', {'tab_switch_limit': 10}, format='json')
+        self.assertEqual(up_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(up_resp.data['rules']['tab_switch_limit'], 10)
+
+        alert_resp = self.client.post('/api/admin/broadcast/flash-alert/', {
+            'title': 'Diqqat qoida!',
+            'message': 'Olimpiadada halol bo\'ling',
+            'level': 'warning',
+            'target': 'all',
+        }, format='json')
+        self.assertEqual(alert_resp.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(alert_resp.data['sent_count'], 1)
+        self.assertTrue(UserFlashAlert.objects.filter(user=self.student_a).exists())
+
+

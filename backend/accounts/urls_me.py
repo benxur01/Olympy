@@ -268,6 +268,14 @@ urlpatterns = [
     path('admin/flash-alerts/<int:alert_id>/', views_admin_advanced.admin_delete_flash_alert, name='admin-delete-flash-alert'),
     path('admin/users/<int:user_id>/send-telegram/', views_admin_advanced.admin_user_send_telegram, name='admin-user-send-telegram'),
     path('admin/users/bulk-import/', views_admin_advanced.admin_bulk_import_users, name='admin-bulk-import-users'),
+    path('admin/security/collusion/', views_admin_advanced.admin_collusion_detection, name='admin-collusion-detection'),
+    path('admin/security/anomalies/', views_admin_advanced.admin_anomalies_detection, name='admin-anomalies-detection'),
+    path('admin/users/<int:user_id>/passport/', views_admin_advanced.admin_user_passport, name='admin-user-passport'),
+    path('admin/presence/live/', views_admin_advanced.admin_realtime_presence, name='admin-realtime-presence'),
+    path('admin/users/<int:user_id>/kill-all-sessions/', views_admin_advanced.admin_kill_all_sessions, name='admin-kill-all-sessions'),
+    path('admin/security/rules/', views_admin_advanced.admin_auto_moderation_rules, name='admin-auto-moderation-rules'),
+    path('admin/security/rules/run-check/', views_admin_advanced.admin_auto_moderation_run_check, name='admin-auto-moderation-run-check'),
+    path('admin/broadcast/flash-alert/', views_admin_advanced.admin_broadcast_flash_alert, name='admin-broadcast-flash-alert'),
 
     # DevOps & System Health
     path('admin/system/health/', views_system_health.admin_system_health, name='admin-system-health'),

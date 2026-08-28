@@ -1722,6 +1722,21 @@ export const OlympyApi = {
     { method: 'POST', body: { message }, token },
   ),
   bulkImportAdminUsers: (payload, token) => request('/api/admin/users/bulk-import/', { method: 'POST', body: payload, token }),
+  getAdminCollusionDetection: (params = {}, token) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/api/admin/security/collusion/${q ? '?' + q : ''}`, { token });
+  },
+  getAdminAnomaliesDetection: (params = {}, token) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/api/admin/security/anomalies/${q ? '?' + q : ''}`, { token });
+  },
+  getAdminUserPassport: (userId, token) => request(`/api/admin/users/${userId}/passport/`, { token }),
+  getAdminRealtimePresence: (token) => request('/api/admin/presence/live/', { token }),
+  killAdminAllUserSessions: (userId, token) => request(`/api/admin/users/${userId}/kill-all-sessions/`, { method: 'POST', token }),
+  getAdminAutoModerationRules: (token) => request('/api/admin/security/rules/', { token }),
+  updateAdminAutoModerationRules: (payload, token) => request('/api/admin/security/rules/', { method: 'POST', body: payload, token }),
+  runAdminAutoModerationCheck: (token) => request('/api/admin/security/rules/run-check/', { method: 'POST', token }),
+  broadcastAdminFlashAlert: (payload, token) => request('/api/admin/broadcast/flash-alert/', { method: 'POST', body: payload, token }),
   getMyFlashAlert: (token) => request('/api/me/flash-alert/', { token }),
   readMyFlashAlert: (alertId, token) => request(`/api/me/flash-alert/${alertId}/read/`, { method: 'POST', token }),
   // ─── Olimpiada & Baholash Nazorati (Competition Ops) ───

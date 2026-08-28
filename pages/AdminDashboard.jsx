@@ -57,6 +57,10 @@ const SECURITY_SECTIONS = [
   { key: 'suspicious-queue', label: 'Shubhali foydalanuvchilar' },
   { key: 'shared-ip', label: "Bir xil IP'dan kirish" },
   { key: 'live-proctoring', label: 'Jonli Proktoring' },
+  { key: 'presence', label: 'Jonli Foydalanuvchilar' },
+  { key: 'collusion', label: 'Guruh bo‘lib yechish' },
+  { key: 'anomalies', label: 'Anomaliyalar & Speedrun' },
+  { key: 'auto-rules', label: 'Avto-moderatsiya' },
   { key: 'auto-flags', label: 'Avtomatik bayroqlar' },
   { key: 'blocked-ips', label: "Bloklangan IP'lar" },
   { key: 'cheating', label: 'Firibgarlik holatlari' },
@@ -1717,6 +1721,55 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getAdminChurnRiskUsers(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+
+  // Monitoring: Collusion, Anomalies, Presence, Auto-rules
+  const [collusionDays, setCollusionDays] = React.useState(30);
+  const [collusionMinSim, setCollusionMinSim] = React.useState(75);
+  const [collusionKey, setCollusionKey] = React.useState(0);
+  const apiCollusionRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'collusion')
+      ? OlympyApi.getAdminCollusionDetection({ days: collusionDays, min_similarity: collusionMinSim }, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, page, securitySection, collusionDays, collusionMinSim, collusionKey],
+  );
+
+  const [anomaliesDays, setAnomaliesDays] = React.useState(30);
+  const [anomaliesKey, setAnomaliesKey] = React.useState(0);
+  const apiAnomaliesRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'anomalies')
+      ? OlympyApi.getAdminAnomaliesDetection({ days: anomaliesDays }, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, page, securitySection, anomaliesDays, anomaliesKey],
+  );
+
+  const [presenceKey, setPresenceKey] = React.useState(0);
+  const apiPresenceRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'presence')
+      ? OlympyApi.getAdminRealtimePresence(OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, page, securitySection, presenceKey],
+  );
+
+  const [rulesKey, setRulesKey] = React.useState(0);
+  const apiAutoRulesRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'auto-rules')
+      ? OlympyApi.getAdminAutoModerationRules(OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, page, securitySection, rulesKey],
+  );
+
+  // Student Passport Modal State
+  const [passportUserId, setPassportUserId] = React.useState(null);
+  const [passportLoading, setPassportLoading] = React.useState(false);
+  const [passportData, setPassportData] = React.useState(null);
+
+  // Broadcast Flash Alert Modal State
+  const [showBroadcastAlertModal, setShowBroadcastAlertModal] = React.useState(false);
+  const [bAlertTitle, setBAlertTitle] = React.useState('');
+  const [bAlertMessage, setBAlertMessage] = React.useState('');
+  const [bAlertLevel, setBAlertLevel] = React.useState('info');
+  const [bAlertTarget, setBAlertTarget] = React.useState('all');
+  const [bAlertBusy, setBAlertBusy] = React.useState(false);
 
   // Modal statelari
   const [showBulkImportModal, setShowBulkImportModal] = React.useState(false);
@@ -5425,10 +5478,40 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   </button>
                 )}
                 <button
+                  onClick={() => {
+                    setPassportUserId(detailBackendId);
+                    setPassportLoading(true);
+                    OlympyApi.getAdminUserPassport(detailBackendId, OlympyApi.getToken())
+                      .then(res => setPassportData(res))
+                      .catch(err => showToast(err?.message || "Pasport ma'lumotlarini yuklashda xatolik"))
+                      .finally(() => setPassportLoading(false));
+                  }}
+                  className="rounded-lg bg-accent/15 px-3 py-2 text-[11px] font-bold text-accent border border-accent/45 hover:bg-accent hover:text-on-accent transition inline-flex items-center gap-1.5"
+                >
+                  <Icon name="award" size={13} />
+                  Talaba Pasporti (360°)
+                </button>
+                <button
                   onClick={() => setForceLogoutConfirm({ backendId: detailBackendId, name: info.name })}
                   className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition"
                 >
                   Barcha seanslarni yakunlash
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm(`${info.name} ning barcha qurilmadagi faol sessiyalarini yakunlash va tokenlarini bekor qilmoqchimisiz?`)) {
+                      OlympyApi.killAdminAllUserSessions(detailBackendId, OlympyApi.getToken())
+                        .then(res => {
+                          showToast(res?.message || "Barcha seanslar yakunlandi");
+                          if (apiUserDetailRes) apiUserDetailRes.reload();
+                        })
+                        .catch(err => showToast(err?.message || "Xatolik yuz berdi"));
+                    }
+                  }}
+                  className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-error border border-error/45 hover:bg-error hover:text-white transition"
+                  title="Barcha token va test sessiyalarini to'xtatish"
+                >
+                  Sessiyalarni majburiy yopish
                 </button>
                 {!info.isPlatformAdmin && info.isActive && (
                   <button
@@ -9303,10 +9386,639 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
+  // ─── Presence & Real-time Active Users ───
+  const renderPresenceSection = () => {
+    const presenceData = apiPresenceRes.data || { results: [], online_count: 0, in_exam_count: 0, idle_count: 0, total_active: 0 };
+    const items = presenceData.results || [];
+
+    return (
+      <div className="space-y-4">
+        {/* Metric Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Jami Faol (15 daqiqa)</div>
+            <div className="mt-1 text-2xl font-black text-text-primary">{presenceData.total_active}</div>
+          </div>
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Onlayn (Active)
+            </div>
+            <div className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{presenceData.online_count}</div>
+          </div>
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              Imtihonda
+            </div>
+            <div className="mt-1 text-2xl font-black text-amber-600 dark:text-amber-400">{presenceData.in_exam_count}</div>
+          </div>
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Kutishda (Idle)</div>
+            <div className="mt-1 text-2xl font-black text-text-secondary">{presenceData.idle_count}</div>
+          </div>
+        </div>
+
+        {/* Action Header */}
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-1 border border-edge p-4">
+          <div>
+            <div className="text-sm font-bold text-text-primary flex items-center gap-2">
+              <Icon name="activity" size={16} className="text-accent" />
+              Jonli Foydalanuvchilar va Sessiyalar Nazorati
+            </div>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Ayni paytda tizimda faol foydalanuvchilar, ularning IP manzili va joriy jarayoni.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPresenceKey(k => k + 1)}
+            disabled={apiPresenceRes.loading}
+            className="btn-ghost px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
+          >
+            <Icon name="refresh" size={13} className={apiPresenceRes.loading ? 'animate-spin' : ''} />
+            Yangilash
+          </button>
+        </div>
+
+        {/* Table */}
+        {apiPresenceRes.loading ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Faol foydalanuvchilar ro'yxati yuklanmoqda...
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Hozirda faol foydalanuvchilar mavjud emas.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-edge bg-surface-1">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-edge bg-surface-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                <tr>
+                  <th className="px-4 py-3">Foydalanuvchi</th>
+                  <th className="px-4 py-3">Holat</th>
+                  <th className="px-4 py-3">Oxirgi so'rov</th>
+                  <th className="px-4 py-3">IP Manzil / Qurilma</th>
+                  <th className="px-4 py-3">Faol Imtihon</th>
+                  <th className="px-4 py-3 text-right">Amal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge font-medium text-text-primary">
+                {items.map(u => (
+                  <tr key={u.user_id} className="hover:bg-surface-2/60 transition">
+                    <td className="px-4 py-3.5">
+                      <div className="font-bold text-text-primary">{u.full_name}</div>
+                      <div className="text-[11px] text-text-secondary font-mono">{u.phone}</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {u.status === 'in_exam' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          Imtihonda
+                        </span>
+                      ) : u.status === 'online' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Onlayn
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-surface-3 text-text-secondary border border-edge">
+                          Kutishda
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-[11px] text-text-secondary">
+                      {u.last_seen_seconds_ago < 60
+                        ? 'Hozirgina'
+                        : `${Math.floor(u.last_seen_seconds_ago / 60)} daq oldin`}
+                    </td>
+                    <td className="px-4 py-3.5 text-[11px]">
+                      <div className="font-mono text-text-primary">{u.ip_address || '—'}</div>
+                      <div className="text-[10px] text-text-secondary truncate max-w-[180px]">{u.user_agent || ''}</div>
+                    </td>
+                    <td className="px-4 py-3.5 text-[11px]">
+                      {u.active_exam ? (
+                        <div>
+                          <div className="font-bold text-accent">{u.active_exam.olympiad_title}</div>
+                          <div className="text-[10px] text-text-secondary">Sessiya #{u.active_exam.session_id}</div>
+                        </div>
+                      ) : (
+                        <span className="text-text-secondary">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-right space-x-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailBackendId(u.user_id);
+                          setDetailSubTab('overview');
+                        }}
+                        className="btn-ghost text-xs px-2.5 py-1 rounded-lg font-bold"
+                      >
+                        Batafsil
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`${u.full_name} ning barcha sessiyalarini majburiy to'xtatmoqchimisiz?`)) {
+                            OlympyApi.killAdminAllUserSessions(u.user_id, OlympyApi.getToken())
+                              .then(res => {
+                                showToast(res?.message || "Sessiyalar yakunlandi");
+                                setPresenceKey(k => k + 1);
+                              })
+                              .catch(err => showToast(err?.message || "Xatolik yuz berdi"));
+                          }
+                        }}
+                        className="btn-ghost text-xs text-error hover:bg-error/10 px-2 py-1 rounded-lg font-bold"
+                        title="Barcha token va sessiyalarni bekor qilish"
+                      >
+                        Kill
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─── Collusion & Group Cheating Detection ───
+  const renderCollusionSection = () => {
+    const collusionData = apiCollusionRes.data || { results: [], detected_pairs_count: 0, total_scanned_attempts: 0 };
+    const pairs = collusionData.results || [];
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-1 border border-edge p-4">
+          <div>
+            <div className="text-sm font-bold text-text-primary flex items-center gap-2">
+              <Icon name="users" size={16} className="text-accent" />
+              Guruh bo‘lib yechish va Ko‘chirish (Collusion Detection)
+            </div>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Bir xil testda deyarli bir vaqtda va aynan bir xil to'g'ri/noto'g'ri javoblarni tanlagan ishtirokchilar juftligi.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={collusionDays}
+              onChange={e => setCollusionDays(Number(e.target.value))}
+              className="input-select text-xs py-1.5 px-3 rounded-xl"
+            >
+              <option value={7}>Oxirgi 7 kun</option>
+              <option value={30}>Oxirgi 30 kun</option>
+              <option value={90}>Oxirgi 90 kun</option>
+            </select>
+            <select
+              value={collusionMinSim}
+              onChange={e => setCollusionMinSim(Number(e.target.value))}
+              className="input-select text-xs py-1.5 px-3 rounded-xl"
+            >
+              <option value={70}>O‘xshashlik &ge; 70%</option>
+              <option value={75}>O‘xshashlik &ge; 75%</option>
+              <option value={80}>O‘xshashlik &ge; 80%</option>
+              <option value={90}>O‘xshashlik &ge; 90%</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setCollusionKey(k => k + 1)}
+              disabled={apiCollusionRes.loading}
+              className="btn-ghost px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
+            >
+              <Icon name="refresh" size={13} className={apiCollusionRes.loading ? 'animate-spin' : ''} />
+              Tahlil
+            </button>
+          </div>
+        </div>
+
+        {apiCollusionRes.loading ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Plagiat va guruhli ko‘chirish tahlil qilinmoqda...
+          </div>
+        ) : pairs.length === 0 ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Tanlangan muddatda shubhali o'xshashlikka ega urinishlar topilmadi.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pairs.map((p, idx) => (
+              <div key={idx} className="rounded-2xl border border-edge bg-surface-1 p-4.5 space-y-3 relative overflow-hidden">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                      Olimpiada:
+                    </span>
+                    <h4 className="text-sm font-bold text-text-primary">{p.olympiad_title}</h4>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    p.risk_tier === 'critical'
+                      ? 'bg-error/15 text-error border border-error/30'
+                      : p.risk_tier === 'high'
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                      : 'bg-blue-500/15 text-blue-600 border border-blue-500/30'
+                  }`}>
+                    {p.risk_tier} risk ({p.similarity_pct}%)
+                  </span>
+                </div>
+
+                {/* Users Comparison */}
+                <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-surface-2 border border-edge/60 text-xs">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-bold text-text-secondary uppercase">Ishtirokchi A</div>
+                    <div className="font-bold text-text-primary truncate">{p.user_a.full_name}</div>
+                    <div className="text-[10px] font-mono text-text-secondary">{p.user_a.phone}</div>
+                    <div className="text-[11px] font-black text-accent">Natija: {p.user_a.score}%</div>
+                    <button
+                      type="button"
+                      onClick={() => { setDetailBackendId(p.user_a.id); setDetailSubTab('overview'); }}
+                      className="mt-1 text-[10px] font-bold text-accent hover:underline inline-flex items-center gap-0.5"
+                    >
+                      Profilni ochish &rarr;
+                    </button>
+                  </div>
+                  <div className="space-y-1 border-l border-edge pl-3">
+                    <div className="text-[10px] font-bold text-text-secondary uppercase">Ishtirokchi B</div>
+                    <div className="font-bold text-text-primary truncate">{p.user_b.full_name}</div>
+                    <div className="text-[10px] font-mono text-text-secondary">{p.user_b.phone}</div>
+                    <div className="text-[11px] font-black text-accent">Natija: {p.user_b.score}%</div>
+                    <button
+                      type="button"
+                      onClick={() => { setDetailBackendId(p.user_b.id); setDetailSubTab('overview'); }}
+                      className="mt-1 text-[10px] font-bold text-accent hover:underline inline-flex items-center gap-0.5"
+                    >
+                      Profilni ochish &rarr;
+                    </button>
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-text-secondary">
+                  <div className="flex items-center gap-1 font-medium">
+                    <Icon name="check-circle" size={13} className="text-emerald-500" />
+                    <span>Mos javoblar: <strong className="text-text-primary">{p.matching_answers} / {p.common_questions}</strong></span>
+                  </div>
+                  {p.identical_wrong_answers > 0 && (
+                    <div className="flex items-center gap-1 font-medium text-error">
+                      <Icon name="alert-triangle" size={13} />
+                      <span>Bir xil xatolar: <strong>{p.identical_wrong_answers} ta</strong></span>
+                    </div>
+                  )}
+                  {p.time_diff_seconds !== null && (
+                    <div className="flex items-center gap-1 font-medium">
+                      <Icon name="clock" size={13} />
+                      <span>Vaqt farqi: <strong className="text-text-primary">{p.time_diff_seconds < 60 ? `${p.time_diff_seconds} son` : `${Math.floor(p.time_diff_seconds / 60)} daq`}</strong></span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─── Speedrun & Score Jump Anomalies ───
+  const renderAnomaliesSection = () => {
+    const anomaliesData = apiAnomaliesRes.data || { results: [], count: 0 };
+    const items = anomaliesData.results || [];
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-1 border border-edge p-4">
+          <div>
+            <div className="text-sm font-bold text-text-primary flex items-center gap-2">
+              <Icon name="zap" size={16} className="text-amber-500" />
+              Tezlik (Speedrun) va Keskin Natija O‘sishi (Score Jump)
+            </div>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Savollarni inson o'qib ulgurmaydigan tezlikda belgilash yoki o'rtacha past balldan to'satdan 90%+ ga sakrash holatlari.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={anomaliesDays}
+              onChange={e => setAnomaliesDays(Number(e.target.value))}
+              className="input-select text-xs py-1.5 px-3 rounded-xl"
+            >
+              <option value={7}>Oxirgi 7 kun</option>
+              <option value={30}>Oxirgi 30 kun</option>
+              <option value={90}>Oxirgi 90 kun</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setAnomaliesKey(k => k + 1)}
+              disabled={apiAnomaliesRes.loading}
+              className="btn-ghost px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
+            >
+              <Icon name="refresh" size={13} className={apiAnomaliesRes.loading ? 'animate-spin' : ''} />
+              Yangilash
+            </button>
+          </div>
+        </div>
+
+        {apiAnomaliesRes.loading ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Anomaliyalar tahlil qilinmoqda...
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Hech qanday g‘ayritabiiy tezlik yoki natija anomaliyasi aniqlanmadi.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {items.map((item, idx) => (
+              <div key={idx} className="rounded-2xl border border-edge bg-surface-1 p-4.5 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                      item.type === 'speedrun' ? 'bg-amber-500/15 text-amber-600' : 'bg-purple-500/15 text-purple-600'
+                    }`}>
+                      <Icon name={item.type === 'speedrun' ? 'zap' : 'trending-up'} size={16} />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-text-primary">{item.title}</h4>
+                      <div className="text-[10px] text-text-secondary">{item.olympiad.title}</div>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    item.risk_tier === 'critical' ? 'bg-error/15 text-error' : 'bg-amber-500/15 text-amber-600'
+                  }`}>
+                    {item.risk_tier}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-2 border border-edge/60 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-text-primary">{item.user.full_name}</span>
+                    <span className="font-mono text-text-secondary text-[11px]">{item.user.phone}</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">{item.detail}</p>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] text-text-secondary">
+                    {formatAdminDate(item.submitted_at)}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPassportUserId(item.user.id);
+                        setPassportLoading(true);
+                        OlympyApi.getAdminUserPassport(item.user.id, OlympyApi.getToken())
+                          .then(res => setPassportData(res))
+                          .catch(err => showToast(err?.message || "Pasport yuklashda xatolik"))
+                          .finally(() => setPassportLoading(false));
+                      }}
+                      className="btn-ghost text-xs px-2.5 py-1 rounded-lg font-bold text-accent inline-flex items-center gap-1"
+                    >
+                      <Icon name="award" size={12} />
+                      Pasport
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailBackendId(item.user.id);
+                        setDetailSubTab('overview');
+                      }}
+                      className="btn-ghost text-xs px-2.5 py-1 rounded-lg font-bold"
+                    >
+                      Batafsil
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─── Auto-Moderation & Rule Engine ───
+  const renderAutoRulesSection = () => {
+    const currentRules = apiAutoRulesRes.data?.rules || {
+      auto_flag_speedrun: true,
+      speedrun_seconds_threshold: 3.0,
+      auto_flag_score_jump: true,
+      score_jump_delta_threshold: 45,
+      auto_flag_tab_switches: true,
+      tab_switch_limit: 5,
+      auto_tag_shared_ip: true,
+      shared_ip_account_limit: 5,
+    };
+    const [localRules, setLocalRules] = React.useState(currentRules);
+    const [savingRules, setSavingRules] = React.useState(false);
+    const [runningSweep, setRunningSweep] = React.useState(false);
+    const [sweepResult, setSweepResult] = React.useState(null);
+
+    React.useEffect(() => {
+      if (apiAutoRulesRes.data?.rules) setLocalRules(apiAutoRulesRes.data.rules);
+    }, [apiAutoRulesRes.data]);
+
+    const handleSaveRules = () => {
+      setSavingRules(true);
+      OlympyApi.updateAdminAutoModerationRules(localRules, OlympyApi.getToken())
+        .then(res => {
+          showToast(res?.message || "Qoidalar muvaffaqiyatli saqlandi");
+          setRulesKey(k => k + 1);
+        })
+        .catch(err => showToast(err?.message || "Saqlashda xatolik"))
+        .finally(() => setSavingRules(false));
+    };
+
+    const handleRunSweep = () => {
+      setRunningSweep(true);
+      OlympyApi.runAdminAutoModerationCheck(OlympyApi.getToken())
+        .then(res => {
+          setSweepResult(res);
+          showToast(res?.message || "Avtomatik tekshiruv yakunlandi");
+        })
+        .catch(err => showToast(err?.message || "Tekshiruvda xatolik"))
+        .finally(() => setRunningSweep(false));
+    };
+
+    return (
+      <div className="space-y-4 max-w-4xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-1 border border-edge p-4">
+          <div>
+            <div className="text-sm font-bold text-text-primary flex items-center gap-2">
+              <Icon name="sliders" size={16} className="text-accent" />
+              Avtomatlashtirilgan Moderatsiya va Qoidalar Dvigateli
+            </div>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Antifrod va test xavfsizligi bo'yicha tizimning avtomatik choralarini sozlash.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRunSweep}
+              disabled={runningSweep}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl font-bold inline-flex items-center gap-1.5 text-accent border border-accent/30"
+            >
+              <Icon name="play" size={13} className={runningSweep ? 'animate-spin' : ''} />
+              {runningSweep ? "Tekshirilmoqda..." : "Hozir tekshirish (Run Sweep)"}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveRules}
+              disabled={savingRules}
+              className="btn-primary text-xs px-4 py-2 rounded-xl font-bold"
+            >
+              {savingRules ? "Saqlanmoqda..." : "Saqlash"}
+            </button>
+          </div>
+        </div>
+
+        {/* Sweep Output */}
+        {sweepResult && (
+          <div className="p-4 rounded-2xl bg-accent/10 border border-accent/30 text-xs space-y-2">
+            <div className="font-bold text-accent flex items-center gap-2">
+              <Icon name="check-circle" size={15} />
+              {sweepResult.message}
+            </div>
+            {sweepResult.actions_taken?.length > 0 && (
+              <ul className="list-disc list-inside text-[11px] text-text-secondary space-y-1 pl-1">
+                {sweepResult.actions_taken.map((act, i) => (
+                  <li key={i}>{act}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Rule Items */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Rule 1: Speedrun */}
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-text-primary">G‘ayritabiiy tezlik (Speedrun)</span>
+              <input
+                type="checkbox"
+                checked={!!localRules.auto_flag_speedrun}
+                onChange={e => setLocalRules(r => ({ ...r, auto_flag_speedrun: e.target.checked }))}
+                className="w-4 h-4 rounded text-accent cursor-pointer"
+              />
+            </div>
+            <p className="text-[11px] text-text-secondary">
+              Agar o'quvchi testni har savoliga belgilangan soniyadan tez yechsa, "Speedrunner" tegi biriktiriladi.
+            </p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-text-secondary">Chegara soniya:</span>
+              <input
+                type="number"
+                step="0.5"
+                min="1"
+                max="10"
+                value={localRules.speedrun_seconds_threshold ?? 3.0}
+                onChange={e => setLocalRules(r => ({ ...r, speedrun_seconds_threshold: parseFloat(e.target.value) || 3.0 }))}
+                className="input-text w-20 py-1 px-2 text-xs rounded-lg text-center font-bold"
+              />
+              <span className="text-text-secondary">soniya / savol</span>
+            </div>
+          </div>
+
+          {/* Rule 2: Score Jump */}
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-text-primary">Keskin Natija O‘sishi (Score Jump)</span>
+              <input
+                type="checkbox"
+                checked={!!localRules.auto_flag_score_jump}
+                onChange={e => setLocalRules(r => ({ ...r, auto_flag_score_jump: e.target.checked }))}
+                className="w-4 h-4 rounded text-accent cursor-pointer"
+              />
+            </div>
+            <p className="text-[11px] text-text-secondary">
+              Oldingi testlar o'rtachasidan ko'ra to'satdan keskin baland natija olganda tekshiruv uchun ajratish.
+            </p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-text-secondary">Minimal o'sish farqi:</span>
+              <input
+                type="number"
+                min="20"
+                max="80"
+                value={localRules.score_jump_delta_threshold ?? 45}
+                onChange={e => setLocalRules(r => ({ ...r, score_jump_delta_threshold: parseInt(e.target.value, 10) || 45 }))}
+                className="input-text w-20 py-1 px-2 text-xs rounded-lg text-center font-bold"
+              />
+              <span className="text-text-secondary">% delta</span>
+            </div>
+          </div>
+
+          {/* Rule 3: Shared IP */}
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-text-primary">Bir xil IP (Multi-Account) tegini qo‘yish</span>
+              <input
+                type="checkbox"
+                checked={!!localRules.auto_tag_shared_ip}
+                onChange={e => setLocalRules(r => ({ ...r, auto_tag_shared_ip: e.target.checked }))}
+                className="w-4 h-4 rounded text-accent cursor-pointer"
+              />
+            </div>
+            <p className="text-[11px] text-text-secondary">
+              Bitta IP ortidan belgilangandan ko'p hisob kelsa, foydalanuvchilar profiliga avtomatik 'Shubhali' tegi qo'yiladi.
+            </p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-text-secondary">Minimal hisoblar soni:</span>
+              <input
+                type="number"
+                min="2"
+                max="20"
+                value={localRules.shared_ip_account_limit ?? 5}
+                onChange={e => setLocalRules(r => ({ ...r, shared_ip_account_limit: parseInt(e.target.value, 10) || 5 }))}
+                className="input-text w-20 py-1 px-2 text-xs rounded-lg text-center font-bold"
+              />
+              <span className="text-text-secondary">ta hisob</span>
+            </div>
+          </div>
+
+          {/* Rule 4: Tab Switches */}
+          <div className="rounded-2xl border border-edge bg-surface-1 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-text-primary">Tab almashtirish chegarasi (Tab Switch)</span>
+              <input
+                type="checkbox"
+                checked={!!localRules.auto_flag_tab_switches}
+                onChange={e => setLocalRules(r => ({ ...r, auto_flag_tab_switches: e.target.checked }))}
+                className="w-4 h-4 rounded text-accent cursor-pointer"
+              />
+            </div>
+            <p className="text-[11px] text-text-secondary">
+              Test davomida brauzer oynasidan chiqib ketishlar soni oshganda imtihonni ogohlantirish ro'yxatiga kiritish.
+            </p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-text-secondary">Maksimal ruxsat:</span>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={localRules.tab_switch_limit ?? 5}
+                onChange={e => setLocalRules(r => ({ ...r, tab_switch_limit: parseInt(e.target.value, 10) || 5 }))}
+                className="input-text w-20 py-1 px-2 text-xs rounded-lg text-center font-bold"
+              />
+              <span className="text-text-secondary">marta</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const securitySectionRenderers = {
     'suspicious-queue': renderSuspiciousQueueSection,
     'shared-ip': renderSharedIpSection,
     'live-proctoring': renderLiveProctoringSection,
+    presence: renderPresenceSection,
+    collusion: renderCollusionSection,
+    anomalies: renderAnomaliesSection,
+    'auto-rules': renderAutoRulesSection,
     'auto-flags': renderAutoFlagsSection,
     'blocked-ips': renderBlockedIpsSection,
     cheating: renderCheatingOverviewSection,
@@ -10974,6 +11686,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </button>
           <button
             type="button"
+            onClick={() => setShowBroadcastAlertModal(true)}
+            className="btn-ghost px-3.5 py-2 text-xs font-bold rounded-xl border border-accent/40 text-accent inline-flex items-center gap-1.5"
+          >
+            <Icon name="bell" size={13} />
+            <span>Targeted Flash Alert (Modal)</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowCreateBroadcastModal(true)}
             className="btn-primary px-4 py-2 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-sm"
           >
@@ -11867,6 +12587,251 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     navItems.find(n => n.key === 'requests'),
   ].filter(Boolean);
 
+  // ─── Student 360° Passport Modal ───
+  const renderPassportModal = () => {
+    if (!passportUserId) return null;
+    const p = passportData;
+
+    return (
+      <Modal
+        open={!!passportUserId}
+        onClose={() => { setPassportUserId(null); setPassportData(null); }}
+        title="Talaba Pasporti (360° Comprehensive Dossier)"
+        maxWidth="max-w-4xl"
+      >
+        {passportLoading || !p ? (
+          <div className="p-10 text-center text-xs font-bold text-text-secondary">
+            Pasport ma'lumotlari shakllantirilmoqda...
+          </div>
+        ) : (
+          <div className="space-y-5 text-text-primary print:p-0">
+            {/* Header / ID Badge */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-surface-2 border border-edge">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-accent text-on-accent font-black text-lg flex items-center justify-center shadow">
+                  {p.user?.full_name?.charAt(0) || 'U'}
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-text-primary">{p.user?.full_name}</h3>
+                  <div className="flex items-center gap-2 text-xs text-text-secondary font-mono">
+                    <span>{p.user?.phone}</span>
+                    <span>&bull;</span>
+                    <span className="font-bold text-accent">{p.passport_id}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl font-bold inline-flex items-center gap-1.5 border border-edge"
+                >
+                  <Icon name="printer" size={13} />
+                  Chop etish / PDF
+                </button>
+              </div>
+            </div>
+
+            {/* Academic & Security Summary Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 rounded-xl bg-surface-2 border border-edge">
+                <div className="text-[10px] font-bold text-text-secondary uppercase">Jami urinishlar</div>
+                <div className="mt-1 text-xl font-black text-text-primary">{p.academic_summary?.total_attempts || 0} ta</div>
+              </div>
+              <div className="p-3 rounded-xl bg-surface-2 border border-edge">
+                <div className="text-[10px] font-bold text-text-secondary uppercase">O‘rtacha ball</div>
+                <div className="mt-1 text-xl font-black text-accent">{p.academic_summary?.average_score || 0}%</div>
+              </div>
+              <div className="p-3 rounded-xl bg-surface-2 border border-edge">
+                <div className="text-[10px] font-bold text-text-secondary uppercase">Aniqlik (Accuracy)</div>
+                <div className="mt-1 text-xl font-black text-emerald-600">{p.academic_summary?.accuracy_percentage || 0}%</div>
+              </div>
+              <div className="p-3 rounded-xl bg-surface-2 border border-edge">
+                <div className="text-[10px] font-bold text-text-secondary uppercase">Risk Score</div>
+                <div className={`mt-1 text-xl font-black ${
+                  (p.security_integrity?.risk_score || 0) > 50 ? 'text-error' : 'text-text-primary'
+                }`}>
+                  {p.security_integrity?.risk_score || 0} / 100 ({p.security_integrity?.risk_level || 'past'})
+                </div>
+              </div>
+            </div>
+
+            {/* Integrity and Security Section */}
+            <div className="p-4 rounded-2xl bg-surface-2 border border-edge space-y-2.5">
+              <div className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                <Icon name="shield" size={14} className="text-accent" />
+                Intizom va Xavfsizlik Profili
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div>
+                  <span className="text-text-secondary text-[10px]">Diskvalifikatsiyalar:</span>
+                  <div className="font-bold text-text-primary">{p.security_integrity?.disqualified_count || 0} ta</div>
+                </div>
+                <div>
+                  <span className="text-text-secondary text-[10px]">Ogohlantirishlar:</span>
+                  <div className="font-bold text-text-primary">{p.security_integrity?.warnings_count || 0} ta</div>
+                </div>
+                <div>
+                  <span className="text-text-secondary text-[10px]">Ulanmagan/Qurilmalar:</span>
+                  <div className="font-bold text-text-primary">{p.security_integrity?.devices_count || 0} ta qurilma</div>
+                </div>
+                <div>
+                  <span className="text-text-secondary text-[10px]">Olimpiada taqiqi:</span>
+                  <div className={`font-bold ${p.security_integrity?.is_exam_ban_active ? 'text-error' : 'text-emerald-600'}`}>
+                    {p.security_integrity?.is_exam_ban_active ? 'Taqiq mavjud' : 'Toza'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Attempts History Table */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-text-primary">So‘nggi Urinishlar Tarixi</div>
+              <div className="overflow-x-auto rounded-xl border border-edge bg-surface-2">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-edge text-[10px] font-bold uppercase text-text-secondary">
+                    <tr>
+                      <th className="px-3 py-2">Olimpiada</th>
+                      <th className="px-3 py-2">Fan</th>
+                      <th className="px-3 py-2">Ball</th>
+                      <th className="px-3 py-2">To‘g‘ri / Noto‘g‘ri</th>
+                      <th className="px-3 py-2">Sarflangan vaqt</th>
+                      <th className="px-3 py-2">Sana</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-edge font-medium">
+                    {(p.recent_attempts || []).map(a => (
+                      <tr key={a.id}>
+                        <td className="px-3 py-2 font-bold">{a.olympiad_title}</td>
+                        <td className="px-3 py-2 text-text-secondary">{a.subject}</td>
+                        <td className="px-3 py-2 font-bold text-accent">{a.score}%</td>
+                        <td className="px-3 py-2 text-[11px] text-text-secondary">{a.correct_count} / {a.wrong_count}</td>
+                        <td className="px-3 py-2 text-[11px] font-mono">{Math.floor(a.time_spent / 60)} daq</td>
+                        <td className="px-3 py-2 text-[11px] text-text-secondary">{formatAdminDate(a.submitted_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+    );
+  };
+
+  // ─── Broadcast Flash Alert Modal ───
+  const renderBroadcastAlertModal = () => (
+    <Modal
+      open={showBroadcastAlertModal}
+      onClose={() => !bAlertBusy && setShowBroadcastAlertModal(false)}
+      title="Targeted Flash Alert (Modal Ogohlantirish)"
+      maxWidth="max-w-lg"
+    >
+      <form
+        onSubmit={e => {
+          e.preventDefault();
+          if (!bAlertTitle.trim() || !bAlertMessage.trim()) {
+            showToast("Sarlavha va xabar matni kiritilishi shart", "error");
+            return;
+          }
+          setBAlertBusy(true);
+          OlympyApi.broadcastAdminFlashAlert({
+            title: bAlertTitle.trim(),
+            message: bAlertMessage.trim(),
+            level: bAlertLevel,
+            target: bAlertTarget,
+          }, OlympyApi.getToken())
+            .then(res => {
+              showToast(res?.message || "Modal ogohlantirish yuborildi");
+              setShowBroadcastAlertModal(false);
+              setBAlertTitle('');
+              setBAlertMessage('');
+            })
+            .catch(err => showToast(toUserMessage(err, "Xatolik yuz berdi"), "error"))
+            .finally(() => setBAlertBusy(false));
+        }}
+        className="space-y-4 text-xs"
+      >
+        <p className="text-text-secondary leading-relaxed">
+          Belgilangan foydalanuvchilar platformaga kirishi bilan ularning ekranida to'liq modal oyna paydo bo'ladi.
+        </p>
+
+        <div>
+          <label className="block text-[11px] font-bold text-text-secondary mb-1">Auditoriya (Segment)</label>
+          <select
+            value={bAlertTarget}
+            onChange={e => setBAlertTarget(e.target.value)}
+            className="input-select w-full text-xs py-2 px-3 rounded-xl"
+          >
+            <option value="all">Barcha foydalanuvchilar</option>
+            <option value="students">Faqat O‘quvchilar</option>
+            <option value="teachers">Faqat O‘qituvchilar</option>
+            <option value="center_owners">Faqat Markaz egalari (Owner)</option>
+            <option value="shubhali">Faqat 'Shubhali' tegli foydalanuvchilar</option>
+            <option value="premium">Faqat PRO (Obunachi) foydalanuvchilar</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-bold text-text-secondary mb-1">Ogohlantirish darajasi (Level)</label>
+          <select
+            value={bAlertLevel}
+            onChange={e => setBAlertLevel(e.target.value)}
+            className="input-select w-full text-xs py-2 px-3 rounded-xl"
+          >
+            <option value="info">ℹ️ Axborot (Info - Moviy)</option>
+            <option value="warning">⚠️ Ogohlantirish (Warning - Sariq)</option>
+            <option value="critical">🚨 Kritik / Taqiq (Critical - Qizil)</option>
+            <option value="success">🎉 Tabrik / Yangilik (Success - Yashil)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-bold text-text-secondary mb-1">Sarlavha</label>
+          <input
+            type="text"
+            value={bAlertTitle}
+            onChange={e => setBAlertTitle(e.target.value)}
+            placeholder="Masalan: Olimpiada qoidalariga rioya qiling!"
+            className="input-text w-full py-2 px-3 text-xs rounded-xl"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-bold text-text-secondary mb-1">Xabar matni</label>
+          <textarea
+            value={bAlertMessage}
+            onChange={e => setBAlertMessage(e.target.value)}
+            placeholder="Foydalanuvchiga ko'rsatiladigan batafsil matn..."
+            rows={4}
+            className="input-text w-full py-2 px-3 text-xs rounded-xl"
+            required
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-edge">
+          <button
+            type="button"
+            onClick={() => setShowBroadcastAlertModal(false)}
+            disabled={bAlertBusy}
+            className="btn-ghost px-4 py-2 text-xs font-bold rounded-xl"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="submit"
+            disabled={bAlertBusy}
+            className="btn-primary px-4 py-2 text-xs font-bold rounded-xl"
+          >
+            {bAlertBusy ? "Yuborilmoqda..." : "Yuborish"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+
   return (
     <div className="h-screen overflow-hidden admin-bg text-text-primary">
       {mobileMenu && <div className="fixed inset-0 z-40 bg-ground/80 lg:hidden" onClick={() => setMobileMenu(false)} />}
@@ -11887,6 +12852,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         studentName={liveProctorSession?.studentName}
         olympiadTitle={liveProctorSession?.olympiadTitle}
       />
+      {renderPassportModal()}
+      {renderBroadcastAlertModal()}
       <ToastHost />
     </div>
   );
