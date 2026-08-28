@@ -1058,6 +1058,13 @@ class AuditLog(models.Model):
         # hech narsa yozmasdi — ya'ni jurnalda ko'rinmaydigan yagona tahrir
         # yo'li shu edi. Qaysi maydonlar o'zgargani `extra.changed_fields` da.
         ('admin_django_admin_user_edit', "Django admin orqali profil tahrirlandi"),
+        # Avtomatik moderatsiya (anti-cheat) qoidalari YOZUVI va qoidalar
+        # bo'yicha qo'lda ishga tushirilgan tekshiruv. Ikkalasi ham avval
+        # jurnalga tushmasdi (qoidalar o'zgarishi "maxfiy ma'lumot ko'rildi"
+        # deb yozilardi, sweep esa umuman yozilmasdi) — holbuki chegaralarni
+        # bo'shatish va ommaviy teg qo'yish hisoblarga tegadigan amal.
+        ('admin_auto_moderation_rules_update', 'Avtomatik moderatsiya qoidalari o‘zgartirildi'),
+        ('admin_auto_moderation_run', 'Avtomatik moderatsiya tekshiruvi ishga tushirildi'),
         # Foydalanuvchining maxfiy ma'lumotlari (IP/qurilma/seans tafsilotlari)
         # admin tomonidan ochib ko'rilgani. O'qish amali bo'lgani uchun hech
         # narsani o'zgartirmaydi, lekin "kim kimning izini ko'rdi" savoliga

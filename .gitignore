@@ -62,6 +62,7 @@ index.html
 # ─── IDE / OS ─────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+.antigravitycli/
 *.swp
 *.swo
 .DS_Store

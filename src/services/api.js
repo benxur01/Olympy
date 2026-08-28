@@ -1721,7 +1721,18 @@ export const OlympyApi = {
     `/api/admin/users/${userId}/send-telegram/`,
     { method: 'POST', body: { message }, token },
   ),
-  bulkImportAdminUsers: (payload, token) => request('/api/admin/users/bulk-import/', { method: 'POST', body: payload, token }),
+  // Import Celery task'ida bajariladi: POST `{task_id}` (202) qaytaradi,
+  // natija (`created_count`, `created_users`, `errors`) status polling orqali
+  // keladi. Generatsiya qilingan parollar natijada BIR MARTA ko'rinadi.
+  bulkImportAdminUsers: async (payload, token) => pollAiTask(
+    await request('/api/admin/users/bulk-import/', { method: 'POST', body: payload, token }),
+    (taskId) => `/api/admin/users/bulk-import/${taskId}/status/`,
+    {
+      token,
+      failMessage: 'Importni yakunlab bo‘lmadi',
+      timeoutMessage: 'Import kutish vaqti tugadi (Timeout)',
+    },
+  ),
   getAdminCollusionDetection: (params = {}, token) => {
     const q = new URLSearchParams(params).toString();
     return request(`/api/admin/security/collusion/${q ? '?' + q : ''}`, { token });

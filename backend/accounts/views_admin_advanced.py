@@ -48,7 +48,6 @@ from accounts.security_queries import (
     get_multi_account_user_ids,
     risk_tier_from_score,
 )
-from accounts.utils import normalize_phone
 from attempts.models import TestAttempt, TestSession
 from billing.models import PaymentTransaction, UserSubscription
 from centers.models import CenterMembership, EducationCenter
@@ -269,6 +268,14 @@ def admin_ban_device(request):
     if not fingerprint_hash:
         return Response({'error': 'fingerprint_hash majburiy'}, status=status.HTTP_400_BAD_REQUEST)
 
+    if user_id not in (None, ''):
+        if not str(user_id).isdigit():
+            return Response({'error': 'user_id butun son bo‘lishi kerak'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        target_user = User.objects.filter(pk=user_id).first()
+    else:
+        target_user = None
+
     now = timezone.now()
     updated_count = DeviceFingerprint.objects.filter(fingerprint_hash=fingerprint_hash).update(
         is_banned=True,
@@ -278,7 +285,6 @@ def admin_ban_device(request):
 
     if updated_count == 0:
         # Yangi yozuv yaratamiz
-        target_user = User.objects.filter(pk=user_id).first() if user_id else None
         DeviceFingerprint.objects.create(
             user=target_user,
             fingerprint_hash=fingerprint_hash,
@@ -287,7 +293,6 @@ def admin_ban_device(request):
             banned_at=now,
         )
 
-    target_user = User.objects.filter(pk=user_id).first() if user_id else None
     AuditLog.log(
         request,
         'admin_device_ban',
@@ -707,9 +712,12 @@ def admin_user_transfer_center(request, user_id):
         return Response({'error': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
 
     new_center_id = request.data.get('center_id')
-    role = request.data.get('role') or 'student'
+    role = str(request.data.get('role') or 'student').strip()
     subject = (request.data.get('subject') or '').strip()
     action_type = request.data.get('action') or 'transfer'
+
+    if role not in dict(CenterMembership.ROLE_CHOICES):
+        return Response({'error': 'Noto‘g‘ri rol tanlandi'}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
         if action_type == 'remove':
@@ -960,7 +968,16 @@ def admin_delete_flash_alert(request, alert_id):
     except UserFlashAlert.DoesNotExist:
         return Response({'error': 'Xabar topilmadi'}, status=status.HTTP_404_NOT_FOUND)
 
+    alert_user, alert_title, alert_type = alert.user, alert.title, alert.alert_type
     alert.delete()
+
+    AuditLog.log(
+        request,
+        'admin_flash_alert',
+        target=alert_user,
+        extra={'action': 'delete', 'alert_id': alert_id, 'title': alert_title, 'alert_type': alert_type},
+    )
+
     return Response({'ok': True, 'message': 'Xabar o‘chirildi.'})
 
 
@@ -1040,7 +1057,19 @@ def admin_user_send_telegram(request, user_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsPlatformAdmin])
 def admin_bulk_import_users(request):
-    """Foydalanuvchilarni ommaviy import qilish (CSV matn yoki JSON array)."""
+    """Foydalanuvchilarni ommaviy import qilish (CSV matn yoki JSON array).
+
+    Faqat validatsiya va navbatga qo'yish shu yerda: qatorlarni yaratish
+    `accounts.bulk_import_users` task'ida bajariladi (ommaviy premium bilan
+    bir xil sabab — parol hashlash va qator-ma-qator INSERT so'rov thread'ini
+    bloklardi). Javob: `{'task_id': ...}` (202), natija esa
+    `bulk-import/<task_id>/status/` polling orqali olinadi.
+    """
+    from questions.ai_task_status import start_ai_task
+
+    from accounts.tasks import BULK_IMPORT_TASK_PREFIX, bulk_import_users_task
+    from accounts.views import BULK_ACTION_MAX_USERS
+
     users_data = request.data.get('users')
     csv_text = request.data.get('csv_text')
 
@@ -1055,71 +1084,46 @@ def admin_bulk_import_users(request):
     if not items_to_import:
         return Response({'error': 'Import qilish uchun foydalanuvchilar ma‘lumoti topilmadi'}, status=status.HTTP_400_BAD_REQUEST)
 
-    created_users = []
-    errors = []
+    if len(items_to_import) > BULK_ACTION_MAX_USERS:
+        return Response(
+            {'error': f"Bir vaqtda {BULK_ACTION_MAX_USERS} tadan ko‘p qatorni import qilib bo‘lmaydi"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    for idx, item in enumerate(items_to_import):
-        full_name = str(item.get('full_name') or item.get('name') or '').strip()
-        phone = str(item.get('phone') or '').strip()
-        role = str(item.get('role') or 'student').strip().lower()
-        password = str(item.get('password') or 'Olympy2025!').strip()
-        center_id = item.get('center_id')
+    task_id = start_ai_task(BULK_IMPORT_TASK_PREFIX, request.user.id)
+    try:
+        bulk_import_users_task.delay(task_id, items_to_import)
+    except Exception:
+        logger.exception('bulk_import_users enqueue failed')
+        return Response(
+            {'error': "Importni navbatga qo‘yib bo‘lmadi — biroz kutib qayta urinib ko‘ring."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
-        norm_phone = normalize_phone(phone)
-        if not norm_phone:
-            errors.append(f"Qator {idx+1}: Telefon raqam noto‘g‘ri ({phone})")
-            continue
-
-        if not full_name:
-            errors.append(f"Qator {idx+1}: Ism-familiya bo‘sh")
-            continue
-
-        if User.objects.filter(normalized_phone=norm_phone).exists():
-            errors.append(f"Qator {idx+1}: Bu telefon raqam avval ro‘yxatdan o‘tgan ({norm_phone})")
-            continue
-
-        try:
-            with transaction.atomic():
-                roles_list = [role] if role in ['student', 'teacher', 'manager', 'owner'] else ['student']
-                new_user = User.objects.create_user(
-                    phone=norm_phone,
-                    password=password,
-                    full_name=full_name,
-                    roles=roles_list,
-                )
-
-                if center_id:
-                    center = EducationCenter.objects.filter(pk=center_id).first()
-                    if center:
-                        CenterMembership.objects.create(
-                            user=new_user,
-                            center=center,
-                            role=role,
-                            status=CenterMembership.STATUS_APPROVED,
-                        )
-
-                created_users.append({
-                    'id': new_user.id,
-                    'full_name': new_user.full_name,
-                    'phone': new_user.phone,
-                    'roles': new_user.roles,
-                })
-        except Exception as e:
-            errors.append(f"Qator {idx+1} ({full_name}): Xatolik - {str(e)}")
-
+    # Natija (nechta yaratildi) task ichida bo'lgani uchun jurnalga faqat
+    # navbatga qo'yilgan qatorlar soni tushadi — ommaviy premium bilan bir xil.
     AuditLog.log(
         request,
         'admin_bulk_import_users',
-        extra={'created_count': len(created_users), 'errors_count': len(errors)},
+        extra={'rows': len(items_to_import)},
     )
 
-    return Response({
-        'ok': True,
-        'created_count': len(created_users),
-        'errors_count': len(errors),
-        'created_users': created_users,
-        'errors': errors,
-    })
+    return Response({'task_id': task_id, 'rows': len(items_to_import)},
+                    status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsPlatformAdmin])
+def admin_bulk_import_users_status(request, task_id):
+    """GET /api/admin/users/bulk-import/<task_id>/status/ — import holati."""
+    from questions.ai_task_status import ai_task_status_response
+
+    from accounts.tasks import BULK_IMPORT_TASK_PREFIX
+
+    return ai_task_status_response(
+        BULK_IMPORT_TASK_PREFIX, task_id, request.user,
+        failed_detail="Importni yakunlab bo'lmadi",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1494,10 +1498,22 @@ def admin_realtime_presence(request):
     )
 
     user_ids = [u.id for u in recent_users]
-    recent_logins = {}
-    for ev in LoginEvent.objects.filter(user_id__in=user_ids).order_by('-created_at'):
-        if ev.user_id not in recent_logins:
-            recent_logins[ev.user_id] = ev
+    # Har bir foydalanuvchining FAQAT oxirgi kirish yozuvi (IP va qurilma satri
+    # kerak, shu sababli agregat emas — korrelyatsiyalangan subquery). Avval bu
+    # yerda butun `LoginEvent` tarixi Python'ga yuklanardi.
+    latest_login_pk = (
+        LoginEvent.objects
+        .filter(user_id=models.OuterRef('user_id'))
+        .order_by('-created_at')
+        .values('pk')[:1]
+    )
+    recent_logins = {
+        ev.user_id: ev
+        for ev in LoginEvent.objects.filter(
+            user_id__in=user_ids,
+            pk=models.Subquery(latest_login_pk),
+        )
+    }
 
     presence_list = []
     for u in recent_users:
@@ -1605,7 +1621,7 @@ def admin_auto_moderation_rules(request):
                         pass
 
         cache.set('olympy_auto_moderation_rules', rules, timeout=86400 * 30)
-        AuditLog.log(request, 'admin_sensitive_data_view', extra={'rules_updated': rules})
+        AuditLog.log(request, 'admin_auto_moderation_rules_update', extra={'rules_updated': rules})
         return Response({'ok': True, 'message': 'Avtomatik moderatsiya qoidalari saqlandi.', 'rules': rules})
 
     return Response({'ok': True, 'rules': rules})
@@ -1617,6 +1633,7 @@ def admin_auto_moderation_run_check(request):
     """Avtomatik moderatsiya qoidalarini ayni paytda tekshiruvdan o'tkazish (Scan & Sweep)."""
     from django.core.cache import cache
     from accounts.security_queries import get_ip_account_ids, get_shared_ip_accounts
+    from accounts.views import AUDIT_BULK_ID_LIMIT
 
     rules = cache.get('olympy_auto_moderation_rules') or {
         'auto_flag_speedrun': True,
@@ -1628,6 +1645,7 @@ def admin_auto_moderation_run_check(request):
     }
 
     actions_taken = []
+    tagged_user_ids = []
     now = timezone.now()
     since = now - timedelta(days=7)
 
@@ -1642,6 +1660,7 @@ def admin_auto_moderation_run_check(request):
                     tags.append('Shubhali')
                     u.admin_tags = tags
                     u.save(update_fields=['admin_tags'])
+                    tagged_user_ids.append(u.id)
                     actions_taken.append(f"{u.full_name} ({u.phone}) ga 'Shubhali' tegi berildi (IP: {row['ip_address']})")
 
     # 2. Tag speedrun attempts
@@ -1661,7 +1680,13 @@ def admin_auto_moderation_run_check(request):
                     tags.append('Speedrunner')
                     att.user.admin_tags = tags
                     att.user.save(update_fields=['admin_tags'])
+                    tagged_user_ids.append(att.user_id)
                     actions_taken.append(f"{att.user.full_name} ga 'Speedrunner' tegi biriktirildi ({att.olympiad.title})")
+
+    AuditLog.log(request, 'admin_auto_moderation_run', extra={
+        'actions_count': len(actions_taken),
+        'user_ids': tagged_user_ids[:AUDIT_BULK_ID_LIMIT],
+    })
 
     return Response({
         'ok': True,
