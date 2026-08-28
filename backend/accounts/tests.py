@@ -2141,6 +2141,26 @@ class GoogleAuthTestCase(APITestCase):
         self.assertNotIn('student', user.roles)
 
     @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_without_role_does_not_change_roles(self, mock_get_key):
+        """Rolsiz so'rov — bu KIRISH, ro'yxatdan o'tish emas.
+
+        Login sahifasi rol yubormaydi. Avval `role` bo'lmaganda 'student'
+        deb hisoblanardi va Google orqali tashkilot sifatida ro'yxatdan
+        o'tgan direktor keyin umuman kira olmasdi: student/owner istisnosi
+        har kirishda 400 qaytarardi.
+        """
+        sub = '900100204'
+        token = self._mock_token(mock_get_key, sub=sub, email='director@gmail.com', name='Director')
+        url = reverse('google-login')
+        first = self.client.post(url, {'id_token': token, 'role': 'owner'}, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        user = User.objects.get(phone=self._google_phone(sub))
+        self.assertEqual(user.roles, ['owner'])
+
+    @patch(GOOGLE_JWKS_PATCH)
     def test_google_login_student_relogin_as_student_allowed(self, mock_get_key):
         """O'quvchi qayta o'quvchi sifatida kirishi cheklanmaydi (200)."""
         sub = '900100202'
