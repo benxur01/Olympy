@@ -7390,6 +7390,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   Xatolar: {bulkImportResults.errors.join('; ')}
                 </div>
               )}
+              {/* Parol ko'rsatilmagan qatorlarga har biriga ALOHIDA tasodifiy
+                  parol generatsiya qilinadi va u faqat shu yerda, bir marta
+                  ko'rinadi — nusxa olib foydalanuvchiga yetkazing. */}
+              {bulkImportResults.created_users?.some(u => u.generated_password) && (
+                <div className="pt-1 space-y-0.5">
+                  <div className="font-bold text-warning text-[11px]">
+                    Generatsiya qilingan parollar (faqat hozir ko'rinadi):
+                  </div>
+                  {bulkImportResults.created_users.filter(u => u.generated_password).map(u => (
+                    <div key={u.id} className="font-mono text-[11px] text-text-secondary">
+                      {u.phone} — {u.generated_password}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

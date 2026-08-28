@@ -268,6 +268,11 @@ urlpatterns = [
     path('admin/flash-alerts/<int:alert_id>/', views_admin_advanced.admin_delete_flash_alert, name='admin-delete-flash-alert'),
     path('admin/users/<int:user_id>/send-telegram/', views_admin_advanced.admin_user_send_telegram, name='admin-user-send-telegram'),
     path('admin/users/bulk-import/', views_admin_advanced.admin_bulk_import_users, name='admin-bulk-import-users'),
+    path(
+        'admin/users/bulk-import/<str:task_id>/status/',
+        views_admin_advanced.admin_bulk_import_users_status,
+        name='admin-bulk-import-users-status',
+    ),
     path('admin/security/collusion/', views_admin_advanced.admin_collusion_detection, name='admin-collusion-detection'),
     path('admin/security/anomalies/', views_admin_advanced.admin_anomalies_detection, name='admin-anomalies-detection'),
     path('admin/users/<int:user_id>/passport/', views_admin_advanced.admin_user_passport, name='admin-user-passport'),

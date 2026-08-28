@@ -732,6 +732,111 @@ def bulk_revoke_premium_students():
     return {'count': count}
 
 
+# ─── Ommaviy foydalanuvchi importi ─────────────────────────────────────────
+#
+# Premium task'lari bilan bir xil sabab: har qator alohida INSERT (+ markaz
+# a'zoligi) va parol hashlash (PBKDF2 — ataylab sekin) talab qiladi, ya'ni
+# 200 qatorlik CSV gunicorn thread'ini o'nlab soniyaga ushlab turardi. Farqi
+# shundaki bu yerda admin NATIJANI (jumladan generatsiya qilingan parollar)
+# ko'rishi shart, shu sababli premium'dagi "navbatga qo'ydik va tamom"
+# javobi yetarli emas — AI task'lari naqshi: `task_id` + status polling.
+BULK_IMPORT_TASK_PREFIX = 'bulk_import_users'
+
+
+@shared_task(name='accounts.bulk_import_users')
+def bulk_import_users_task(task_id, items):
+    """CSV/JSON qatorlaridan foydalanuvchi yaratadi (`admin_bulk_import_users`).
+
+    Har qator ALOHIDA tranzaksiyada: bitta yaroqsiz qator butun importni
+    qaytarib yubormasin. Parol berilmagan qatorga har safar YANGI tasodifiy
+    parol generatsiya qilinadi (`_make_recovery_password`) va faqat natija
+    konvertida (15 daqiqalik kesh, egasi — importni boshlagan admin) bir marta
+    qaytariladi; jurnalga ham, server loglariga ham tushmaydi.
+    """
+    from centers.models import CenterMembership, EducationCenter
+    from questions.ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    from .models import User
+    from .utils import normalize_phone
+    from .views import _make_recovery_password
+
+    logger = logging.getLogger(__name__)
+    try:
+        created_users = []
+        errors = []
+
+        for idx, item in enumerate(items):
+            full_name = str(item.get('full_name') or item.get('name') or '').strip()
+            phone = str(item.get('phone') or '').strip()
+            role = str(item.get('role') or 'student').strip().lower()
+            given_password = str(item.get('password') or '').strip()
+            center_id = item.get('center_id')
+
+            norm_phone = normalize_phone(phone)
+            if not norm_phone:
+                errors.append(f"Qator {idx+1}: Telefon raqam noto‘g‘ri ({phone})")
+                continue
+
+            if not full_name:
+                errors.append(f"Qator {idx+1}: Ism-familiya bo‘sh")
+                continue
+
+            if User.objects.filter(normalized_phone=norm_phone).exists():
+                errors.append(f"Qator {idx+1}: Bu telefon raqam avval ro‘yxatdan o‘tgan ({norm_phone})")
+                continue
+
+            password = given_password or _make_recovery_password()
+            try:
+                with transaction.atomic():
+                    roles_list = [role] if role in ['student', 'teacher', 'manager', 'owner'] else ['student']
+                    new_user = User.objects.create_user(
+                        phone=norm_phone,
+                        password=password,
+                        full_name=full_name,
+                        roles=roles_list,
+                    )
+
+                    if center_id:
+                        center = EducationCenter.objects.filter(pk=center_id).first()
+                        if center:
+                            CenterMembership.objects.create(
+                                user=new_user,
+                                center=center,
+                                role=roles_list[0],
+                                status=CenterMembership.STATUS_APPROVED,
+                            )
+
+                    created_users.append({
+                        'id': new_user.id,
+                        'full_name': new_user.full_name,
+                        'phone': new_user.phone,
+                        'roles': new_user.roles,
+                        # Admin qatorda parol bergan bo'lsa qaytarmaymiz — u
+                        # allaqachon biladi. Generatsiya qilingani esa BOSHQA
+                        # hech qayerda o'qib bo'lmaydi.
+                        'generated_password': None if given_password else password,
+                    })
+            except Exception as exc:
+                errors.append(f"Qator {idx+1} ({full_name}): Xatolik - {exc}")
+
+        logger.info(
+            'bulk_import_users: %s created, %s errors (task=%s)',
+            len(created_users), len(errors), task_id,
+        )
+        set_ai_task_result(BULK_IMPORT_TASK_PREFIX, task_id, {
+            'created_count': len(created_users),
+            'errors_count': len(errors),
+            'created_users': created_users,
+            'errors': errors,
+        })
+    except Exception as exc:
+        logger.exception('Ommaviy import task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            BULK_IMPORT_TASK_PREFIX, task_id,
+            str(exc) or "Importni yakunlab bo'lmadi",
+        )
+
+
 # ─── Sekin AI (Gemini) endpointlari — Celery task'lari ──────────────────────
 #
 # Quyidagi uchta task avval mos view'lar ichida SINXRON bajarilardi: har biri

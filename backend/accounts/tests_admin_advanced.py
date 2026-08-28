@@ -223,6 +223,26 @@ class AdminAdvancedUserControlTestCase(APITestCase):
             CenterMembership.objects.filter(user=self.student).exists()
         )
 
+    def test_center_transfer_rejects_unknown_role(self):
+        """`role` faqat `CenterMembership.ROLE_CHOICES` dan bo'lishi mumkin."""
+        resp = self.client.post(
+            f'/api/admin/users/{self.student.id}/transfer-center/',
+            {'center_id': self.center.id, 'role': 'admin', 'action': 'transfer'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(CenterMembership.objects.filter(user=self.student).exists())
+
+    def test_ban_device_rejects_non_numeric_user_id(self):
+        """Son bo'lmagan `user_id` 500 emas, toza 400 berishi kerak."""
+        resp = self.client.post(
+            '/api/admin/security/devices/ban/',
+            {'fingerprint_hash': 'hash123456789', 'user_id': 'abc'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(DeviceFingerprint.objects.filter(fingerprint_hash='hash123456789').exists())
+
     def test_custom_quota_and_discount(self):
         """Maxsus AI kvota va chegirma belgilash."""
         resp = self.client.post(
@@ -302,7 +322,7 @@ class AdminAdvancedUserControlTestCase(APITestCase):
         self.assertIsNone(resp_my2.data['alert'])
 
     def test_bulk_user_import(self):
-        """Ommaviy foydalanuvchilar import qilish."""
+        """Ommaviy import: view navbatga qo'yadi, natija status orqali keladi."""
         payload = {
             'users': [
                 {
@@ -319,10 +339,68 @@ class AdminAdvancedUserControlTestCase(APITestCase):
             ]
         }
         resp = self.client.post('/api/admin/users/bulk-import/', payload, format='json')
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp.data['created_count'], 2)
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        # Test muhitida broker yo'q (CELERY_TASK_ALWAYS_EAGER) — task darhol
+        # bajariladi, natija esa polling endpointida tayyor turadi.
+        result = self.client.get(f"/api/admin/users/bulk-import/{resp.data['task_id']}/status/")
+        self.assertEqual(result.status_code, status.HTTP_200_OK)
+        self.assertEqual(result.data['status'], 'COMPLETED')
+        self.assertEqual(result.data['created_count'], 2)
         self.assertTrue(User.objects.filter(normalized_phone='+998903333333').exists())
         self.assertTrue(User.objects.filter(normalized_phone='+998904444444').exists())
+
+    def test_bulk_user_import_generates_unique_passwords(self):
+        """Parol berilmagan qatorga har safar YANGI tasodifiy parol beriladi.
+
+        Avval hamma qator bitta hardcoded parol (`Olympy2025!`) bilan
+        yaratilardi — bitta ma'lum satr butun importni ochib berardi.
+        """
+        payload = {'users': [
+            {'full_name': 'Birinchi', 'phone': '+998903333333'},
+            {'full_name': 'Ikkinchi', 'phone': '+998904444444'},
+        ]}
+        resp = self.client.post('/api/admin/users/bulk-import/', payload, format='json')
+        result = self.client.get(f"/api/admin/users/bulk-import/{resp.data['task_id']}/status/")
+        passwords = [u['generated_password'] for u in result.data['created_users']]
+        self.assertEqual(len(set(passwords)), 2)
+        self.assertNotIn('Olympy2025!', passwords)
+        for phone, password in zip(['+998903333333', '+998904444444'], passwords):
+            self.assertTrue(User.objects.get(normalized_phone=phone).check_password(password))
+
+    def test_bulk_user_import_rejects_too_many_rows(self):
+        """Qatorlar soni chegarasi (`BULK_ACTION_MAX_USERS`) 400 beradi."""
+        payload = {'users': [
+            {'full_name': f'User {i}', 'phone': f'+9989{i:08d}'}
+            for i in range(201)
+        ]}
+        resp = self.client.post('/api/admin/users/bulk-import/', payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(User.objects.count(), 2)
+
+    def test_non_admin_is_403(self):
+        """Admin bo'lmagan hisob kengaytirilgan endpointlarga kira olmaydi."""
+        self.client.force_authenticate(user=self.student)
+        self.assertEqual(
+            self.client.get(f'/api/admin/users/{self.student.id}/passport/').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.get('/api/admin/security/collusion/').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post('/api/admin/users/bulk-import/', {'users': [
+                {'full_name': 'Yovuz', 'phone': '+998905555555'},
+            ]}, format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post('/api/admin/security/devices/ban/', {
+                'fingerprint_hash': 'a' * 32,
+            }, format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertFalse(User.objects.filter(normalized_phone='+998905555555').exists())
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -631,6 +709,23 @@ class AdminBulkStudentPremiumTestCase(APITestCase):
         self.assertEqual(kill_resp.status_code, status.HTTP_200_OK)
         self.student_a.refresh_from_db()
         self.assertEqual(self.student_a.token_version, prev_token_version + 1)
+
+    def test_presence_shows_only_latest_login_event(self):
+        """Presence FAQAT oxirgi kirish yozuvini oladi.
+
+        Avval butun `LoginEvent` tarixi Python'ga yuklanib, eng yangisi
+        tsiklda tanlanardi — hisob nechta marta kirgan bo'lsa shuncha qator.
+        """
+        self.student_a.last_seen_at = timezone.now()
+        self.student_a.save(update_fields=['last_seen_at'])
+        LoginEvent.objects.create(user=self.student_a, ip_address='10.0.0.1', user_agent='Eski')
+        LoginEvent.objects.create(user=self.student_a, ip_address='10.0.0.2', user_agent='Yangi')
+
+        resp = self.client.get('/api/admin/presence/live/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        row = next(r for r in resp.data['results'] if r['user_id'] == self.student_a.id)
+        self.assertEqual(row['ip_address'], '10.0.0.2')
+        self.assertEqual(row['user_agent'], 'Yangi')
 
     def test_auto_moderation_rules_and_broadcast_flash_alert(self):
         """Auto moderation rules and broadcast flash alert."""
