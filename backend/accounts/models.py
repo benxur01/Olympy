@@ -1050,8 +1050,10 @@ class AuditLog(models.Model):
         # "Barcha o'quvchilarga premium" / "premiumni olib tashlash" — id
         # ro'yxatiga emas, `student` roliga qo'llanadigan ommaviy amal. Har bir
         # o'quvchiga alohida yozuv qoldirish jurnalni bosib ketardi, shu sababli
-        # BITTA xulosa yoziladi: `extra.mode` (grant/revoke), `extra.count` —
-        # haqiqiy son, `extra.user_ids` — kesilgan ro'yxat.
+        # BITTA xulosa yoziladi: `extra.mode` (grant/revoke),
+        # `extra.count_at_request_time` — so'rov paytidagi taxminiy son
+        # (amal Celery worker'ida keyinroq bajariladi), `extra.user_ids` —
+        # kesilgan ro'yxat.
         ('admin_bulk_premium_students', "O'quvchilarga ommaviy premium qo'llanildi"),
         # Django admin (`/olympy-mgmt-2025/`) orqali qilingan profil tahriri.
         # API'dagi admin amallari har biri o'z kodiga ega, Django admin esa

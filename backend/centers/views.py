@@ -150,6 +150,23 @@ def centers_list_create(request):
             return paginator.get_paginated_response(serializer.data)
         return Response(EducationCenterSerializer(queryset, many=True, context={'request': request}).data)
 
+    # Takroriy ariza himoyasi: `POST /api/centers/` Google orqali tashkilot
+    # ro'yxatining ikkinchi qadami — sahifa yangilansa yoki tugma qayta
+    # bosilsa u ikkinchi marta yuborilishi mumkin edi va bitta egaga ikkita
+    # "kutilmoqda" ariza + ikkita owner a'zoligi yaratilardi.
+    #
+    # Faqat KUTILAYOTGAN ariza to'sadi: tasdiqlangan markaz egasi ikkinchi
+    # tashkilot ochishi mumkin (OwnerDashboard'dagi "Yangi tashkilot" oqimi),
+    # lekin bir vaqtning o'zida faqat bitta ariza navbatda turadi.
+    if EducationCenter.objects.filter(
+        owner=request.user,
+        status=EducationCenter.STATUS_PENDING,
+    ).exists():
+        return Response(
+            {'detail': "Sizda tasdiq kutayotgan tashkilot arizasi allaqachon bor. Avvalgi ariza ko'rib chiqilishini kuting."},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
     serializer = CenterRegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     with transaction.atomic():

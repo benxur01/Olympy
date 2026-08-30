@@ -1008,6 +1008,14 @@ const mapBackendUser = (user) => {
   const roles = {};
   const backendRoles = Array.isArray(user?.roles) ? user.roles : [];
   backendRoles.forEach(role => {
+    // Markazsiz "approved" faqat o'quvchi uchun (backend'dagi
+    // UserSerializer.get_roles_detail bilan bir xil qoida). owner/manager/
+    // teacher rollari HAR DOIM CenterMembership orqali beriladi — masalan
+    // Google tashkilot ro'yxatining ikkinchi qadami bajarilmay qolsa,
+    // `roles: ['owner']` a'zoliksiz qolib ketadi. Uni shu yerda "approved"
+    // qilib qo'yish foydalanuvchini soxta "tasdiq kutilmoqda" direktor
+    // ekraniga olib borardi; roles_detail'dan kelgan haqiqiy status kutiladi.
+    if (role !== 'student') return;
     roles[role] = { status: 'approved', centerId: null, centerName: '', subject: '' };
   });
   if (detail) {

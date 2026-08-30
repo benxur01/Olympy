@@ -192,12 +192,20 @@ class UserSerializer(serializers.ModelSerializer):
                 ),
                 reverse=True,
             )
-        # Centerless approved roles (e.g. a student who registered without
-        # picking a center) are tracked in user.roles but have no
-        # CenterMembership row. Surface them explicitly so the frontend
-        # treats the user as approved instead of "no role".
+        # Centerless approved roles: FAQAT 'student' uchun. O'quvchi markaz
+        # tanlamasdan ro'yxatdan o'tishi mumkin — u holda `user.roles` da
+        # 'student' bor, lekin CenterMembership yo'q, shuning uchun uni
+        # "approved" deb ko'rsatamiz.
+        #
+        # owner/manager/teacher uchun bu QILINMAYDI: bu rollar har doim
+        # CenterMembership orqali beriladi. Masalan Google orqali tashkilot
+        # ro'yxatidan o'tishda `google_login` darhol roles=['owner'] yozadi,
+        # keyingi `POST /api/centers/` esa bajarilmasligi mumkin (tarmoq
+        # uzilishi, yopilgan oyna) — a'zoliksiz 'owner' ni 'approved' deb
+        # qaytarish foydalanuvchini "tasdiq kutilmoqda" degan soxta direktor
+        # ekraniga olib borardi. A'zolik yo'q ekan — rol umuman qaytarilmaydi.
         for role in (obj.roles or []):
-            if role not in roles_detail:
+            if role == 'student' and role not in roles_detail:
                 roles_detail[role] = {
                     'status': 'approved',
                     'centerId': None,
