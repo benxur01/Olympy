@@ -1564,12 +1564,16 @@ def admin_kill_all_sessions(request, user_id):
     user.token_version += 1
     user.save(update_fields=['token_version'])
 
+    # Sabab `cheating_reason` ga YOZILMAYDI: u dashboardlarda qizil
+    # "qoidabuzarlik" belgisi sifatida chiqadi va bu majburiy chiqarish
+    # qoidabuzarlik emas. Neytral `removal_reason` ustuni aynan shu maqsad
+    # uchun mavjud.
     terminated_sessions = TestSession.objects.filter(
         user=user,
         status__in=[TestSession.STATUS_ACTIVE, TestSession.STATUS_PENDING_REVIEW],
     ).update(
         status=TestSession.STATUS_COMPLETED,
-        cheating_reason="Admin tomonidan barcha seanslar majburiy yakunlandi",
+        removal_reason="Admin tomonidan barcha seanslar majburiy yakunlandi",
     )
 
     AuditLog.log(
@@ -1600,8 +1604,6 @@ def admin_auto_moderation_rules(request):
         'speedrun_seconds_threshold': 3.0,
         'auto_flag_score_jump': True,
         'score_jump_delta_threshold': 45,
-        'auto_flag_tab_switches': True,
-        'tab_switch_limit': 5,
         'auto_tag_shared_ip': True,
         'shared_ip_account_limit': 5,
     }
@@ -1631,6 +1633,8 @@ def admin_auto_moderation_rules(request):
 @permission_classes([IsAuthenticated, IsPlatformAdmin])
 def admin_auto_moderation_run_check(request):
     """Avtomatik moderatsiya qoidalarini ayni paytda tekshiruvdan o'tkazish (Scan & Sweep)."""
+    from collections import defaultdict
+
     from django.core.cache import cache
     from accounts.security_queries import get_ip_account_ids, get_shared_ip_accounts
     from accounts.views import AUDIT_BULK_ID_LIMIT
@@ -1682,6 +1686,49 @@ def admin_auto_moderation_run_check(request):
                     att.user.save(update_fields=['admin_tags'])
                     tagged_user_ids.append(att.user_id)
                     actions_taken.append(f"{att.user.full_name} ga 'Speedrunner' tegi biriktirildi ({att.olympiad.title})")
+
+    # 3. Tag score-jump attempts — `admin_anomalies_detection` dagi bilan bir xil
+    # mezon (oldingi kamida 2 ta urinish o'rtachasi 45% dan past bo'lib, keskin
+    # sakrash), farqi: delta chegarasi qoidalardan olinadi.
+    if rules.get('auto_flag_score_jump'):
+        jump_thresh = rules.get('score_jump_delta_threshold', 45)
+        high_attempts = list(
+            TestAttempt.objects.filter(
+                submitted_at__gte=since,
+                score__gte=85,
+                disqualified=False,
+            ).select_related('user', 'olympiad').order_by('-submitted_at')[:50]
+        )
+        history = defaultdict(list)
+        if high_attempts:
+            for row in TestAttempt.objects.filter(
+                user_id__in={att.user_id for att in high_attempts},
+                disqualified=False,
+            ).values('id', 'user_id', 'score', 'submitted_at'):
+                history[row['user_id']].append(row)
+
+        for att in high_attempts:
+            past_scores = [
+                h['score']
+                for h in history[att.user_id]
+                if h['id'] != att.id and h['submitted_at'] and att.submitted_at and h['submitted_at'] < att.submitted_at
+            ]
+            if len(past_scores) < 2:
+                continue
+            avg_past = sum(past_scores) / len(past_scores)
+            jump = att.score - avg_past
+            if avg_past >= 45 or jump < jump_thresh:
+                continue
+            tags = list(att.user.admin_tags or [])
+            if 'Score Jump' not in tags:
+                tags.append('Score Jump')
+                att.user.admin_tags = tags
+                att.user.save(update_fields=['admin_tags'])
+                tagged_user_ids.append(att.user_id)
+                actions_taken.append(
+                    f"{att.user.full_name} ga 'Score Jump' tegi biriktirildi "
+                    f"(o'rtacha {round(avg_past, 1)}% → {att.score}%, {att.olympiad.title})"
+                )
 
     AuditLog.log(request, 'admin_auto_moderation_run', extra={
         'actions_count': len(actions_taken),

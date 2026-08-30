@@ -2929,9 +2929,12 @@ def admin_bulk_grant_premium_students(request):
         return Response({'detail': BULK_PREMIUM_QUEUE_ERROR},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+    # `count_at_request_time` — YAKUNIY son emas: haqiqiy qo'llash Celery
+    # worker'ida keyinroq bajariladi va o'sha paytga qadar to'plam o'zgargan
+    # bo'lishi mumkin (yangi o'quvchi qo'shildi, hisob bloklandi va h.k.).
     AuditLog.log(request, 'admin_bulk_premium_students', extra={
         'mode': 'grant',
-        'count': len(target_ids),
+        'count_at_request_time': len(target_ids),
         'duration': duration,
         'plan_type': plan_type,
         'plan_name': plan_name,
@@ -2962,9 +2965,11 @@ def admin_bulk_revoke_premium_students(request):
         return Response({'detail': BULK_PREMIUM_QUEUE_ERROR},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+    # `count_at_request_time` — grant'dagi kabi taxminiy son (worker bajarish
+    # paytidagi haqiqiy sondan farq qilishi mumkin).
     AuditLog.log(request, 'admin_bulk_premium_students', extra={
         'mode': 'revoke',
-        'count': len(target_ids),
+        'count_at_request_time': len(target_ids),
         'user_ids': target_ids[:AUDIT_BULK_ID_LIMIT],
     })
     return Response({'queued': True, 'count': len(target_ids)})

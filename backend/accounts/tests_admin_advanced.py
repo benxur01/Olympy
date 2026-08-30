@@ -603,7 +603,7 @@ class AdminBulkStudentPremiumTestCase(APITestCase):
 
         log = AuditLog.objects.get(action='admin_bulk_premium_students')
         self.assertEqual(log.extra['mode'], 'grant')
-        self.assertEqual(log.extra['count'], 2)
+        self.assertEqual(log.extra['count_at_request_time'], 2)
         self.assertCountEqual(
             log.extra['user_ids'], [self.student_a.id, self.student_b.id],
         )
@@ -733,9 +733,9 @@ class AdminBulkStudentPremiumTestCase(APITestCase):
         self.assertEqual(rules_resp.status_code, status.HTTP_200_OK)
         self.assertIn('rules', rules_resp.data)
 
-        up_resp = self.client.post('/api/admin/security/rules/', {'tab_switch_limit': 10}, format='json')
+        up_resp = self.client.post('/api/admin/security/rules/', {'score_jump_delta_threshold': 30}, format='json')
         self.assertEqual(up_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(up_resp.data['rules']['tab_switch_limit'], 10)
+        self.assertEqual(up_resp.data['rules']['score_jump_delta_threshold'], 30)
 
         alert_resp = self.client.post('/api/admin/broadcast/flash-alert/', {
             'title': 'Diqqat qoida!',

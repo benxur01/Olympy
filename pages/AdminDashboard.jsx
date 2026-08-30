@@ -1750,6 +1750,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     [isApi, page, securitySection, presenceKey],
   );
 
+  // Presence paneli "hozir kim onlayn" ni ko'rsatadi — qo'lda "Yangilash"siz
+  // u bir necha daqiqada eskirib qoladi. "Hozir onlayn" kartasidagi bilan bir
+  // xil naqsh: 15 soniyalik interval, faqat tab ko'rinib turganda so'rov,
+  // bo'lim almashganda/unmount'da tozalanadi.
+  React.useEffect(() => {
+    if (!isApi || page !== 'security' || securitySection !== 'presence') return undefined;
+    const intervalId = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        setPresenceKey(k => k + 1);
+      }
+    }, 15000);
+    return () => clearInterval(intervalId);
+  }, [isApi, page, securitySection]);
+
   const [rulesKey, setRulesKey] = React.useState(0);
   const apiAutoRulesRes = useApiData(
     () => (isApi && page === 'security' && securitySection === 'auto-rules')
@@ -4582,7 +4596,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const handleRefundPayment = (txId) => {
-    if (!confirm('Haqiqatan ham bu to‘lovni bekor qilib, tegishli premium obunani to‘xtatmoqchimisiz?')) return;
+    if (!confirm(
+      'Bu amal to‘lov yozuvini bekor qiladi va foydalanuvchidan premium obunani olib tashlaydi.\n\n'
+      + 'DIQQAT: pul AVTOMATIK QAYTARILMAYDI. Click/Payme orqali haqiqiy pul qaytarishni provayder kabinetidan alohida rasmiylashtirishingiz kerak.\n\n'
+      + 'Davom etasizmi?'
+    )) return;
     OlympyApi.refundAdminPayment(txId, "Admin paneldan to'lov bekor qilindi", OlympyApi.getToken())
       .then(res => {
         showToast(res?.message || 'To‘lov bekor qilindi');
@@ -5325,9 +5343,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <button
                               type="button"
                               onClick={() => handleRefundPayment(tx.id)}
+                              title="Yozuvni bekor qiladi va premium kirishni olib tashlaydi. Pulni Click/Payme kabinetidan alohida qaytarasiz."
                               className="text-error hover:bg-error/10 px-2 py-0.5 rounded text-[10px] font-bold border border-error/30 transition"
                             >
-                              Refund
+                              Bekor qilish
                             </button>
                           )}
                         </div>
@@ -9821,8 +9840,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       speedrun_seconds_threshold: 3.0,
       auto_flag_score_jump: true,
       score_jump_delta_threshold: 45,
-      auto_flag_tab_switches: true,
-      tab_switch_limit: 5,
       auto_tag_shared_ip: true,
       shared_ip_account_limit: 5,
     };
@@ -9991,34 +10008,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 className="input-text w-20 py-1 px-2 text-xs rounded-lg text-center font-bold"
               />
               <span className="text-text-secondary">ta hisob</span>
-            </div>
-          </div>
-
-          {/* Rule 4: Tab Switches */}
-          <div className="rounded-2xl border border-edge bg-surface-1 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-text-primary">Tab almashtirish chegarasi (Tab Switch)</span>
-              <input
-                type="checkbox"
-                checked={!!localRules.auto_flag_tab_switches}
-                onChange={e => setLocalRules(r => ({ ...r, auto_flag_tab_switches: e.target.checked }))}
-                className="w-4 h-4 rounded text-accent cursor-pointer"
-              />
-            </div>
-            <p className="text-[11px] text-text-secondary">
-              Test davomida brauzer oynasidan chiqib ketishlar soni oshganda imtihonni ogohlantirish ro'yxatiga kiritish.
-            </p>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-text-secondary">Maksimal ruxsat:</span>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={localRules.tab_switch_limit ?? 5}
-                onChange={e => setLocalRules(r => ({ ...r, tab_switch_limit: parseInt(e.target.value, 10) || 5 }))}
-                className="input-text w-20 py-1 px-2 text-xs rounded-lg text-center font-bold"
-              />
-              <span className="text-text-secondary">marta</span>
             </div>
           </div>
         </div>

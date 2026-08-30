@@ -249,14 +249,17 @@ def send_center_approval_request_notification(admin, owner, center):
         f"Manzil: {_center_location(center)}\n"
         "Admin panelda tasdiqlash yoki rad etish kerak."
     )
+    title = "Yangi direktor arizasi"
     Notification.objects.create(
         user=admin,
         center=center,
         type=Notification.TYPE_CENTER_PENDING,
-        title="Yangi direktor arizasi",
+        title=title,
         message=message,
     )
-    logger.info('[telegram-mock] → %s : %s', mask_phone(admin.normalized_phone), message)
+    sent = _send_telegram_to_user(admin, message)
+    logger.info('[telegram] → %s sent=%s : %s', mask_phone(admin.normalized_phone), sent, message)
+    send_web_push_to_user(admin, title, message, url='/dashboard/admin', push_type='center_pending')
 
 
 def send_center_decision_notification(owner, center, approved):
