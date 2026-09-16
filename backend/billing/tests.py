@@ -796,6 +796,12 @@ class SubscriptionServiceTestCase(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIsNone(res.data)
 
+    def test_limits_endpoint_rejects_non_numeric_center_id(self):
+        """Son bo'lmagan `center_id` 500 emas, toza 400 berishi kerak."""
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.get('/api/billing/limits/?center_id=abc')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_limits_endpoint_forbidden_other_center(self):
         """Boshqa markaz limitlarini ko'rib bo'lmaydi (403)."""
         intruder = User.objects.create_user(

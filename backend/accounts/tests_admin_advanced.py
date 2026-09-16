@@ -223,6 +223,105 @@ class AdminAdvancedUserControlTestCase(APITestCase):
             CenterMembership.objects.filter(user=self.student).exists()
         )
 
+    def test_center_transfer_moves_fk_ownership(self):
+        """`owner` roliga o'tkazish EducationCenter.owner FK'sini ham ko'chiradi.
+
+        Vakolat manbai — FK (`user_can_manage_center`), a'zolik qatori emas.
+        """
+        resp = self.client.post(
+            f'/api/admin/users/{self.student.id}/transfer-center/',
+            {'center_id': self.center.id, 'role': 'owner', 'action': 'transfer'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.center.refresh_from_db()
+        self.assertEqual(self.center.owner_id, self.student.id)
+        self.assertEqual(
+            resp.data['owner_reassignments'][0]['new_owner_id'], self.student.id,
+        )
+
+    def test_center_transfer_clears_previous_owner_membership(self):
+        """Yangi egaga o'tgach eski eganing `owner` a'zoligi qolmaydi.
+
+        Avval FK ko'chirilardi, lekin eski eganing a'zolik qatori joyida
+        qolib, u a'zolik ro'yxatlarida hali ham ega bo'lib ko'rinardi.
+        """
+        previous_owner = User.objects.create_user(
+            phone='+998906666666', password='OwnerPass123!', full_name='Eski ega',
+        )
+        center = EducationCenter.objects.create(name='Egalik markazi', owner=previous_owner)
+        CenterMembership.objects.create(
+            user=previous_owner, center=center,
+            role=CenterMembership.ROLE_OWNER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+
+        resp = self.client.post(
+            f'/api/admin/users/{self.student.id}/transfer-center/',
+            {'center_id': center.id, 'role': 'owner', 'action': 'transfer'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        center.refresh_from_db()
+        self.assertEqual(center.owner_id, self.student.id)
+        self.assertFalse(
+            CenterMembership.objects.filter(
+                user=previous_owner, center=center,
+                role=CenterMembership.ROLE_OWNER,
+            ).exists()
+        )
+
+    def test_center_transfer_requires_new_owner_when_user_owns_center(self):
+        """Markaz egasini chiqarish yangi ega ko'rsatilmasa 400 beradi."""
+        owner = User.objects.create_user(
+            phone='+998903333333', password='OwnerPass123!', full_name='Markaz egasi',
+        )
+        center = EducationCenter.objects.create(name='Egalik markazi', owner=owner)
+
+        resp = self.client.post(
+            f'/api/admin/users/{owner.id}/transfer-center/',
+            {'action': 'remove'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn(center.id, resp.data['owned_center_ids'])
+        center.refresh_from_db()
+        self.assertEqual(center.owner_id, owner.id)
+
+    def test_center_transfer_reassigns_owner_and_unblocks_delete(self):
+        """Egalik yangi egaga o'tgach `admin_delete_user` 409 bermaydi."""
+        owner = User.objects.create_user(
+            phone='+998904444444', password='OwnerPass123!', full_name='Eski ega',
+        )
+        new_owner = User.objects.create_user(
+            phone='+998905555555', password='OwnerPass123!', full_name='Yangi ega',
+        )
+        center = EducationCenter.objects.create(name='Egalik markazi', owner=owner)
+
+        resp = self.client.post(
+            f'/api/admin/users/{owner.id}/transfer-center/',
+            {'action': 'remove', 'new_owner_id': new_owner.id},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        center.refresh_from_db()
+        self.assertEqual(center.owner_id, new_owner.id)
+        self.assertTrue(
+            CenterMembership.objects.filter(
+                user=new_owner, center=center,
+                role=CenterMembership.ROLE_OWNER,
+                status=CenterMembership.STATUS_APPROVED,
+            ).exists()
+        )
+        self.assertFalse(CenterMembership.objects.filter(user=owner).exists())
+        audit = AuditLog.objects.filter(action='admin_transfer_center').latest('created_at')
+        self.assertEqual(
+            audit.extra['owner_reassignments'][0]['new_owner_id'], new_owner.id,
+        )
+
+        delete_resp = self.client.post(f'/api/admin/users/{owner.id}/delete/')
+        self.assertEqual(delete_resp.status_code, status.HTTP_200_OK)
+
     def test_center_transfer_rejects_unknown_role(self):
         """`role` faqat `CenterMembership.ROLE_CHOICES` dan bo'lishi mumkin."""
         resp = self.client.post(
@@ -686,6 +785,52 @@ class AdminBulkStudentPremiumTestCase(APITestCase):
         speedrun = [r for r in resp.data['results'] if r['type'] == 'speedrun']
         self.assertTrue(len(speedrun) >= 1)
 
+    def test_score_jump_detector_and_sweep_agree(self):
+        """Anomaliyalar ro'yxati va avtomatik sweep bir xil o'rtachani ko'radi.
+
+        Avval sweep o'rtachani foydalanuvchining BUTUN tarixidan, ro'yxat esa
+        faqat tanlangan oynadan hisoblardi — bir xil hisob ikki "bir xil"
+        detektorda ikki xil natija berardi.
+        """
+        center = EducationCenter.objects.create(name='Jump Center', owner=self.admin_user)
+        now = timezone.now()
+        # Har urinish alohida olimpiadada — (user, olympiad) juftligi yagona.
+        for days_ago, score in ((3, 20), (2, 30), (1, 95)):
+            olympiad = Olympiad.objects.create(
+                center=center, title=f'Kimyo Test {days_ago}', subject='Kimyo',
+                duration_minutes=30, status=Olympiad.STATUS_ACTIVE,
+            )
+            attempt = TestAttempt.objects.create(
+                user=self.student_a, olympiad=olympiad, score=score,
+                total_questions=10, time_spent=600,
+            )
+            TestAttempt.objects.filter(pk=attempt.pk).update(
+                submitted_at=now - timedelta(days=days_ago),
+            )
+
+        resp = self.client.get('/api/admin/security/anomalies/?days=30')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        jumps = [r for r in resp.data['results'] if r['type'] == 'score_jump']
+        self.assertEqual(len(jumps), 1)
+        self.assertEqual(jumps[0]['past_average'], 25.0)
+        self.assertEqual(jumps[0]['past_attempts_count'], 2)
+
+        run = self.client.post('/api/admin/security/rules/run-check/')
+        self.assertEqual(run.status_code, status.HTTP_200_OK)
+        self.student_a.refresh_from_db()
+        self.assertIn('Score Jump', self.student_a.admin_tags or [])
+
+    def test_anomalies_rejects_non_numeric_days(self):
+        """Son bo'lmagan `days` 500 emas, toza 400 berishi kerak."""
+        resp = self.client.get('/api/admin/security/anomalies/?days=abc')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_collusion_rejects_non_numeric_params(self):
+        resp = self.client.get('/api/admin/security/collusion/?min_similarity=abc')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_center = self.client.get('/api/admin/security/collusion/?center_id=abc')
+        self.assertEqual(resp_center.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_user_passport(self):
         """Student 360 passport endpoint returns complete profile."""
         resp = self.client.get(f'/api/admin/users/{self.student_a.id}/passport/')
@@ -746,5 +891,23 @@ class AdminBulkStudentPremiumTestCase(APITestCase):
         self.assertEqual(alert_resp.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(alert_resp.data['sent_count'], 1)
         self.assertTrue(UserFlashAlert.objects.filter(user=self.student_a).exists())
+
+    def test_broadcast_flash_alert_to_role_segment(self):
+        """Rol bo'yicha segment SQLite'da ham ishlaydi.
+
+        Avval segment `roles__contains` (JSONField) bilan ajratilardi — bu
+        lookup faqat Postgres/MySQL'da bor va SQLite'da (lokal/CI test bazasi)
+        `NotSupportedError` bilan qulardi.
+        """
+        resp = self.client.post('/api/admin/broadcast/flash-alert/', {
+            'title': 'Faqat o‘quvchilarga',
+            'message': 'Ertaga olimpiada',
+            'level': 'info',
+            'target': 'students',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(UserFlashAlert.objects.filter(user=self.student_a).exists())
+        self.assertTrue(UserFlashAlert.objects.filter(user=self.student_b).exists())
+        self.assertFalse(UserFlashAlert.objects.filter(user=self.teacher).exists())
 
 

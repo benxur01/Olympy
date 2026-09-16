@@ -1000,3 +1000,181 @@ def send_ai_audio_analysis_task(task_id, user_id, attempt_id):
             AI_AUDIO_TASK_PREFIX, task_id,
             str(exc) or "AI tahlilni yuborib bo'lmadi",
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Avtomatik moderatsiya (anti-cheat) sweep'i
+# ─────────────────────────────────────────────────────────────────────────────
+AUTO_MODERATION_RULES_CACHE_KEY = 'olympy_auto_moderation_rules'
+# Sweep faqat shu oynadagi urinishlarni ko'radi — teg qo'yish takroran
+# ishlagani uchun eski urinishlarni qayta-qayta tekshirishning hojati yo'q.
+AUTO_MODERATION_WINDOW_DAYS = 7
+DEFAULT_AUTO_MODERATION_RULES = {
+    'auto_flag_speedrun': True,
+    'speedrun_seconds_threshold': 3.0,
+    'auto_flag_score_jump': True,
+    'score_jump_delta_threshold': 45,
+    'auto_tag_shared_ip': True,
+    'shared_ip_account_limit': 5,
+}
+
+
+def get_auto_moderation_rules():
+    """Joriy avtomatik moderatsiya qoidalari (default'lar ustiga cache).
+
+    CHEKLOV: qoidalar hozircha faqat Django cache'da saqlanadi. `REDIS_URL`
+    o'rnatilmaganda cache — LocMemCache, ya'ni har bir gunicorn/celery
+    jarayonining o'z nusxasi bo'ladi: admin panelda o'zgartirilgan qoida
+    rejalashtirilgan sweep'ga yetib bormaydi va default'lar ishlatiladi
+    (cache eviction/restartdan keyin ham shunday). To'liq yechim —
+    qoidalarni alohida DB modelida saqlash (model + migratsiya + panel
+    o'zgarishi), bu esa alohida ish sifatida qoldirildi.
+    """
+    from django.core.cache import cache
+
+    rules = dict(DEFAULT_AUTO_MODERATION_RULES)
+    rules.update(cache.get(AUTO_MODERATION_RULES_CACHE_KEY) or {})
+    return rules
+
+
+def run_auto_moderation_sweep():
+    """Qoidalar bo'yicha teglash sweep'i. `(actions_taken, tagged_user_ids)`.
+
+    Admin paneldagi "Tekshiruvni ishga tushirish" tugmasi ham, soatlik
+    Celery Beat jadvali ham AYNAN shu funksiyani chaqiradi — natija ikki
+    yo'lda bir xil bo'lishi uchun.
+    """
+    from collections import defaultdict
+
+    from django.contrib.auth import get_user_model
+
+    from attempts.models import TestAttempt
+
+    from .security_queries import (
+        SCORE_JUMP_MAX_PAST_AVERAGE,
+        get_ip_account_ids,
+        get_shared_ip_accounts,
+        score_jump_past_average,
+    )
+
+    User = get_user_model()
+    rules = get_auto_moderation_rules()
+    actions_taken = []
+    tagged_user_ids = []
+    since = timezone.now() - timedelta(days=AUTO_MODERATION_WINDOW_DAYS)
+
+    # 1. Bir xil IP ortidagi hisoblarga 'Shubhali' tegi
+    if rules.get('auto_tag_shared_ip'):
+        shared_ips = get_shared_ip_accounts(
+            min_accounts=rules.get('shared_ip_account_limit', 5),
+            window_days=AUTO_MODERATION_WINDOW_DAYS,
+        )
+        for row in shared_ips[:10]:
+            u_ids = get_ip_account_ids(row['ip_address']).keys()
+            for u in User.objects.filter(pk__in=u_ids):
+                tags = list(u.admin_tags or [])
+                if 'Shubhali' not in tags and 'Multi-Account' not in tags:
+                    tags.append('Shubhali')
+                    u.admin_tags = tags
+                    u.save(update_fields=['admin_tags'])
+                    tagged_user_ids.append(u.id)
+                    actions_taken.append(
+                        f"{u.full_name} ({u.phone}) ga 'Shubhali' tegi berildi "
+                        f"(IP: {row['ip_address']})"
+                    )
+
+    # 2. Speedrun urinishlari
+    if rules.get('auto_flag_speedrun'):
+        sec_thresh = rules.get('speedrun_seconds_threshold', 3.0)
+        fast_attempts = TestAttempt.objects.filter(
+            submitted_at__gte=since,
+            score__gte=80,
+            disqualified=False,
+        ).select_related('user', 'olympiad').order_by('-submitted_at')[:50]
+
+        for att in fast_attempts:
+            q_cnt = att.total_questions or 10
+            if att.time_spent and (att.time_spent / q_cnt) < sec_thresh:
+                tags = list(att.user.admin_tags or [])
+                if 'Speedrunner' not in tags:
+                    tags.append('Speedrunner')
+                    att.user.admin_tags = tags
+                    att.user.save(update_fields=['admin_tags'])
+                    tagged_user_ids.append(att.user_id)
+                    actions_taken.append(
+                        f"{att.user.full_name} ga 'Speedrunner' tegi biriktirildi "
+                        f"({att.olympiad.title})"
+                    )
+
+    # 3. Score Jump urinishlari — mezon `admin_anomalies_detection` bilan bir
+    # xil (`score_jump_past_average`), farqi: delta chegarasi qoidalardan
+    # olinadi. O'rtacha AYNAN shu oyna ichidagi urinishlardan hisoblanadi.
+    if rules.get('auto_flag_score_jump'):
+        jump_thresh = rules.get('score_jump_delta_threshold', 45)
+        high_attempts = list(
+            TestAttempt.objects.filter(
+                submitted_at__gte=since,
+                score__gte=85,
+                disqualified=False,
+            ).select_related('user', 'olympiad').order_by('-submitted_at')[:50]
+        )
+        history = defaultdict(list)
+        if high_attempts:
+            for row in TestAttempt.objects.filter(
+                user_id__in={att.user_id for att in high_attempts},
+                submitted_at__gte=since,
+                disqualified=False,
+            ).values('id', 'user_id', 'score', 'submitted_at'):
+                history[row['user_id']].append(
+                    (row['id'], row['score'], row['submitted_at'])
+                )
+
+        for att in high_attempts:
+            past = score_jump_past_average(
+                att.id, att.submitted_at, history[att.user_id],
+            )
+            if not past:
+                continue
+            avg_past, _past_count = past
+            jump = att.score - avg_past
+            if avg_past >= SCORE_JUMP_MAX_PAST_AVERAGE or jump < jump_thresh:
+                continue
+            tags = list(att.user.admin_tags or [])
+            if 'Score Jump' not in tags:
+                tags.append('Score Jump')
+                att.user.admin_tags = tags
+                att.user.save(update_fields=['admin_tags'])
+                tagged_user_ids.append(att.user_id)
+                actions_taken.append(
+                    f"{att.user.full_name} ga 'Score Jump' tegi biriktirildi "
+                    f"(o'rtacha {round(avg_past, 1)}% → {att.score}%, {att.olympiad.title})"
+                )
+
+    return actions_taken, tagged_user_ids
+
+
+@shared_task(name='accounts.auto_moderation_sweep')
+def auto_moderation_sweep():
+    """Soatlik avtomatik moderatsiya tekshiruvi (Celery Beat).
+
+    Avval bu mantiq FAQAT admin paneldagi "Tekshiruvni ishga tushirish"
+    tugmasi bosilganda ishlardi — ya'ni "avtomatik" qoidalar hech qachon
+    o'z-o'zidan ishlamasdi. Jadval `moderation.detect_suspicious_activity`
+    bilan bir xil (soatiga bir marta).
+
+    AuditLog yozilmaydi: `AuditLog.log()` `request` (aktor, IP) talab qiladi,
+    bu yerda esa aktor yo'q — `moderation.detect_suspicious_activity` dagi
+    bilan bir xil sabab. Qo'lda ishga tushirilgan tekshiruv esa avvalgidek
+    `admin_auto_moderation_run` yozuvini qoldiradi.
+    """
+    logger = logging.getLogger(__name__)
+    actions_taken, tagged_user_ids = run_auto_moderation_sweep()
+    if actions_taken:
+        logger.info(
+            'auto_moderation_sweep: %s ta chora, %s ta hisob teglandi',
+            len(actions_taken), len(set(tagged_user_ids)),
+        )
+    return {
+        'actions_count': len(actions_taken),
+        'tagged_user_ids': tagged_user_ids,
+    }

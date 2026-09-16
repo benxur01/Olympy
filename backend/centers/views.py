@@ -5,7 +5,7 @@ import secrets
 from PIL import Image as PilImage
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
@@ -158,22 +158,36 @@ def centers_list_create(request):
     # Faqat KUTILAYOTGAN ariza to'sadi: tasdiqlangan markaz egasi ikkinchi
     # tashkilot ochishi mumkin (OwnerDashboard'dagi "Yangi tashkilot" oqimi),
     # lekin bir vaqtning o'zida faqat bitta ariza navbatda turadi.
+    #
+    # Bu tekshiruv — tez (UX) yo'l; poyga holatida (ikkita bir vaqtli so'rov)
+    # ikkalasi ham o'tib ketishi mumkin, shu sababli haqiqiy kafolat bazadagi
+    # `unique_pending_center_per_owner` cheklovida.
+    duplicate_message = (
+        "Sizda tasdiq kutayotgan tashkilot arizasi allaqachon bor. "
+        "Avvalgi ariza ko'rib chiqilishini kuting."
+    )
     if EducationCenter.objects.filter(
         owner=request.user,
         status=EducationCenter.STATUS_PENDING,
     ).exists():
         return Response(
-            {'detail': "Sizda tasdiq kutayotgan tashkilot arizasi allaqachon bor. Avvalgi ariza ko'rib chiqilishini kuting."},
+            {'detail': duplicate_message},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
     serializer = CenterRegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    with transaction.atomic():
-        center = create_pending_center_for_owner(request.user, serializer.validated_data)
-        # Note: do NOT add 'owner' to user.roles here. The owner role is
-        # promoted only after Platform Admin approves the center
-        # (see admin_approve_center).
+    try:
+        with transaction.atomic():
+            center = create_pending_center_for_owner(request.user, serializer.validated_data)
+            # Note: do NOT add 'owner' to user.roles here. The owner role is
+            # promoted only after Platform Admin approves the center
+            # (see admin_approve_center).
+    except IntegrityError:
+        return Response(
+            {'detail': duplicate_message},
+            status=http_status.HTTP_409_CONFLICT,
+        )
     return Response(EducationCenterSerializer(center, context={'request': request}).data,
                     status=http_status.HTTP_201_CREATED)
 

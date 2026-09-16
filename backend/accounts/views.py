@@ -5272,13 +5272,24 @@ def activity_leaderboard(request):
     # qo'shamiz — admin_users_list'dagi kabi. Aks holda 15 user × 2 = 30
     # qo'shimcha COUNT so'rovi otilardi.
     from centers.models import CenterMembership
-    qs = (
+    base_qs = (
         User.objects
         .filter(is_active=True, streak_count__gt=0)
         # Platform adminlarni faollik reytingidan chiqarib tashlaymiz.
         .exclude(is_platform_admin=True)
+    )
+    # `roles__contains` — JSONField lookup'i faqat Postgres/MySQL'da bor va
+    # SQLite'da NotSupportedError beradi. `roles` qisqa satrlar ro'yxati,
+    # tanlov esa allaqachon streak_count>0 bilan cheklangan — 'student' roli
+    # Python tomonida ajratilib, id'lar bo'yicha filtrlanadi.
+    student_role_ids = [
+        uid for uid, roles in base_qs.values_list('id', 'roles')
+        if 'student' in (roles or [])
+    ]
+    qs = (
+        base_qs
         .filter(
-            DQ(roles__contains=['student'])
+            DQ(pk__in=student_role_ids)
             | DQ(
                 memberships__role=CenterMembership.ROLE_STUDENT,
                 memberships__status=CenterMembership.STATUS_APPROVED,

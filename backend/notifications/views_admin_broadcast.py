@@ -20,12 +20,23 @@ def _get_target_users(target_audience):
     elif target_audience == BroadcastCampaign.TARGET_INACTIVE:
         cutoff = timezone.now() - timedelta(days=7)
         qs = qs.filter(last_login__lt=cutoff)
-    elif target_audience == BroadcastCampaign.TARGET_STUDENTS:
-        qs = qs.filter(roles__contains='student')
-    elif target_audience == BroadcastCampaign.TARGET_TEACHERS:
-        qs = qs.filter(roles__contains='teacher')
-    elif target_audience == BroadcastCampaign.TARGET_CENTER_OWNERS:
-        qs = qs.filter(roles__contains='owner')
+    else:
+        # `roles__contains` — JSONField lookup'i faqat Postgres/MySQL'da bor
+        # (SQLite'da NotSupportedError). `roles` qisqa satrlar ro'yxati va bu
+        # yo'l admin-only, kam chaqiriladi — rol Python tomonida ajratilib,
+        # natija id'lar bo'yicha querysetga qaytariladi (chaqiruvchilar
+        # `.count()` / `.exclude()` ishlatadi).
+        role = {
+            BroadcastCampaign.TARGET_STUDENTS: 'student',
+            BroadcastCampaign.TARGET_TEACHERS: 'teacher',
+            BroadcastCampaign.TARGET_CENTER_OWNERS: 'owner',
+        }.get(target_audience)
+        if role:
+            matched_ids = [
+                uid for uid, roles in qs.values_list('id', 'roles')
+                if role in (roles or [])
+            ]
+            qs = qs.filter(pk__in=matched_ids)
 
     return qs
 

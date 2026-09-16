@@ -1176,6 +1176,13 @@ def subscription_limits(request):
     center = None
     center_id = request.query_params.get('center_id')
     if center_id:
+        try:
+            center_id = int(center_id)
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': "center_id butun son bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
         center = (
             EducationCenter.objects
             .filter(pk=center_id)

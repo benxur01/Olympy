@@ -223,6 +223,36 @@ def churn_risk_filter():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Score Jump (keskin natija o'sishi) detektori
+# ─────────────────────────────────────────────────────────────────────────────
+# Bir xil ta'rif ikki joyda ishlatiladi: admin paneldagi anomaliyalar ro'yxati
+# (`admin_anomalies_detection`) va avtomatik moderatsiya sweep'i
+# (`accounts.tasks.run_auto_moderation_sweep`). Avval sweep o'rtachani
+# foydalanuvchining BUTUN tarixidan hisoblardi, ro'yxat esa faqat tanlangan
+# oynadan — bir xil hisob ikki ekranda ikki xil natija berardi.
+SCORE_JUMP_MIN_PAST_ATTEMPTS = 2
+SCORE_JUMP_MAX_PAST_AVERAGE = 45
+
+
+def score_jump_past_average(attempt_id, submitted_at, history):
+    """Urinishdan OLDINGI natijalar o'rtachasi va ular soni.
+
+    `history` — (id, score, submitted_at) uchliklari; chaqiruvchi uni doim
+    KERAKLI OYNA bo'yicha (masalan oxirgi N kun) yig'adi. Kamida
+    `SCORE_JUMP_MIN_PAST_ATTEMPTS` ta oldingi urinish bo'lmasa `None`.
+    """
+    past_scores = [
+        score
+        for hist_id, score, hist_submitted in history
+        if hist_id != attempt_id and hist_submitted and submitted_at
+        and hist_submitted < submitted_at
+    ]
+    if len(past_scores) < SCORE_JUMP_MIN_PAST_ATTEMPTS:
+        return None
+    return sum(past_scores) / len(past_scores), len(past_scores)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Admin ro'yxatidagi xavf darajasi (risk_tier)
 # ─────────────────────────────────────────────────────────────────────────────
 # Chegaralar `accounts.views.compute_user_risk_profile` dagi bilan AYNAN bir
