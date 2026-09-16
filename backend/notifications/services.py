@@ -281,7 +281,9 @@ def send_center_decision_notification(owner, center, approved):
         title=title,
         message=message,
     )
-    logger.info('[telegram-mock] → %s : %s', mask_phone(owner.normalized_phone), message)
+    sent = _send_telegram_to_user(owner, message)
+    logger.info('[telegram] → %s sent=%s : %s', mask_phone(owner.normalized_phone), sent, message)
+    send_web_push_to_user(owner, title, message, url='/dashboard/owner', push_type='center_decision')
 
 
 def send_olympiad_published_notification(student, olympiad, center):
@@ -316,9 +318,15 @@ def send_olympiad_published_bulk(students, olympiad, center):
         )
         for s in students
     ])
-    logger.info('[telegram-mock] olympiad %s → %d students', olympiad.id, len(students))
+    sent_count = 0
     for s in students:
+        if _send_telegram_to_user(s, message):
+            sent_count += 1
         send_web_push_to_user(s, title, message, url='/student', push_type='olympiad_published')
+    logger.info(
+        '[telegram] olympiad %s → %d students, sent=%d',
+        olympiad.id, len(students), sent_count,
+    )
 
 
 

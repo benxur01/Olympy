@@ -56,3 +56,30 @@ class AdminBroadcastTestCase(APITestCase):
         resp_list = self.client.get('/api/notifications/admin/broadcasts/')
         self.assertEqual(resp_list.status_code, status.HTTP_200_OK)
         self.assertEqual(resp_list.data['count'], 1)
+
+    def test_send_broadcast_to_student_segment(self):
+        """Rol segmenti SQLite'da ham ishlaydi.
+
+        Segment avval `roles__contains` (JSONField) bilan ajratilardi — bu
+        lookup faqat Postgres/MySQL'da mavjud va test/lokal bazada
+        (SQLite) `NotSupportedError` beradi.
+        """
+        resp = self.client.post(
+            '/api/notifications/admin/broadcasts/',
+            {
+                'title': 'Faqat o‘quvchilarga',
+                'message': 'Ertaga olimpiada boshlanadi.',
+                'target_audience': BroadcastCampaign.TARGET_STUDENTS,
+                'send_in_app': True,
+                'send_now': True,
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['sent_count'], 2)
+        recipients = set(
+            Notification.objects
+            .filter(type=Notification.TYPE_ADMIN_BROADCAST)
+            .values_list('user_id', flat=True)
+        )
+        self.assertEqual(recipients, {self.student1.id, self.student2.id})

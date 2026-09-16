@@ -21,6 +21,7 @@ import io
 import json
 import logging
 from datetime import timedelta
+from itertools import islice
 
 from django.conf import settings
 from django.db import models, transaction
@@ -43,10 +44,12 @@ from accounts.models import (
 from accounts.permissions import IsPlatformAdmin
 from accounts.security_queries import (
     ADMIN_RISK_TIER_RANGES,
+    SCORE_JUMP_MAX_PAST_AVERAGE,
     annotate_admin_risk,
     churn_risk_filter,
     get_multi_account_user_ids,
     risk_tier_from_score,
+    score_jump_past_average,
 )
 from attempts.models import TestAttempt, TestSession
 from billing.models import PaymentTransaction, UserSubscription
@@ -705,7 +708,22 @@ def admin_suspicious_users_queue(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsPlatformAdmin])
 def admin_user_transfer_center(request, user_id):
-    """O'quvchini boshqa markazga o'tkazish yoki markazdan chiqarish."""
+    """O'quvchini boshqa markazga o'tkazish yoki markazdan chiqarish.
+
+    A'zolik qatorlari (`CenterMembership`) BILAN BIRGA haqiqiy egalik
+    (`EducationCenter.owner` FK) ham ko'chiriladi. Vakolat manbai aynan shu
+    FK — `centers.services.user_can_manage_center` a'zolik qatoriga emas,
+    `center.owner_id` ga qaraydi va `admin_delete_user` ham hisobni
+    o'chirishga aynan shu FK bo'yicha 409 beradi. Faqat a'zolikni o'chirish
+    foydalanuvchini markazning haqiqiy egasi bo'lib qolgan holda "chiqarildi"
+    deb ko'rsatardi.
+
+    Body:
+      * ``action``: ``transfer`` (default) yoki ``remove``
+      * ``center_id``, ``role``, ``subject`` — ``transfer`` uchun
+      * ``new_owner_id`` — foydalanuvchi biror markazning FK egasi bo'lsa,
+        o'sha markaz(lar)ni qabul qiladigan yangi ega. Berilmasa 400.
+    """
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
@@ -715,30 +733,98 @@ def admin_user_transfer_center(request, user_id):
     role = str(request.data.get('role') or 'student').strip()
     subject = (request.data.get('subject') or '').strip()
     action_type = request.data.get('action') or 'transfer'
+    new_owner_id = request.data.get('new_owner_id')
 
     if role not in dict(CenterMembership.ROLE_CHOICES):
         return Response({'error': 'Noto‘g‘ri rol tanlandi'}, status=status.HTTP_400_BAD_REQUEST)
 
+    new_owner = None
+    if new_owner_id not in (None, ''):
+        try:
+            new_owner = User.objects.get(pk=new_owner_id)
+        except (User.DoesNotExist, ValueError, TypeError):
+            return Response({'error': 'Yangi ega (new_owner_id) topilmadi'},
+                            status=status.HTTP_404_NOT_FOUND)
+        if new_owner.id == user.id:
+            return Response({'error': 'Yangi ega sifatida boshqa foydalanuvchi tanlanishi kerak'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
     with transaction.atomic():
+        owned_centers = list(
+            EducationCenter.objects.select_for_update().filter(owner_id=user.id)
+        )
+        center = None
+        if action_type != 'remove':
+            if not new_center_id:
+                return Response({'error': 'center_id tanlanishi shart'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                center = EducationCenter.objects.get(pk=new_center_id)
+            except (EducationCenter.DoesNotExist, ValueError, TypeError):
+                return Response({'error': 'Bunday o‘quv markazi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Foydalanuvchi egalik qilayotgan markazlar: `owner` roli bilan aynan
+        # shu markazga o'tkazilayotgan holatdan tashqari, hammasi yangi egaga
+        # topshirilishi shart — aks holda FK eskirib qoladi.
+        keeps_center = (
+            center is not None
+            and role == CenterMembership.ROLE_OWNER
+            and center.owner_id == user.id
+        )
+        centers_to_hand_over = [
+            c for c in owned_centers if not (keeps_center and c.id == center.id)
+        ]
+        if centers_to_hand_over and new_owner is None:
+            names = ', '.join(f'«{c.name}»' for c in centers_to_hand_over)
+            return Response({
+                'error': (
+                    f'Bu foydalanuvchi {names} markaz(lar)ining egasi. '
+                    'Amalni bajarish uchun new_owner_id orqali yangi ega '
+                    'tanlanishi shart.'
+                ),
+                'owned_center_ids': [c.id for c in centers_to_hand_over],
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        owner_reassignments = []
+        for owned in centers_to_hand_over:
+            owned.owner = new_owner
+            owned.save(update_fields=['owner'])
+            CenterMembership.objects.update_or_create(
+                user=new_owner,
+                center=owned,
+                role=CenterMembership.ROLE_OWNER,
+                defaults={
+                    'status': CenterMembership.STATUS_APPROVED,
+                    'approved_by': request.user,
+                },
+            )
+            owner_reassignments.append({
+                'center_id': owned.id,
+                'center_name': owned.name,
+                'previous_owner_id': user.id,
+                'new_owner_id': new_owner.id,
+            })
+
+        CenterMembership.objects.filter(user=user).delete()
+
         if action_type == 'remove':
-            CenterMembership.objects.filter(user=user).delete()
             AuditLog.log(
                 request,
                 'admin_transfer_center',
                 target=user,
-                extra={'action': 'remove_all_centers'},
+                extra={
+                    'action': 'remove_all_centers',
+                    'owner_reassignments': owner_reassignments,
+                },
             )
-            return Response({'ok': True, 'message': 'Foydalanuvchi barcha markazlardan muvaffaqiyatli chiqarildi.'})
+            message = 'Foydalanuvchi barcha markazlardan muvaffaqiyatli chiqarildi.'
+            if owner_reassignments:
+                message += f" Markaz egaligi «{new_owner.full_name}» ga o'tkazildi."
+            return Response({
+                'ok': True,
+                'message': message,
+                'owner_reassignments': owner_reassignments,
+            })
 
-        if not new_center_id:
-            return Response({'error': 'center_id tanlanishi shart'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            center = EducationCenter.objects.get(pk=new_center_id)
-        except EducationCenter.DoesNotExist:
-            return Response({'error': 'Bunday o‘quv markazi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
-
-        CenterMembership.objects.filter(user=user).delete()
         CenterMembership.objects.create(
             user=user,
             center=center,
@@ -747,16 +833,43 @@ def admin_user_transfer_center(request, user_id):
             status=CenterMembership.STATUS_APPROVED,
         )
 
+        if role == CenterMembership.ROLE_OWNER and center.owner_id != user.id:
+            previous_owner_id = center.owner_id
+            owner_reassignments.append({
+                'center_id': center.id,
+                'center_name': center.name,
+                'previous_owner_id': previous_owner_id,
+                'new_owner_id': user.id,
+            })
+            center.owner = user
+            center.save(update_fields=['owner'])
+            # Eski eganing shu markazdagi `owner` a'zoligi ham olib tashlanadi:
+            # vakolat manbai FK bo'lsa-da, qolgan qator uni a'zolik
+            # ro'yxatlarida hali ham ega bo'lib ko'rsatardi.
+            if previous_owner_id:
+                CenterMembership.objects.filter(
+                    user_id=previous_owner_id,
+                    center=center,
+                    role=CenterMembership.ROLE_OWNER,
+                ).delete()
+
         AuditLog.log(
             request,
             'admin_transfer_center',
             target=user,
-            extra={'new_center_id': center.id, 'new_center_name': center.name, 'role': role, 'subject': subject},
+            extra={
+                'new_center_id': center.id,
+                'new_center_name': center.name,
+                'role': role,
+                'subject': subject,
+                'owner_reassignments': owner_reassignments,
+            },
         )
 
     return Response({
         'ok': True,
         'message': f"Foydalanuvchi muvaffaqiyatli '{center.name}' markaziga biriktirildi.",
+        'owner_reassignments': owner_reassignments,
     })
 
 
@@ -1134,11 +1247,19 @@ def admin_bulk_import_users_status(request, task_id):
 def admin_collusion_detection(request):
     """Olimpiada ishtirokchilari o'rtasida guruh bo'lib ko'chirish va javoblar o'xshashligi tahlili."""
     from collections import defaultdict
-    days = int(request.query_params.get('days') or 30)
+    try:
+        days = int(request.query_params.get('days') or 30)
+        min_similarity = float(request.query_params.get('min_similarity') or 75.0)
+        olympiad_id = request.query_params.get('olympiad_id')
+        olympiad_id = int(olympiad_id) if olympiad_id else None
+        center_id = request.query_params.get('center_id')
+        center_id = int(center_id) if center_id else None
+    except (TypeError, ValueError):
+        return Response(
+            {'error': "days, min_similarity, olympiad_id va center_id son bo'lishi kerak"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     days = max(1, min(days, 180))
-    min_similarity = float(request.query_params.get('min_similarity') or 75.0)
-    olympiad_id = request.query_params.get('olympiad_id')
-    center_id = request.query_params.get('center_id')
 
     since = timezone.now() - timedelta(days=days)
     attempts_qs = TestAttempt.objects.filter(submitted_at__gte=since).select_related('user', 'olympiad')
@@ -1246,9 +1367,19 @@ def admin_collusion_detection(request):
 def admin_anomalies_detection(request):
     """Tezlik (Speedrun) va Keskin o'sish (Score Jump) anomaliyalarini aniqlash."""
     from collections import defaultdict
-    days = int(request.query_params.get('days') or 30)
+
+    from accounts.tasks import get_auto_moderation_rules
+
+    try:
+        days = int(request.query_params.get('days') or 30)
+    except (TypeError, ValueError):
+        return Response({'error': "days son bo'lishi kerak"}, status=status.HTTP_400_BAD_REQUEST)
     days = max(1, min(days, 180))
     since = timezone.now() - timedelta(days=days)
+    # Delta chegarasi `run_auto_moderation_sweep` bilan AYNAN bir manbadan
+    # olinadi — aks holda admin qoidada o'zgartirgan chegara faqat sweep'ga
+    # ta'sir qilib, ro'yxat boshqa natija ko'rsatardi.
+    jump_thresh = get_auto_moderation_rules().get('score_jump_delta_threshold', 45)
 
     attempts = list(
         TestAttempt.objects.filter(submitted_at__gte=since)
@@ -1259,7 +1390,7 @@ def admin_anomalies_detection(request):
     anomalies = []
     user_attempts_map = defaultdict(list)
     for att in attempts:
-        user_attempts_map[att.user_id].append(att)
+        user_attempts_map[att.user_id].append((att.id, att.score, att.submitted_at))
 
     for att in attempts:
         q_count = att.total_questions or (len(att.answers) if att.answers else 0) or 10
@@ -1293,15 +1424,11 @@ def admin_anomalies_detection(request):
         # 2. Score Jump: Ilgari past (<45%) o'rtachaga ega bo'lib, to'satdan >=85% olish
         user_hist = user_attempts_map[att.user_id]
         if len(user_hist) >= 2 and att.score >= 85:
-            past_scores = [
-                h.score
-                for h in user_hist
-                if h.id != att.id and h.submitted_at and att.submitted_at and h.submitted_at < att.submitted_at
-            ]
-            if past_scores and len(past_scores) >= 2:
-                avg_past = sum(past_scores) / len(past_scores)
+            past = score_jump_past_average(att.id, att.submitted_at, user_hist)
+            if past:
+                avg_past, past_count = past
                 jump = att.score - avg_past
-                if avg_past < 45 and jump >= 40:
+                if avg_past < SCORE_JUMP_MAX_PAST_AVERAGE and jump >= jump_thresh:
                     anomalies.append({
                         'type': 'score_jump',
                         'title': 'Keskin natija o‘sishi (Score Jump)',
@@ -1319,8 +1446,8 @@ def admin_anomalies_detection(request):
                         'score': att.score,
                         'past_average': round(avg_past, 1),
                         'score_jump_delta': round(jump, 1),
-                        'past_attempts_count': len(past_scores),
-                        'detail': f"Oldingi {len(past_scores)} ta test o‘rtachasi {round(avg_past, 1)}% bo‘lgan, to‘satdan {att.score}% (+{round(jump, 1)}%) natija qayd etildi.",
+                        'past_attempts_count': past_count,
+                        'detail': f"Oldingi {past_count} ta test o‘rtachasi {round(avg_past, 1)}% bo‘lgan, to‘satdan {att.score}% (+{round(jump, 1)}%) natija qayd etildi.",
                         'submitted_at': att.submitted_at.isoformat() if att.submitted_at else None,
                     })
 
@@ -1599,30 +1726,27 @@ def admin_auto_moderation_rules(request):
     """Avtomatik moderatsiya va anti-cheat qoidalarini ko'rish va boshqarish."""
     from django.core.cache import cache
 
-    DEFAULT_RULES = {
-        'auto_flag_speedrun': True,
-        'speedrun_seconds_threshold': 3.0,
-        'auto_flag_score_jump': True,
-        'score_jump_delta_threshold': 45,
-        'auto_tag_shared_ip': True,
-        'shared_ip_account_limit': 5,
-    }
+    from accounts.tasks import (
+        AUTO_MODERATION_RULES_CACHE_KEY,
+        DEFAULT_AUTO_MODERATION_RULES,
+        get_auto_moderation_rules,
+    )
 
-    rules = cache.get('olympy_auto_moderation_rules') or DEFAULT_RULES
+    rules = get_auto_moderation_rules()
 
     if request.method == 'POST':
-        for key in DEFAULT_RULES:
+        for key, default in DEFAULT_AUTO_MODERATION_RULES.items():
             if key in request.data:
                 val = request.data[key]
-                if isinstance(DEFAULT_RULES[key], bool):
+                if isinstance(default, bool):
                     rules[key] = bool(val)
-                elif isinstance(DEFAULT_RULES[key], (int, float)):
+                elif isinstance(default, (int, float)):
                     try:
-                        rules[key] = float(val) if isinstance(DEFAULT_RULES[key], float) else int(val)
+                        rules[key] = float(val) if isinstance(default, float) else int(val)
                     except (ValueError, TypeError):
                         pass
 
-        cache.set('olympy_auto_moderation_rules', rules, timeout=86400 * 30)
+        cache.set(AUTO_MODERATION_RULES_CACHE_KEY, rules, timeout=86400 * 30)
         AuditLog.log(request, 'admin_auto_moderation_rules_update', extra={'rules_updated': rules})
         return Response({'ok': True, 'message': 'Avtomatik moderatsiya qoidalari saqlandi.', 'rules': rules})
 
@@ -1632,103 +1756,17 @@ def admin_auto_moderation_rules(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsPlatformAdmin])
 def admin_auto_moderation_run_check(request):
-    """Avtomatik moderatsiya qoidalarini ayni paytda tekshiruvdan o'tkazish (Scan & Sweep)."""
-    from collections import defaultdict
+    """Avtomatik moderatsiya qoidalarini ayni paytda tekshiruvdan o'tkazish (Scan & Sweep).
 
-    from django.core.cache import cache
-    from accounts.security_queries import get_ip_account_ids, get_shared_ip_accounts
+    Mantiq `accounts.tasks.run_auto_moderation_sweep` da — soatlik Celery
+    Beat jadvali (`accounts.auto_moderation_sweep`) ham aynan shuni
+    chaqiradi, ya'ni qo'lda va avtomatik tekshiruv bir xil natija beradi.
+    """
+    from accounts.tasks import run_auto_moderation_sweep
     from accounts.views import AUDIT_BULK_ID_LIMIT
 
-    rules = cache.get('olympy_auto_moderation_rules') or {
-        'auto_flag_speedrun': True,
-        'speedrun_seconds_threshold': 3.0,
-        'auto_flag_score_jump': True,
-        'score_jump_delta_threshold': 45,
-        'auto_tag_shared_ip': True,
-        'shared_ip_account_limit': 5,
-    }
-
-    actions_taken = []
-    tagged_user_ids = []
     now = timezone.now()
-    since = now - timedelta(days=7)
-
-    # 1. Tag shared IP users as 'Shubhali'
-    if rules.get('auto_tag_shared_ip'):
-        shared_ips = get_shared_ip_accounts(min_accounts=rules.get('shared_ip_account_limit', 5), window_days=7)
-        for row in shared_ips[:10]:
-            u_ids = get_ip_account_ids(row['ip_address']).keys()
-            for u in User.objects.filter(pk__in=u_ids):
-                tags = list(u.admin_tags or [])
-                if 'Shubhali' not in tags and 'Multi-Account' not in tags:
-                    tags.append('Shubhali')
-                    u.admin_tags = tags
-                    u.save(update_fields=['admin_tags'])
-                    tagged_user_ids.append(u.id)
-                    actions_taken.append(f"{u.full_name} ({u.phone}) ga 'Shubhali' tegi berildi (IP: {row['ip_address']})")
-
-    # 2. Tag speedrun attempts
-    if rules.get('auto_flag_speedrun'):
-        sec_thresh = rules.get('speedrun_seconds_threshold', 3.0)
-        fast_attempts = TestAttempt.objects.filter(
-            submitted_at__gte=since,
-            score__gte=80,
-            disqualified=False,
-        ).select_related('user', 'olympiad')[:50]
-
-        for att in fast_attempts:
-            q_cnt = att.total_questions or 10
-            if att.time_spent and (att.time_spent / q_cnt) < sec_thresh:
-                tags = list(att.user.admin_tags or [])
-                if 'Speedrunner' not in tags:
-                    tags.append('Speedrunner')
-                    att.user.admin_tags = tags
-                    att.user.save(update_fields=['admin_tags'])
-                    tagged_user_ids.append(att.user_id)
-                    actions_taken.append(f"{att.user.full_name} ga 'Speedrunner' tegi biriktirildi ({att.olympiad.title})")
-
-    # 3. Tag score-jump attempts — `admin_anomalies_detection` dagi bilan bir xil
-    # mezon (oldingi kamida 2 ta urinish o'rtachasi 45% dan past bo'lib, keskin
-    # sakrash), farqi: delta chegarasi qoidalardan olinadi.
-    if rules.get('auto_flag_score_jump'):
-        jump_thresh = rules.get('score_jump_delta_threshold', 45)
-        high_attempts = list(
-            TestAttempt.objects.filter(
-                submitted_at__gte=since,
-                score__gte=85,
-                disqualified=False,
-            ).select_related('user', 'olympiad').order_by('-submitted_at')[:50]
-        )
-        history = defaultdict(list)
-        if high_attempts:
-            for row in TestAttempt.objects.filter(
-                user_id__in={att.user_id for att in high_attempts},
-                disqualified=False,
-            ).values('id', 'user_id', 'score', 'submitted_at'):
-                history[row['user_id']].append(row)
-
-        for att in high_attempts:
-            past_scores = [
-                h['score']
-                for h in history[att.user_id]
-                if h['id'] != att.id and h['submitted_at'] and att.submitted_at and h['submitted_at'] < att.submitted_at
-            ]
-            if len(past_scores) < 2:
-                continue
-            avg_past = sum(past_scores) / len(past_scores)
-            jump = att.score - avg_past
-            if avg_past >= 45 or jump < jump_thresh:
-                continue
-            tags = list(att.user.admin_tags or [])
-            if 'Score Jump' not in tags:
-                tags.append('Score Jump')
-                att.user.admin_tags = tags
-                att.user.save(update_fields=['admin_tags'])
-                tagged_user_ids.append(att.user_id)
-                actions_taken.append(
-                    f"{att.user.full_name} ga 'Score Jump' tegi biriktirildi "
-                    f"(o'rtacha {round(avg_past, 1)}% → {att.score}%, {att.olympiad.title})"
-                )
+    actions_taken, tagged_user_ids = run_auto_moderation_sweep()
 
     AuditLog.log(request, 'admin_auto_moderation_run', extra={
         'actions_count': len(actions_taken),
@@ -1760,16 +1798,24 @@ def admin_broadcast_flash_alert(request):
         return Response({'error': 'Sarlavha va matn kiritilishi shart'}, status=status.HTTP_400_BAD_REQUEST)
 
     users_qs = User.objects.filter(is_active=True)
-    if target == 'students':
-        users_qs = users_qs.filter(roles__contains=['student'])
-    elif target == 'teachers':
-        users_qs = users_qs.filter(roles__contains=['teacher'])
-    elif target == 'center_owners':
-        users_qs = users_qs.filter(roles__contains=['owner'])
-    elif target == 'shubhali':
-        users_qs = users_qs.filter(admin_tags__contains=['Shubhali'])
-    elif target == 'premium':
+    if target == 'premium':
         users_qs = users_qs.filter(is_premium=True)
+
+    # `roles` / `admin_tags` — oddiy JSONField ro'yxatlari: `__contains`
+    # lookup'i faqat Postgres/MySQL'da bor va SQLite'da NotSupportedError
+    # beradi. Segment shu sababli Python tomonida ajratiladi (admin-only,
+    # kam chaqiriladigan yo'l), natija esa avvalgidek 1000 ta bilan chegaralanadi.
+    segment_role = {
+        'students': 'student',
+        'teachers': 'teacher',
+        'center_owners': 'owner',
+    }.get(target)
+    if segment_role:
+        matched = (u for u in users_qs.iterator() if segment_role in (u.roles or []))
+    elif target == 'shubhali':
+        matched = (u for u in users_qs.iterator() if 'Shubhali' in (u.admin_tags or []))
+    else:
+        matched = users_qs.iterator()
 
     level_map = {
         'info': UserFlashAlert.TYPE_INFO,
@@ -1780,7 +1826,7 @@ def admin_broadcast_flash_alert(request):
     }
     alert_type = level_map.get(level, UserFlashAlert.TYPE_INFO)
 
-    target_users = list(users_qs[:1000])
+    target_users = list(islice(matched, 1000))
     alerts_to_create = [
         UserFlashAlert(user=u, title=title, message=message, alert_type=alert_type, created_by=request.user)
         for u in target_users

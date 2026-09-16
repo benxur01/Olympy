@@ -805,6 +805,16 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'moderation.detect_suspicious_activity',
         'schedule': timedelta(hours=1),
     },
+    # Avtomatik moderatsiya qoidalari (speedrun / score jump / bir xil IP)
+    # bo'yicha teglash sweep'i. Avval bu mantiq faqat admin paneldagi
+    # "Tekshiruvni ishga tushirish" tugmasidan ishlardi — qoidalar
+    # "avtomatik" deb atalsa ham hech qachon o'z-o'zidan bajarilmasdi.
+    # Jadval `detect-suspicious-activity` bilan bir xil: soatiga bir marta,
+    # detektorlar 7 kunlik oyna bo'yicha ishlaydi va teglash idempotent.
+    'auto-moderation-sweep': {
+        'task': 'accounts.auto_moderation_sweep',
+        'schedule': timedelta(hours=1),
+    },
 }
 
 

@@ -2,6 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -52,6 +53,36 @@ class CenterCreateTestCase(APITestCase):
                 status=CenterMembership.STATUS_PENDING,
             ).exists()
         )
+
+    @patch('notifications.services.send_center_approval_request_notification')
+    def test_second_pending_application_is_rejected(self, _mock_notify):
+        """Bitta egada bir vaqtda faqat bitta kutilayotgan ariza bo'ladi."""
+        url = reverse('centers-list-create')
+        first = self.client.post(url, {'name': 'Birinchi', 'city': 'Toshkent'}, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.client.post(url, {'name': 'Ikkinchi', 'city': 'Toshkent'}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            EducationCenter.objects.filter(
+                owner=self.user, status=EducationCenter.STATUS_PENDING,
+            ).count(),
+            1,
+        )
+
+    def test_pending_center_uniqueness_enforced_by_database(self):
+        """Poyga holatida (view'dagi tekshiruvni chetlab o'tib) baza to'sadi."""
+        EducationCenter.objects.create(
+            name='Birinchi', city='Toshkent', owner=self.user,
+            status=EducationCenter.STATUS_PENDING,
+        )
+        # `atomic` bloki: cheklov buzilgandan keyin test tranzaksiyasi
+        # ishlatib bo'lmas holga tushmasin.
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            EducationCenter.objects.create(
+                name='Ikkinchi', city='Toshkent', owner=self.user,
+                status=EducationCenter.STATUS_PENDING,
+            )
 
     def test_anonymous_cannot_create_center(self):
         self.client.force_authenticate(user=None)

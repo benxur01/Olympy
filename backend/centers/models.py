@@ -66,6 +66,20 @@ class EducationCenter(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            # Bitta egada bir vaqtning o'zida faqat bitta KUTILAYOTGAN ariza
+            # bo'lishi mumkin. View'dagi tekshiruv tranzaksiyadan tashqarida
+            # ishlaydi va ikkita bir vaqtli so'rov ikkalasi ham o'tib ketishi
+            # mumkin edi — to'g'rilikni shu bazaviy cheklov kafolatlaydi.
+            # Tasdiqlangan/rad etilgan markazlar cheklovga tushmaydi.
+            # ('pending' — `STATUS_PENDING`; ichki Meta sinfi tashqi sinf
+            # nomlarini ko'rmaydi, shuning uchun qiymat literal yozilgan.)
+            models.UniqueConstraint(
+                fields=['owner'],
+                condition=models.Q(status='pending'),
+                name='unique_pending_center_per_owner',
+            ),
+        ]
 
     def __str__(self):
         location = self.district or self.region or self.city
