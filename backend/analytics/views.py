@@ -11,7 +11,7 @@ funksiyani HTTP orqali taqdim etadi.
 """
 from datetime import timedelta
 
-from django.db.models import Avg, Count, Max, Sum
+from django.db.models import Avg, Count, Max, Q, Sum
 from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -914,9 +914,14 @@ def admin_live_radar(request):
             'subject': o.subject,
             'center_name': o.center.name if o.center else 'Olympy Platform',
             'duration_minutes': o.duration_minutes,
-            'live_active_count': TestSession.objects.filter(olympiad=o, status=TestSession.STATUS_ACTIVE).count(),
+            'live_active_count': o.live_active_count,
         }
-        for o in active_olympiads_qs[:10]
+        for o in active_olympiads_qs.annotate(
+            live_active_count=Count(
+                'test_sessions',
+                filter=Q(test_sessions__status=TestSession.STATUS_ACTIVE),
+            ),
+        )[:10]
     ]
 
     return Response({

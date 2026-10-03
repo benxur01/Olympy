@@ -74,8 +74,9 @@ def olympiads_list_create(request):
         #  2) Prefetch'ni `only('id')` bilan cheklab, faqat ID'larni olamiz —
         #     question_ids field uchun yetarli, lekin behuda kolonkalar
         #     yuklanmaydi.
-        from django.db.models import OuterRef, Prefetch, Subquery, Sum, IntegerField
+        from django.db.models import FloatField, OuterRef, Prefetch, Subquery, Sum, IntegerField
         from django.db.models.functions import Coalesce
+        from attempts.models import TestAttempt
         from questions.models import Question
         # Y10: avval `Sum('questions__score')` to'g'ridan-to'g'ri annotate
         # qilinardi va bu boshqa annotate'lar (Count('attempts'),
@@ -84,6 +85,11 @@ def olympiads_list_create(request):
         # Endi Subquery orqali hisoblanadi va annotate'lar bir-biriga
         # ta'sir qilmaydi. Prefetch hali ham kerak — `question_ids`
         # serializer'i `obj.questions.all()` chaqiradi.
+        #
+        # Ishtirokchilar soni va o'rtacha ball ham Subquery: attempts JOIN +
+        # GROUP BY (va DISTINCT) paginator'ning COUNT so'rovida ham, har bir
+        # sahifada ham BARCHA ko'rinadigan olimpiadalarning barcha
+        # attempt'larini qayta agregatlardi.
         total_score_sq = (
             Question.objects
             .filter(olympiads=OuterRef('pk'))
@@ -91,6 +97,7 @@ def olympiads_list_create(request):
             .annotate(s=Sum('score'))
             .values('s')
         )
+        olympiad_attempts = TestAttempt.objects.filter(olympiad=OuterRef('pk')).values('olympiad')
         queryset = (
             Olympiad.objects
             .prefetch_related(
@@ -98,8 +105,17 @@ def olympiads_list_create(request):
             )
             .select_related('center', 'created_by')
             .annotate(
-                participants_count=Count('attempts', distinct=True),
-                avg_score_value=Avg('attempts__score'),
+                participants_count=Coalesce(
+                    Subquery(
+                        olympiad_attempts.annotate(c=Count('id')).values('c'),
+                        output_field=IntegerField(),
+                    ),
+                    0,
+                ),
+                avg_score_value=Subquery(
+                    olympiad_attempts.annotate(a=Avg('score')).values('a'),
+                    output_field=FloatField(),
+                ),
                 total_score=Coalesce(
                     Subquery(total_score_sq, output_field=IntegerField()),
                     0,
@@ -107,7 +123,7 @@ def olympiads_list_create(request):
             )
             .order_by('-created_at')
         )
-        qs = queryset.filter(visible_events_filter(request.user), is_deleted=False).distinct()
+        qs = queryset.filter(visible_events_filter(request.user), is_deleted=False)
         # Pagination: 500+ olimpiada bo'lishi mumkin, ayniqsa platform admin
         # uchun. Frontend grid'da hammasini bir martada ko'rsatish uchun
         # `?page_size=200` yuboradi — Default PageNumberPagination uni

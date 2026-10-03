@@ -1,5 +1,6 @@
 """Admin Rewards Shop and Fulfillment views.
 """
+from django.db.models import Count
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -55,7 +56,11 @@ def admin_list_create_rewards(request):
         })
 
     # GET
-    products = RewardProduct.objects.all().order_by('-created_at')
+    products = (
+        RewardProduct.objects
+        .annotate(redemptions_total=Count('redemptions'))
+        .order_by('-created_at')
+    )
     results = []
     for p in products:
         results.append({
@@ -67,7 +72,7 @@ def admin_list_create_rewards(request):
             'icon': p.icon,
             'is_premium_only': p.is_premium_only,
             'is_active': p.is_active,
-            'redemptions_count': p.redemptions.count(),
+            'redemptions_count': p.redemptions_total,
             'created_at': p.created_at.isoformat(),
         })
 
