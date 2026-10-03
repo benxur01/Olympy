@@ -67,4 +67,4 @@ sentry-sdk[django]>=1.40
 django-anymail[mailgun]>=10.0
 gTTS>=2.4
 django-axes>=6.0
-pywebpush>=1.14
+pywebpush>=2.5.0
