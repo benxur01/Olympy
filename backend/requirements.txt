@@ -16,7 +16,7 @@ Django>=5.2.16,<6.0
 djangorestframework>=3.14
 django-cors-headers>=4.0
 psycopg[binary]>=3.1
-djangorestframework-simplejwt>=5.3
+djangorestframework-simplejwt>=5.5.1
 # >=2.10 MAJBURIY (>=2.6 emas): accounts/views.py Google ID Token'ni mahalliy
 # tekshirishda `jwt.decode(..., issuer=GOOGLE_ISSUERS)` ga bir NECHTA issuer
 # (tuple) uzatadi. Bir nechta issuer'ni qabul qilish PyJWT 2.10.0 da qo'shilgan
