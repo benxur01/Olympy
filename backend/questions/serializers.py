@@ -1,9 +1,21 @@
 import json
+import os
+import uuid
 
 from django.conf import settings
 from rest_framework import serializers
+from rest_framework.utils import html
+
+from accounts.utils import assign_safe_image_name
 
 from .models import Question
+
+# `/media/` ni nginx fayl kengaytmasiga qarab Content-Type bilan beradi —
+# ro'yxatdan tashqari kengaytma (masalan `.html`) sayt origin'ida sahifa
+# sifatida ochilardi.
+QUESTION_AUDIO_EXTENSIONS = {
+    'mp3', 'm4a', 'mp4', 'aac', 'ogg', 'oga', 'opus', 'wav', 'webm', 'flac',
+}
 
 # IELTS / CEFR imtihon fanlari. Shu fanlardagi savol uchun `section`
 # (listening/reading/writing/speaking) MAJBURIY: band va CEFR daraja
@@ -99,9 +111,13 @@ class QuestionSerializer(serializers.ModelSerializer):
         return data
 
     def to_internal_value(self, data):
-        # Multipart form-data sends JSON arrays as strings (e.g. when an
-        # image file is attached). Decode 'options' transparently so the
-        # JSONField validates correctly.
+        # Multipart (rasm bilan yuborish) da `options`/`test_cases` JSON string
+        # bo'lib keladi va ularni DRF `JSONField` o'zi decode qiladi. Bu yerda
+        # ro'yxatga aylantirilsa, `JSONField.get_value` uni `str()` bilan
+        # qaytadan satrga o'girib yaroqsiz JSON deb rad etardi. Shu sababli
+        # faqat JSON tanadagi string ko'rinishidagi ro'yxatlarni decode qilamiz.
+        if html.is_html_input(data):
+            return super().to_internal_value(data)
         raw_options = data.get('options') if hasattr(data, 'get') else None
         if isinstance(raw_options, str):
             try:
@@ -111,8 +127,7 @@ class QuestionSerializer(serializers.ModelSerializer):
             if isinstance(parsed, list):
                 data = data.copy() if hasattr(data, 'copy') else dict(data)
                 data['options'] = parsed
-        # `test_cases` ham multipart'da string sifatida keladi — xuddi
-        # `options` kabi shaffof decode qilamiz.
+        # `test_cases` ham xuddi `options` kabi.
         raw_test_cases = data.get('test_cases') if hasattr(data, 'get') else None
         if isinstance(raw_test_cases, str):
             try:
@@ -123,6 +138,26 @@ class QuestionSerializer(serializers.ModelSerializer):
                 data = data.copy() if hasattr(data, 'copy') else dict(data)
                 data['test_cases'] = parsed_tc
         return super().to_internal_value(data)
+
+    def validate_image(self, value):
+        """Rasm hajmini cheklaydi va `assign_safe_image_name` bilan xavfsiz nom beradi.
+
+        DRF `ImageField` faylni Pillow bilan ochib tekshiradi (natijasi
+        `value.image`), lekin mijoz yuborgan nomni saqlaydi va Pillow biladigan
+        har qanday kengaytmani (`.pdf`, `.eps` ...) o'tkazadi. Naqsh (hajm
+        limiti ham) boshqa rasm yuklash joylari (`accounts.views.update_my_avatar`)
+        bilan bir xil.
+        """
+        if not value:
+            return value
+        max_bytes = getattr(settings, 'QUESTION_IMAGE_MAX_BYTES', 5 * 1024 * 1024)
+        if value.size and value.size > max_bytes:
+            raise serializers.ValidationError(
+                f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB"
+            )
+        if not assign_safe_image_name(value, value.image.format):
+            raise serializers.ValidationError('Faqat JPG, PNG, GIF yoki WEBP rasm qabul qilinadi')
+        return value
 
     def validate_audio(self, value):
         """Listening audio faylini tekshiradi (MIME + hajm).
@@ -138,11 +173,15 @@ class QuestionSerializer(serializers.ModelSerializer):
         content_type = getattr(value, 'content_type', '') or ''
         if content_type and not content_type.startswith('audio/'):
             raise serializers.ValidationError('Faqat audio fayl qabul qilinadi')
+        ext = os.path.splitext(value.name or '')[1].lstrip('.').lower()
+        if ext not in QUESTION_AUDIO_EXTENSIONS:
+            raise serializers.ValidationError('Faqat audio fayl qabul qilinadi')
         max_bytes = getattr(settings, 'QUESTION_AUDIO_MAX_BYTES', 15 * 1024 * 1024)
         if value.size and value.size > max_bytes:
             raise serializers.ValidationError(
                 f"Audio juda katta. Limit: {max_bytes // (1024 * 1024)} MB"
             )
+        value.name = f'{uuid.uuid4().hex}.{ext}'
         return value
 
     def validate(self, data):

@@ -50,6 +50,7 @@ from .serializers import (
 )
 from .utils import (
     PREMIUM_GRANT_DURATIONS,
+    assign_safe_image_name,
     delete_replaced_image_file,
     grant_premium,
     mask_phone,
@@ -434,28 +435,26 @@ def register(request):
                         status=CenterMembership.STATUS_PENDING,
                     )
                     membership_data = CenterMembershipSerializer(membership).data
-                    # Notification fan-out: same logic as join_center view.
-                    from notifications.services import (
-                        send_staff_join_request_notification,
-                        send_student_join_request_notification,
+                    # Notification fan-out: join_center view bilan bir xil
+                    # Celery task'lar. Commit'dan keyin — worker yangi
+                    # foydalanuvchi va a'zolikni ko'rishi uchun, Telegram
+                    # chaqiruvlari esa ro'yxatdan o'tish tranzaksiyasini
+                    # ushlab turmasin.
+                    from centers.tasks import (
+                        send_staff_join_notification_task,
+                        send_student_join_notifications_task,
                     )
+                    notify_args = (user.id, center.id, membership.id)
                     if membership.role == CenterMembership.ROLE_STUDENT:
-                        managers = CenterMembership.objects.filter(
-                            center=center, role=CenterMembership.ROLE_MANAGER,
-                            status=CenterMembership.STATUS_APPROVED,
-                        ).select_related('user')
-                        for m in managers:
-                            send_student_join_request_notification(m.user, user, center, membership)
-                        if center.owner_id:
-                            send_student_join_request_notification(center.owner, user, center, membership)
+                        transaction.on_commit(
+                            lambda: send_student_join_notifications_task.delay(*notify_args),
+                            robust=True,
+                        )
                     elif membership.role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
-                        if center.owner_id:
-                            send_staff_join_request_notification(
-                                center.owner, user, center,
-                                role=membership.role,
-                                subject=membership.subject or '',
-                                membership=membership,
-                            )
+                        transaction.on_commit(
+                            lambda: send_staff_join_notification_task.delay(*notify_args),
+                            robust=True,
+                        )
     except ValidationError as exc:
         detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
         return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
@@ -552,9 +551,24 @@ def login(request):
         if not totp_code:
             # Parol to'g'ri, lekin 2FA kodi kerak — token bermaymiz.
             return Response({'requires_2fa': True})
+        from django.core.cache import cache
+        # Parol lockout hisoblagichi to'g'ri paroldan keyin nollanadi, ya'ni
+        # parolni bilgan hujumchi uchun 2FA kodini alohida sanaymiz.
+        totp_fail_key = f'login_totp_failed:{user.pk}'
+        totp_failed = cache.get(totp_fail_key, 0)
+        if totp_failed >= LoginSerializer.LOCKOUT_THRESHOLD:
+            security_logger.warning('login blocked (2FA lockout) user_id=%s', user.pk)
+            return Response(
+                {
+                    'detail': "Juda ko'p noto'g'ri 2FA urinish. Iltimos, 15 daqiqadan keyin qayta urinib ko'ring.",
+                    'requires_2fa': True,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         # `verify_totp_code` — replay himoyasi bilan (bitta kod ikki marta
         # ishlatilmaydi); qolgan xulq `pyotp.verify(valid_window=1)` bilan bir xil.
         if not verify_totp_code(user, totp_code):
+            cache.set(totp_fail_key, totp_failed + 1, LoginSerializer.LOCKOUT_TTL_SECONDS)
             security_logger.warning(
                 'login failed (wrong or reused 2FA code) user_id=%s', user.pk,
             )
@@ -562,6 +576,7 @@ def login(request):
                 {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        cache.delete(totp_fail_key)
 
     return _auth_response(request, user)
 
@@ -692,25 +707,28 @@ def google_login(request):
     User = get_user_model()
 
     google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
+    # `aud` tekshiruvisiz Google istalgan saytga bergan ID Token ham qabul
+    # qilinardi: o'sha sayt egasi foydalanuvchining tokenini shu yerga yuborib
+    # uning hisobiga kirib olardi. Shu sababli Client ID sozlanmagan bo'lsa
+    # Google login umuman o'chiq (fail-closed).
+    if not google_client_id:
+        logger.error('GOOGLE_CLIENT_ID sozlanmagan — Google login rad etildi')
+        return Response(
+            {'detail': "Google orqali kirish sozlanmagan."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     try:
         signing_key = _google_signing_key(id_token)
-        # `jwt.decode` imzo, muddat (`exp`) va `iss` ni ham shu yerda tekshiradi
-        # — ya'ni tokeninfo endpoint'i Google tomonida bajargan tekshiruvlarning
-        # hammasi saqlanib qoladi.
-        #
-        # `verify_aud`: eski kod audience'ni faqat `if google_client_id and aud`
-        # bo'lganda solishtirardi, ya'ni GOOGLE_CLIENT_ID sozlanmagan muhitda
-        # tekshiruv butunlay o'tkazib yuborilardi. PyJWT esa `audience=None`
-        # bo'lsa tokendagi `aud` claim'ini AKSINCHA rad etadi — shuning uchun
-        # bu holatda audience tekshiruvi ataylab o'chiriladi (eski xatti-harakat).
+        # `jwt.decode` imzo, muddat (`exp`), `iss` va `aud` ni shu yerda
+        # tekshiradi — tokeninfo endpoint'i Google tomonida bajargan
+        # tekshiruvlarning hammasi saqlanib qoladi.
         token_info = jwt.decode(
             id_token,
             signing_key.key,
             algorithms=['RS256'],
             audience=google_client_id,
             issuer=GOOGLE_ISSUERS,
-            options={'verify_aud': bool(google_client_id)},
         )
     except jwt.ExpiredSignatureError:
         return Response({'detail': "Google tokeni muddati tugagan. Qaytadan urinib ko'ring."}, status=status.HTTP_401_UNAUTHORIZED)
@@ -749,7 +767,12 @@ def google_login(request):
         logger.warning("Google token verification error [%s]: %s", type(exc).__name__, exc)
         return Response({'detail': "Google tokeni yaroqsiz yoki tasdiqlanmadi."}, status=status.HTTP_401_UNAUTHORIZED)
 
-    email = (token_info.get('email') or '').strip().lower()
+    # Tasdiqlanmagan manzil hisobga "tasdiqlangan email" (tiklash kanali)
+    # sifatida yozilmasligi kerak.
+    email = (
+        (token_info.get('email') or '').strip().lower()
+        if token_info.get('email_verified') in (True, 'true') else ''
+    )
     sub = token_info.get('sub') or ''
     if not sub:
         return Response({'detail': "Google foydalanuvchi ma'lumoti yetarsiz."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1230,6 +1253,20 @@ def restore_my_account(request):
         )
 
     from django.contrib.auth import get_user_model
+    from django.core.cache import cache
+    # Login bilan BIR XIL per-telefon lockout hisoblagichi — aks holda bu
+    # endpoint login lockout'ini chetlab parol taxmin qilish yo'li bo'lardi.
+    fail_key = LoginSerializer._failed_cache_key(norm)
+    failed = cache.get(fail_key, 0)
+    if failed >= LoginSerializer.LOCKOUT_THRESHOLD:
+        security_logger.warning(
+            'account_restore blocked (lockout) phone=%s', mask_phone(norm),
+        )
+        return Response(
+            {'detail': "Juda ko'p noto'g'ri urinish. Iltimos, 15 daqiqadan keyin qayta urinib ko'ring."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     User = get_user_model()
     user = User.objects.filter(normalized_phone=norm).first()
     if not user or not user.deleted_at:
@@ -1248,6 +1285,7 @@ def restore_my_account(request):
         )
 
     if not user.check_password(password):
+        cache.set(fail_key, failed + 1, LoginSerializer.LOCKOUT_TTL_SECONDS)
         security_logger.warning(
             'account_restore failed (wrong password) user_id=%s phone=%s',
             user.pk, mask_phone(norm),
@@ -1265,6 +1303,7 @@ def restore_my_account(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not verify_totp_code(user, totp_code):
+            cache.set(fail_key, failed + 1, LoginSerializer.LOCKOUT_TTL_SECONDS)
             return Response(
                 {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1279,6 +1318,7 @@ def restore_my_account(request):
         locked.token_version = (locked.token_version or 0) + 1
         locked.save(update_fields=['deleted_at', 'is_active', 'token_version'])
         user = locked
+    cache.delete(fail_key)
 
     AuditLog.log(request, 'account_delete', target=user, extra={
         'phone': mask_phone(user.normalized_phone),
@@ -1334,6 +1374,11 @@ def update_my_avatar(request):
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=status.HTTP_400_BAD_REQUEST)
+    if not assign_safe_image_name(image, img.format):
+        return Response(
+            {'detail': 'Faqat JPG, PNG, GIF yoki WEBP rasm qabul qilinadi'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     old_avatar_name = request.user.avatar.name if request.user.avatar else ''
     request.user.avatar = image
     request.user.save(update_fields=['avatar'])
@@ -5257,13 +5302,26 @@ def telegram_manager_webhook(request):
     return _telegram_webhook_response(request, bot='manager')
 
 
+# Reyting hamma uchun bir xil va streak kuniga bir marta o'zgaradi, hisob esa
+# streak'li barcha faol foydalanuvchilarni aylanadi.
+ACTIVITY_LEADERBOARD_CACHE_SECONDS = 60
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def activity_leaderboard(request):
     """GET /api/accounts/activity-leaderboard/ — Ketma-ket faollik kunlari bo'yicha haftalik eng faol o'quvchilar reytingi."""
     from django.contrib.auth import get_user_model
+    from django.core.cache import cache
     from django.db.models import Count, Q as DQ
     User = get_user_model()
+
+    # `avatar_url` so'rov manzilidan absolyut URL bo'lib quriladi — kalitda
+    # sxema+host bor.
+    cache_key = f'activity_leaderboard:v1:{request.build_absolute_uri("/")}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
 
     # Faqat student rolidagi faol foydalanuvchilar. roles JSONField'da
     # 'student' bo'lganlar yoki tasdiqlangan student a'zoligi borlar.
@@ -5323,6 +5381,7 @@ def activity_leaderboard(request):
             'badges': u.get_badges()[:2]  # Expose up to 2 badges
         })
 
+    cache.set(cache_key, entries, ACTIVITY_LEADERBOARD_CACHE_SECONDS)
     return Response(entries)
 
 
@@ -5682,6 +5741,13 @@ def audit_log_list(request):
 def totp_setup(request):
     """POST /api/auth/2fa/setup/ — 2FA sozlash, QR kod URI qaytaradi."""
     import pyotp
+    # Yoqilgan 2FA sirini qaytarish o'g'irlangan access token egasiga kod
+    # generatsiya qilib `totp_disable` dan o'tish imkonini berardi.
+    if request.user.totp_enabled:
+        return Response(
+            {'detail': "2FA allaqachon yoqilgan"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     if not request.user.totp_secret:
         request.user.totp_secret = pyotp.random_base32()
         # `totp_secret` — shifrlovchi property; DB'dagi haqiqiy ustun
