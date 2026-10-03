@@ -81,6 +81,12 @@ class TestAttempt(models.Model):
                 fields=['user', '-submitted_at'],
                 name='attempt_user_recent_idx',
             ),
+            # Foydalanuvchi/olimpiadasiz vaqt oynasi so'rovlari: haftalik
+            # musobaqa, global haftalik reyting, soatlik avto-moderatsiya.
+            models.Index(
+                fields=['submitted_at'],
+                name='attempt_submitted_idx',
+            ),
         ]
 
     def __str__(self):
@@ -199,6 +205,12 @@ class TestSession(models.Model):
             models.Index(
                 fields=['olympiad', 'status'],
                 name='testsession_olymp_status_idx',
+            ),
+            # Olimpiadasiz status filtri: har daqiqalik
+            # `auto_disqualify_pending_reviews` va admin jonli radari.
+            models.Index(
+                fields=['status', 'review_requested_at'],
+                name='testsession_status_review_idx',
             ),
         ]
 
