@@ -14,6 +14,7 @@ import base64
 import hashlib
 import logging
 import re
+import uuid
 
 
 logger = logging.getLogger(__name__)
@@ -517,6 +518,23 @@ def avatar_url_for(user, request=None):
         except Exception:
             return url
     return url
+
+
+_UPLOAD_IMAGE_EXTENSIONS = {'JPEG': 'jpg', 'PNG': 'png', 'GIF': 'gif', 'WEBP': 'webp'}
+
+
+def assign_safe_image_name(upload, image_format):
+    """Yuklangan rasmga tasodifiy nom va Pillow aniqlagan formatdagi kengaytma beradi.
+
+    Mijoz yuborgan nom saqlansa, Pillow tekshiruvidan o'tadigan poliglot (GIF
+    sarlavhali HTML/JS) `.html`/`.js` nomi bilan yozilib, `/media/` dan sayt
+    origin'ida shu turda berilardi — stored XSS. Format ro'yxatda bo'lmasa False.
+    """
+    ext = _UPLOAD_IMAGE_EXTENSIONS.get((image_format or '').upper())
+    if not ext:
+        return False
+    upload.name = f'{uuid.uuid4().hex}.{ext}'
+    return True
 
 
 def delete_replaced_image_file(field_file, old_name):

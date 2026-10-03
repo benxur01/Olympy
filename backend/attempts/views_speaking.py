@@ -21,6 +21,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import TrustedOrigin
 from olympiads.models import Olympiad
 from questions.models import Question
 
@@ -94,7 +95,7 @@ def _resolve_session_question(request, section=None):
 
 @api_view(['POST'])
 @parser_classes([MultiPartParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 def upload_speaking_answer(request):
     """POST /api/attempts/speaking-answer/ — Speaking javob audiosini saqlaydi.
 

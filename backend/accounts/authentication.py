@@ -1,9 +1,12 @@
 from django.conf import settings
 from django.core.cache import cache
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
 
 from analytics.presence import record_activity
+
+from .permissions import request_origin_is_trusted
 
 
 def impersonation_block_key(jti):
@@ -73,6 +76,11 @@ class OlympyJWTAuthentication(JWTAuthentication):
             # Eskirgan kredensial hech qachon YANGI kirishga to'sqinlik
             # qilmasligi kerak — shuning uchun ikkala manba ham bir xil.
             return None
+        # Cookie'ni brauzer har qanday saytdan kelgan so'rovga o'zi biriktiradi
+        # (production'da SameSite=None), JSON-only parser esa tanasini o'qimaydigan
+        # POST view'larni himoya qilmaydi. Header'dagi token esa CSRF'ga ochiq emas.
+        if header is None and not request_origin_is_trusted(request):
+            raise PermissionDenied("So'rov ishonchsiz manbadan yuborilgan.")
         # Admin panelidagi "Hozir onlayn" sanog'i uchun faollik belgisi. Aynan
         # shu yer: API JWT-only (SessionAuthentication yo'q), shu sababli
         # Django'ning `AuthenticationMiddleware`'i API so'rovlarida doim

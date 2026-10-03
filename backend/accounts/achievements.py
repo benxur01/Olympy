@@ -23,6 +23,8 @@ def check_achievements(user, attempt):
     Qaytaradi: shu chaqiruvda yangi berilgan yutuqlar ro'yxati (type'lar).
     Hech qachon exception otmaydi — submit jarayonini buzmasligi kerak.
     """
+    from django.db.models import Count, Max
+
     from attempts.models import TestAttempt
     from .models import Achievement
 
@@ -32,11 +34,12 @@ def check_achievements(user, attempt):
         existing = set(
             Achievement.objects.filter(user=user).values_list('type', flat=True)
         )
+        attempt_stats = TestAttempt.objects.filter(
+            user=user, disqualified=False,
+        ).aggregate(total=Count('id'), best=Max('score'))
 
         # 1. Urinishlar soni milestone'lari.
-        total_attempts = TestAttempt.objects.filter(
-            user=user, disqualified=False,
-        ).count()
+        total_attempts = attempt_stats['total']
         for n in ATTEMPT_MILESTONES:
             key = f'attempts_{n}'
             if total_attempts >= n and key not in existing:
@@ -61,20 +64,12 @@ def check_achievements(user, attempt):
         # 4. Yangi rekord (eng yuqori ball yangilanganda). new_record har yangi
         #    rekordda value bilan yangilanadi — shu sababli unique constraint
         #    bo'lsa ham update_or_create ishlatamiz.
-        best_score = (
-            TestAttempt.objects.filter(user=user, disqualified=False)
-            .order_by('-score')
-            .values_list('score', flat=True)
-            .first()
-        ) or 0
+        best_score = attempt_stats['best'] or 0
         current = attempt.score or 0
         # Bu attempt eng yuqori ball bo'lsa (yagona eng yuqori bo'lsa ham) —
         # rekord. Faqat bittadan ortiq attempt bo'lganda new_record beramiz,
         # aks holda birinchi urinish ham "rekord" bo'lib ketardi.
-        attempts_count_for_record = TestAttempt.objects.filter(
-            user=user, disqualified=False,
-        ).count()
-        if attempts_count_for_record >= 2 and current >= best_score and current > 0:
+        if total_attempts >= 2 and current >= best_score and current > 0:
             updated = _update_record(user, 'new_record', current)
             if updated:
                 newly_awarded.append('new_record')

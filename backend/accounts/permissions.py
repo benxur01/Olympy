@@ -83,6 +83,28 @@ def _origin_matches(origin, allowed):
     return False
 
 
+def request_origin_is_trusted(request):
+    """`TrustedOrigin` qoidasi: xavfsiz metod yoki allowlist'dagi Origin/Referer.
+
+    Izohi `TrustedOrigin` docstring'ida. `OlympyJWTAuthentication` ham cookie
+    orqali kelgan har bir state-changing so'rov uchun shu funksiyani chaqiradi.
+    """
+    if request.method in _SAFE_METHODS:
+        return True
+    allowed = _allowed_origins(request)
+    origin = request.META.get('HTTP_ORIGIN')
+    if origin:
+        return _origin_matches(origin.strip().rstrip('/'), allowed)
+    referer = request.META.get('HTTP_REFERER')
+    if referer:
+        parsed = urlparse(referer)
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        return _origin_matches(f'{parsed.scheme}://{parsed.netloc}', allowed)
+    # Na Origin, na Referer — brauzer emas (`TrustedOrigin` docstring'iga qarang).
+    return True
+
+
 class TrustedOrigin(BasePermission):
     """CSRF himoyasi: state-changing so'rovning ``Origin`` allowlist'da bo'lishi.
 
@@ -122,17 +144,4 @@ class TrustedOrigin(BasePermission):
     message = "So'rov ishonchsiz manbadan yuborilgan."
 
     def has_permission(self, request, view):
-        if request.method in _SAFE_METHODS:
-            return True
-        allowed = _allowed_origins(request)
-        origin = request.META.get('HTTP_ORIGIN')
-        if origin:
-            return _origin_matches(origin.strip().rstrip('/'), allowed)
-        referer = request.META.get('HTTP_REFERER')
-        if referer:
-            parsed = urlparse(referer)
-            if not parsed.scheme or not parsed.netloc:
-                return False
-            return _origin_matches(f'{parsed.scheme}://{parsed.netloc}', allowed)
-        # Na Origin, na Referer — brauzer emas (docstring'ga qarang).
-        return True
+        return request_origin_is_trusted(request)
