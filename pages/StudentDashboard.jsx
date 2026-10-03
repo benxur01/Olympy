@@ -98,17 +98,6 @@ const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun', onUpgra
 );
 
 // ─── Billing UI yordamchilari ────────────────────────────────────────────────
-// Sana (ISO string) → "2026-09-15" ko'rinishi. Yaroqsiz qiymatda '—' qaytaradi.
-const fmtReceiptDate = (iso) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
 // Summa → "99 000 UZS" (ruscha guruhlash, ingichka bo'shliq ajratuvchi).
 const fmtAmount = (amount) => `${(Number(amount) || 0).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
 

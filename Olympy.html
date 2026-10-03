@@ -39,26 +39,32 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
-  <!-- Backend API bilan ulanishni oldindan ochish (TCP + TLS preconnect).
-       Foydalanuvchi saytga kirishi bilanoq Render backend bilan ulanish o'rnatiladi,
-       natijada birinchi so'rov (login, ro'yxatdan o'tish) 0.5-1s tezroq ketadi. -->
-  <link rel="preconnect" href="https://olympy-api.onrender.com" crossorigin />
-  <link rel="dns-prefetch" href="https://olympy-api.onrender.com" />
+  <!-- API uchun preconnect kerak emas: so'rovlar sahifaning o'z origin'iga
+       ketadi (prolymp.uz/api/... — src/services/api.js; Render `/api/*` ni
+       server tomonda rewrite qiladi, Contabo'da nginx proxy qiladi). -->
   <!-- Shriftlar self-hosted: `public/fonts/*.woff2` + src/index.css dagi
        @font-face (PT Sans / PT Sans Narrow). Avval bu yerda Google Fonts
        CDN'ga preconnect va Plus Jakarta Sans stylesheet link bor edi —
        olib tashlandi: tashqi so'rov yo'q va matn render'i uchinchi tomon
-       javobiga bog'liq emas. -->
+       javobiga bog'liq emas.
+       Preload — asosiy matn (PT Sans 400) va sarlavha (PT Sans Narrow 700,
+       landing hero) shriftlari JS bilan parallel yuklanadi: aks holda ular
+       React render'idan KEYIN so'raladi va matn zaxira shriftdan almashib
+       sakraydi (layout shift). href src/index.css dagi url() bilan aynan bir
+       xil bo'lishi shart. -->
+  <link rel="preload" href="/fonts/pt-sans-400-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/pt-sans-narrow-700-latin.woff2" as="font" type="font/woff2" crossorigin />
   <!-- Tailwind CDN olib tashlandi: avval https://cdn.tailwindcss.com 1+ MB JS yuklardi
        va render kechikishi yaratardi. Endi Tailwind PostCSS plugin orqali build paytida
        CSS generatsiya qilinadi (tailwind.config.js + postcss.config.js + src/index.css). -->
-  <!-- Google Identity Services SDK (Google OAuth).
+  <!-- Google Identity Services SDK (Google OAuth) bu yerda YUKLANMAYDI: uni
+       pages/Auth.jsx faqat Google tugmasi ko'rsatilganda qo'shadi — landing va
+       dashboardlar uchinchi tomon skriptini umuman olmaydi.
        Client ID bu yerda inline skript bilan berilmaydi: production CSP
        `script-src` da 'unsafe-inline' saqlamaydi, shuning uchun bunday blok
        brauzerda bloklanardi — `window.GOOGLE_CLIENT_ID` hech qachon
        o'rnatilmasdi va konsolda CSP violation chiqardi. Qiymat build paytida
        `VITE_GOOGLE_CLIENT_ID` env orqali beriladi (pages/Auth.jsx). -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <!-- Mavzu `data-theme` atributi + CSS o'zgaruvchilari orqali ishlaydi
      (public/theme-init.js uni React yuklanishidan oldin o'rnatadi).

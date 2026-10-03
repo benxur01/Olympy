@@ -1979,9 +1979,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const apiUsersList = isApi && apiUsersRes.data && Array.isArray(apiUsersRes.data.results)
     ? apiUsersRes.data.results
     : (isApi && Array.isArray(apiUsersRes.data) ? apiUsersRes.data : null);
-  const apiAllUsers = apiUsersList
-    ? apiUsersList.map(OlympyApi.mapBackendUser)
-    : null;
+  // Memo: bu komponent har bir klaviatura/klik hodisasida qayta chiziladi, butun
+  // ro'yxatni (minglab foydalanuvchi) har safar qayta map qilish sezilarli
+  // kechikish beradi — faqat server javobi o'zgarganda qayta hisoblanadi.
+  const apiAllUsers = React.useMemo(
+    () => (apiUsersList ? apiUsersList.map(OlympyApi.mapBackendUser) : null),
+    [apiUsersList],
+  );
   // Platform adminlar statistika va ro'yxatlarda hisoblanmasin. Backend
   // admin_users_list ularni allaqachon chiqarib tashlaydi; bu zaxira filtr
   // mock/store fallback uchun ham adminlarni statistikadan ajratib turadi.
@@ -1999,10 +2003,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [isRefreshingUsers, setIsRefreshingUsers] = React.useState(false);
   const prevLiveCountRef = React.useRef(0);
 
-  // Modal ochiq turganda har 4 soniyada avtomatik so'rov (Real-time Live Polling)
+  // Modal ochiq turganda har 4 soniyada avtomatik so'rov (Real-time Live Polling).
+  // Tab fonda bo'lsa so'ralmaydi: bu to'liq ro'yxat (barcha sahifalar) — uni
+  // hech kim ko'rmayotganda qayta yuklash faqat server va trafikni band qiladi.
   React.useEffect(() => {
     if (!usersModalOpen || !isApi) return;
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       apiUsersRes.reload();
       if (onlineListOpen) apiOnlineUsersRes.reload();
       setLastLivePollTime(new Date());

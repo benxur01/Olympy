@@ -21,6 +21,25 @@ const FIELD_LABEL = 'block text-[11px] font-bold uppercase tracking-[0.1em] text
 // Telefon input endi shared.jsx dagi `PhoneField` komponenti orqali ishlanadi
 // (davlat kodi tanlash + xalqaro E.164, defolt O'zbekiston +998).
 
+// Google Identity Services SDK faqat Google tugmasi birinchi marta
+// ko'rsatilganda yuklanadi (index.html uni har sahifada yuklamaydi). Promise
+// keshlanadi — skript sahifaga bir marta qo'shiladi. CSP `script-src` bu
+// URL'ga allaqachon ruxsat beradi.
+let googleIdentityPromise = null;
+const loadGoogleIdentity = () => {
+  if (!googleIdentityPromise) {
+    googleIdentityPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  return googleIdentityPromise;
+};
+
 // `role` — faqat ro'yxatdan o'tish niyati ('student' yoki 'owner'). Login
 // sahifasida u BERILMAYDI: kirish mavjud hisobning rolini o'zgartirmasligi
 // kerak (backend rol yuborilmasa hisobga tegmaydi).
@@ -131,7 +150,9 @@ const GoogleAuthButton = ({ role = '', onLogin, setError, loading, setLoading })
         console.warn('Google Identity initialization error:', e);
       }
     };
-    render();
+    // SDK yuklanmasa tugma render qilinmaydi — bosilganda handleOverlayClick
+    // "Google hali tayyor emas" xabarini ko'rsatadi.
+    loadGoogleIdentity().then(render, () => {});
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, btnWidth]);
