@@ -12,33 +12,7 @@ const MANAGER_DASHBOARD_PAGES = [
 ];
 const managerDashUrl = makeDashboardUrlSync('/dashboard/manager', MANAGER_DASHBOARD_PAGES);
 
-// Cheating sabab kodlarini (backend `cheating_reason`) o'qiladigan o'zbekcha
-// yorliqqa aylantiramiz. Noma'lum kod kelsa xom qiymatni ko'rsatamiz, shunda
-// yangi signal qo'shilsa ham panel buzilmaydi.
-const CHEATING_REASON_LABELS = {
-  tab_or_app_left: 'Tab yoki ilovani tark etdi',
-  test_window_left: 'Test oynasidan chiqdi',
-  concurrent_session: 'Boshqa qurilmadan kirildi',
-  copy_paste_attempt: 'Nusxa olish urinishi',
-  fullscreen_exit: "To'liq ekrandan chiqish",
-  devtools_open: 'DevTools ochildi',
-  multi_monitor_detected: 'Bir nechta monitor aniqlandi',
-  // Webkamera proktoring signallari. Kalitlar src/proctoring/reasons.js
-  // (yagona manba) bilan mos bo'lishi shart — ishlab chiqaruvchi shu satrlarni
-  // yuboradi.
-  no_face_detected: 'Yuz aniqlanmadi',
-  multiple_faces_detected: 'Bir nechta yuz aniqlandi',
-  gaze_away_sustained: 'Nigoh ekrandan uzoq',
-  // Ovoz proktoring signali. Kalit src/proctoring/voiceReasons.js (yagona
-  // manba) bilan mos bo'lishi shart.
-  ambient_speech_detected: 'Atrofdan ovoz aniqlandi',
-};
-const cheatingReasonLabel = (reason) => {
-  const key = String(reason || '').trim().toLowerCase();
-  return CHEATING_REASON_LABELS[key] || reason;
-};
-
-const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
+const ManagerDashboard =({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = managerDashUrl.usePageState();

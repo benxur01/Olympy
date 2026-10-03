@@ -138,6 +138,17 @@ const detectDialCode = (raw, fallback = UZ_DIAL_CODE) => {
   return fallback;
 };
 
+// Sana (ISO string) → "2026-09-15" ko'rinishi. Yaroqsiz qiymatda '—' qaytaradi.
+const fmtReceiptDate = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // ─── PhoneField ────────────────────────────────────────────────────────────────
 // Davlat kodi tanlash dropdown + xalqaro telefon input. Defolt O'zbekiston
 // (+998). `value` — to'liq E.164 string (masalan '+998901234567'); `onChange`
@@ -789,6 +800,22 @@ const Avatar = ({ name = '', size = 36, gradient = 'bg-pencil-600', src = '', pr
   );
 };
 
+// ─── Medal chegarasi ────────────────────────────────────────────────────────
+// `--color-medal-1/2/3` tokenlari `tailwind.config.js` da utility sifatida
+// e'lon qilinmagan — ular `.leaderboard-gold/silver/bronze` klasslari uchun
+// CSS o'zgaruvchisi. Shuning uchun 1/2/3-o'rin chegarasi inline `style` bilan
+// beriladi (`app.jsx` dagi `style={{ background: 'rgb(var(--color-ground))' }}`
+// naqshi bilan bir xil).
+//
+// DIQQAT: medal rangi MATNGA berilmaydi. Qog'oz mavzuda oltin `surface-2`
+// fonida 3.21:1 — chegara va chiziq uchun yetarli (WCAG 1.4.11 → 3:1), lekin
+// matn uchun emas (4.5:1 kerak). Raqamlar `text-text-primary` bilan yoziladi,
+// o'rin farqini esa chegara + fon + chap chiziq birgalikda beradi — ya'ni
+// signal faqat rangda emas (rang ko'rligi uchun).
+const medalBorderStyle = (place) => (place >= 1 && place <= 3
+  ? { borderColor: `rgb(var(--color-medal-${place}))` }
+  : undefined);
+
 // ─── Badge ─────────────────────────────────────────────────────────────────────
 // Avval 'Tugagan' va 'Tugadi' qizil (badge-rejected) ko'rinardi — finished
 // olympiad'lar xato xolatga o'xshab ko'rinardi. Endi tugagan tadbirlar uchun
@@ -1123,6 +1150,32 @@ const ConfirmModal = ({
       </div>
     </Modal>
   );
+};
+
+// Cheating sabab kodlarini (backend `cheating_reason`) o'qiladigan o'zbekcha
+// yorliqqa aylantiramiz. Noma'lum kod kelsa xom qiymatni ko'rsatamiz, shunda
+// yangi signal qo'shilsa ham panel buzilmaydi.
+const CHEATING_REASON_LABELS = {
+  tab_or_app_left: 'Tab yoki ilovani tark etdi',
+  test_window_left: 'Test oynasidan chiqdi',
+  concurrent_session: 'Boshqa qurilmadan kirildi',
+  copy_paste_attempt: 'Nusxa olish urinishi',
+  fullscreen_exit: "To'liq ekrandan chiqish",
+  devtools_open: 'DevTools ochildi',
+  multi_monitor_detected: 'Bir nechta monitor aniqlandi',
+  // Webkamera proktoring signallari. Kalitlar src/proctoring/reasons.js
+  // (yagona manba) bilan mos bo'lishi shart — ishlab chiqaruvchi shu satrlarni
+  // yuboradi.
+  no_face_detected: 'Yuz aniqlanmadi',
+  multiple_faces_detected: 'Bir nechta yuz aniqlandi',
+  gaze_away_sustained: 'Nigoh ekrandan uzoq',
+  // Ovoz proktoring signali. Kalit src/proctoring/voiceReasons.js (yagona
+  // manba) bilan mos bo'lishi shart.
+  ambient_speech_detected: 'Atrofdan ovoz aniqlandi',
+};
+const cheatingReasonLabel = (reason) => {
+  const key = String(reason || '').trim().toLowerCase();
+  return CHEATING_REASON_LABELS[key] || reason;
 };
 
 // ─── LiveProctorModal (Jonli Video, Ekran & Ovoz Nazorati) ───────────────────

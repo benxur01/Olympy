@@ -29,22 +29,6 @@ const mapApiLeaderboard = (entry) => ({
   _api: true,
 });
 
-// ─── Medal chegarasi ────────────────────────────────────────────────────────
-// `--color-medal-1/2/3` tokenlari `tailwind.config.js` da utility sifatida
-// e'lon qilinmagan — ular `.leaderboard-gold/silver/bronze` klasslari uchun
-// CSS o'zgaruvchisi. Shuning uchun 1/2/3-o'rin chegarasi inline `style` bilan
-// beriladi (`app.jsx` dagi `style={{ background: 'rgb(var(--color-ground))' }}`
-// naqshi bilan bir xil).
-//
-// DIQQAT: medal rangi MATNGA berilmaydi. Qog'oz mavzuda oltin `surface-2`
-// fonida 3.21:1 — chegara va chiziq uchun yetarli (WCAG 1.4.11 → 3:1), lekin
-// matn uchun emas (4.5:1 kerak). Raqamlar `text-text-primary` bilan yoziladi,
-// o'rin farqini esa chegara + fon + chap chiziq birgalikda beradi — ya'ni
-// signal faqat rangda emas (rang ko'rligi uchun).
-const medalBorderStyle = (place) => (place >= 1 && place <= 3
-  ? { borderColor: `rgb(var(--color-medal-${place}))` }
-  : undefined);
-
 // ─── "Sizning o'rningiz" xulosasi ───────────────────────────────────────────
 // Reyting o'qiladigan hujjat emas, skaner qilinadigan jadval: "men
 // qayerdaman?" savoliga javob ro'yxatdan OLDIN va undan ajratilgan holda

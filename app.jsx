@@ -229,6 +229,19 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Bootstrap loader'i. Lazy sahifa chunki yuklanayotganda ham aynan shu ekran
+// ko'rsatiladi (scripts/generate-vite-entry.mjs → LAZY_FALLBACK), ya'ni
+// bootstrap'dan sahifaga o'tishda loader almashib miltillamaydi.
+const AppLoader = () => (
+  <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
+    <div className="flex flex-col items-center gap-4 text-text-secondary">
+      <BrandLogo size="lg" />
+      <div className="w-12 h-12 rounded-full border-2 border-edge border-t-accent animate-spin" />
+      <div className="text-sm font-semibold tracking-wide">Olympy yuklanmoqda...</div>
+    </div>
+  </div>
+);
+
 const App = () => {
   const [page, setPage] = React.useState(() => pageFromPath() || 'landing');
   const [testResult, setTestResult] = React.useState(null);
@@ -1085,15 +1098,7 @@ const App = () => {
     // Avval restore tugamaguncha "landing" sahifasi ko'rinib, keyin esa
     // foydalanuvchi dashboardiga sakrar va flicker hosil bo'lardi. Endi
     // bootstrap davomida loading skeleton ko'rsatamiz.
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="flex flex-col items-center gap-4 text-text-secondary">
-          <BrandLogo size="lg" />
-          <div className="w-12 h-12 rounded-full border-2 border-edge border-t-accent animate-spin" />
-          <div className="text-sm font-semibold tracking-wide">Olympy yuklanmoqda...</div>
-        </div>
-      </div>
-    );
+    return <AppLoader />;
   }
 
   return (

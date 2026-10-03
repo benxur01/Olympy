@@ -32,8 +32,8 @@ export default defineConfig({
     target: 'es2015',
     // Minifikatsiya: esbuild o'rniga terser. esbuild tez, lekin terser
     // kuchliroq siqadi (o'lik kod, ifoda soddalashtirish, takror nomlar).
-    // Bizning asosiy bundle ulkan (yagona global-scope ilova kodi), shuning
-    // uchun terser'ning qo'shimcha siqishi sezilarli foyda beradi.
+    // Ilova kodi katta (global-scope sahifalar), shuning uchun terser'ning
+    // qo'shimcha siqishi sezilarli foyda beradi.
     minify: 'terser',
     terserOptions: {
       compress: {
@@ -57,17 +57,14 @@ export default defineConfig({
     // o'zgaradi, shuning uchun brauzer ularni uzoq muddat keshlaydi va
     // ilova kodi o'zgarganda qayta yuklab o'tirmaydi.
     //
-    // Eslatma: sahifalar (pages/*.jsx) `scripts/generate-vite-entry.mjs`
-    // tomonidan bitta `src/olympy-entry.jsx` faylga inline birlashtiriladi
-    // va o'zaro global `var` (moduleScope) orqali bog'langan, ES `import`
-    // ishlatmaydi + aylanma bog'liqliklari bor. Shu sababli har bir page'ni
-    // alohida chunkka ajratib bo'lmaydi (ular bitta modulning bir qismi,
-    // mustaqil modul emas). Buning o'rniga vendor (node_modules)
-    // kutubxonalarini alohida chunklarga ajratamiz — bu asosiy app
-    // bundle'ini yengillashtiradi va vendor kodi kamdan-kam o'zgargani
-    // uchun brauzer keshini yaxshilaydi. CodeMirror esa allaqachon
-    // src/services/codemirror-loader.js orqali dinamik import bilan
-    // lazy yuklanadi — kod savollari ochilgandagina tushadi.
+    // Eslatma: ilova kodi bu yerda chunklanmaydi (`manualChunks` faqat
+    // node_modules'ga tegadi). Og'ir marshrut sahifalarini
+    // `scripts/generate-vite-entry.mjs` alohida modullarga (`src/olympy-pages/`)
+    // chiqaradi va entry ularni dinamik `import()` qiladi — Rollup ularni
+    // o'zi lazy chunklarga ajratadi. Vendor kutubxonalari esa alohida
+    // chunklarda: vendor kodi kamdan-kam o'zgargani uchun brauzer keshi
+    // yaxshilanadi. CodeMirror src/services/codemirror-loader.js orqali
+    // dinamik import bilan lazy yuklanadi — kod savollari ochilgandagina tushadi.
     rollupOptions: {
       output: {
         manualChunks(id) {
