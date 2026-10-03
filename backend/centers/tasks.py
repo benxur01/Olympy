@@ -76,6 +76,39 @@ def send_staff_join_notification_task(requester_id, center_id, membership_id):
 
 
 @shared_task
+def send_membership_decision_notification_task(membership_id, approved):
+    """Notify the applicant about the approve/reject decision on their membership."""
+    from notifications.services import send_membership_decision_notification
+    try:
+        membership = CenterMembership.objects.select_related('user', 'center').get(pk=membership_id)
+        send_membership_decision_notification(membership, approved)
+        return f"Sent membership decision notification for membership {membership_id}"
+    except Exception as e:
+        logger.exception("Failed to send membership decision notification in celery task")
+        return f"Error sending membership decision notification: {str(e)}"
+
+
+@shared_task
+def send_center_approval_request_notifications_task(center_id):
+    """Notify every active platform admin that a new center awaits approval."""
+    from notifications.services import send_center_approval_request_notification
+    try:
+        center = EducationCenter.objects.select_related('owner').get(pk=center_id)
+        for admin in User.objects.filter(is_platform_admin=True, is_active=True):
+            try:
+                send_center_approval_request_notification(admin, center.owner, center)
+            except Exception:
+                logger.exception(
+                    "Failed to notify admin user_id=%s about pending center %s",
+                    admin.id, center_id,
+                )
+        return f"Sent center approval request notifications for center {center_id}"
+    except Exception as e:
+        logger.exception("Failed to send center approval request notifications in celery task")
+        return f"Error sending center approval request notifications: {str(e)}"
+
+
+@shared_task
 def send_student_limit_reached_notification_task(center_id):
     """Markaz o'quvchi joy limitiga yetganda owner'ni xabardor qilish.
 
