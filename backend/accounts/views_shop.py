@@ -27,7 +27,7 @@ from centers.services import user_can_manage_center_staff
 
 from .models import RewardProduct
 from .serializers import RewardProductSerializer
-from .utils import delete_replaced_image_file
+from .utils import assign_safe_image_name, delete_replaced_image_file
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,8 @@ def _validate_and_attach_image(product, request):
         image.seek(0)
     except Exception:
         return 'Yaroqsiz rasm fayli'
+    if not assign_safe_image_name(image, img.format):
+        return 'Faqat JPG, PNG, GIF yoki WEBP rasm qabul qilinadi'
     product.image = image
     return None
 
@@ -194,7 +196,12 @@ def center_shop_products(request):
         )
 
     # GET — markaz mahsulotlari ro'yxati.
-    products = RewardProduct.objects.filter(center=center).order_by('-created_at')
+    products = (
+        RewardProduct.objects
+        .filter(center=center)
+        .select_related('center')
+        .order_by('-created_at')
+    )
     return Response(
         RewardProductSerializer(products, many=True, context={'request': request}).data
     )
@@ -265,6 +272,7 @@ def student_shop_products(request):
     products = (
         RewardProduct.objects
         .filter(center=center, is_active=True, stock__gt=0)
+        .select_related('center')
         .order_by('-created_at')
     )
     return Response({

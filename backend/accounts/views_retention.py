@@ -12,7 +12,7 @@ Barchasi `/api/...` ostida mount qilinadi (accounts/urls_me.py). Har biri faqat
 autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlari bilan ishlaydi.
 """
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Q, Sum
@@ -573,12 +573,19 @@ def weekly_contest(request):
     """
     week_start, week_end = _week_bounds()
     contest = WeeklyContest.objects.filter(week_start=week_start).first()
+    # `submitted_at__date` oralig'i bilan bir xil natija, lekin har qatorni
+    # sanaga o'girmaydi — `submitted_at` indeksi ishlatiladi.
+    tz = timezone.get_current_timezone()
+    week_start_at = timezone.make_aware(datetime.combine(week_start, time.min), tz)
+    week_end_at = timezone.make_aware(
+        datetime.combine(week_end + timedelta(days=1), time.min), tz,
+    )
 
     # Joriy hafta ballarini jonli hisoblaymiz (top 50).
     rows = (
         TestAttempt.objects
         .filter(disqualified=False, olympiad__is_deleted=False,
-                submitted_at__date__gte=week_start, submitted_at__date__lte=week_end)
+                submitted_at__gte=week_start_at, submitted_at__lt=week_end_at)
         .values('user_id')
         .annotate(total=Sum('score'))
         .order_by('-total')[:50]
@@ -607,14 +614,14 @@ def weekly_contest(request):
         my_total = (
             TestAttempt.objects
             .filter(user=request.user, disqualified=False, olympiad__is_deleted=False,
-                    submitted_at__date__gte=week_start, submitted_at__date__lte=week_end)
+                    submitted_at__gte=week_start_at, submitted_at__lt=week_end_at)
             .aggregate(total=Sum('score'))['total'] or 0
         )
         if my_total > 0:
             higher = (
                 TestAttempt.objects
                 .filter(disqualified=False, olympiad__is_deleted=False,
-                        submitted_at__date__gte=week_start, submitted_at__date__lte=week_end)
+                        submitted_at__gte=week_start_at, submitted_at__lt=week_end_at)
                 .values('user_id')
                 .annotate(total=Sum('score'))
                 .filter(total__gt=my_total)

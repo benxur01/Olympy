@@ -248,6 +248,22 @@ def _queue_post_olympiad_summary(olympiad_id):
     transaction.on_commit(_enqueue)
 
 
+def olympiad_answers_released(olympiad, now=None):
+    """Javob kaliti (to'g'ri javoblar) o'quvchiga ochilishi mumkinmi.
+
+    Olimpiada davom etayotganda topshirib bo'lgan o'quvchi kalitni ko'rsa,
+    uni hali yechayotganlarga tarqata oladi. Vaqt oynasi tugagach
+    (`submit_attempt` shu paytdan keyin hech narsa qabul qilmaydi) yoki
+    olimpiada yakunlangach ochiladi.
+    """
+    if olympiad.status == Olympiad.STATUS_FINISHED:
+        return True
+    if olympiad.start_datetime and olympiad.duration_minutes:
+        end_time = olympiad.start_datetime + timedelta(minutes=olympiad.duration_minutes)
+        return (now or timezone.now()) > end_time
+    return False
+
+
 def maybe_finish_expired_olympiad(olympiad):
     """Celery worker yo'q muhitda lazy trigger — faqat SHU olimpiada.
 
@@ -262,19 +278,23 @@ def maybe_finish_expired_olympiad(olympiad):
 
     Bu funksiya atomic transaction ICHIDA chaqirilmasligi kerak —
     aks holda lock muammosi tug'ilishi mumkin.
+
+    Yopishga urinilgan bo'lsa True qaytaradi — shunda chaqiruvchidagi
+    `olympiad` nusxasi eskirgan (status bazada o'zgargan bo'lishi mumkin).
     """
     if not olympiad or olympiad.status != Olympiad.STATUS_ACTIVE:
-        return
+        return False
     if not olympiad.start_datetime or not olympiad.duration_minutes:
-        return
+        return False
     end_time = olympiad.start_datetime + timedelta(minutes=olympiad.duration_minutes)
     if timezone.now() <= end_time:
-        return
+        return False
     try:
         _do_finish_olympiad(olympiad)
     except Exception:
         import logging
         logging.getLogger(__name__).exception('maybe_finish_expired_olympiad failed')
+    return True
 
 
 def finalize_expired_active_olympiads():

@@ -16,7 +16,7 @@ from rest_framework.response import Response
 
 from accounts.models import AuditLog
 from accounts.permissions import IsPlatformAdmin, TrustedOrigin
-from accounts.utils import delete_replaced_image_file
+from accounts.utils import assign_safe_image_name, delete_replaced_image_file
 from .models import CenterMembership, CenterQuestion, EducationCenter
 from .serializers import (
     AdminEducationCenterSerializer,
@@ -48,19 +48,45 @@ logger = logging.getLogger(__name__)
 # (har so'rovda global o'zgaruvchini qayta yozish thread-unsafe edi).
 PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
 
+# Markazlar reytingi (`center_ranking`, `center_ratings`) har so'rovda BARCHA
+# tasdiqlangan markazlar uchun attempt agregatlarini hisoblaydi (o'rtacha
+# ball bo'yicha saralash hammasini talab qiladi). Natija foydalanuvchiga
+# bog'liq emas — `attempts.views.LEADERBOARD_CACHE_SECONDS` naqshidagi qisqa TTL.
+CENTER_RANKING_CACHE_SECONDS = 60
+
 
 def _annotate_center_counts(queryset):
-    """Annotate students_count + olympiads_count to avoid N+1 in serializer."""
+    """Annotate students_count + olympiads_count to avoid N+1 in serializer.
+
+    Ikkala son alohida Subquery: ikki multi-valued relation (memberships va
+    olympiads) bitta so'rovda JOIN qilinsa har markaz uchun o'quvchilar ×
+    olimpiadalar qatori hosil bo'lib, faqat DISTINCT bilan to'g'rilanardi.
+    """
+    from django.db.models import OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+    from olympiads.models import Olympiad
+
+    students_sq = (
+        CenterMembership.objects
+        .filter(
+            center=OuterRef('pk'),
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        .values('center')
+        .annotate(c=Count('id'))
+        .values('c')
+    )
+    olympiads_sq = (
+        Olympiad.objects
+        .filter(center=OuterRef('pk'))
+        .values('center')
+        .annotate(c=Count('id'))
+        .values('c')
+    )
     return queryset.annotate(
-        students_count=Count(
-            'memberships',
-            filter=Q(
-                memberships__role=CenterMembership.ROLE_STUDENT,
-                memberships__status=CenterMembership.STATUS_APPROVED,
-            ),
-            distinct=True,
-        ),
-        olympiads_count=Count('olympiads', distinct=True),
+        students_count=Coalesce(Subquery(students_sq), 0),
+        olympiads_count=Coalesce(Subquery(olympiads_sq), 0),
     )
 
 
@@ -384,6 +410,11 @@ def update_center_image(request, center_id):
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=http_status.HTTP_400_BAD_REQUEST)
+    if not assign_safe_image_name(image, img.format):
+        return Response(
+            {'detail': 'Faqat JPG, PNG, GIF yoki WEBP rasm qabul qilinadi'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     # Almashtirilgan logo storage'da yetim qolmasin: eski nomni yozishdan
     # OLDIN olamiz, o'chirishni esa save'dan KEYIN bajaramiz (save xato bersa
     # eski rasm joyida qoladi).
@@ -1250,6 +1281,9 @@ def center_ratings(request):
     markazlar xotiraga olinib (`list(centers_qs)`), Python'da sortlanib
     keyin kesilardi.
     """
+    import hashlib
+
+    from django.core.cache import cache
     from django.db.models import Avg, Count, OuterRef, Subquery
     from django.db.models.functions import Coalesce
     from attempts.models import TestAttempt
@@ -1261,6 +1295,14 @@ def center_ratings(request):
     except (TypeError, ValueError):
         limit = 20
     limit = max(1, min(limit, 100))
+
+    params_digest = hashlib.sha256(
+        f'{region}\n{subject}\n{limit}'.encode('utf-8'),
+    ).hexdigest()[:32]
+    cache_key = f'centers:ratings:v1:{params_digest}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
 
     # Attempt agregatlari Subquery orqali: total_olympiads (olympiads
     # relation) bilan bir vaqtda JOIN qilinsa cross-join hosil bo'lib
@@ -1320,6 +1362,7 @@ def center_ratings(request):
             'rating': new_rating,
             'rank': i + 1,
         })
+    cache.set(cache_key, rows, CENTER_RANKING_CACHE_SECONDS)
     return Response(rows)
 
 
@@ -1337,10 +1380,20 @@ def center_ranking(request):
     saralanardi — markazlar soni o'sgan sayin sekinlashardi va response
     cheksiz katta bo'lib ketardi.
     """
+    from django.core.cache import cache
     from django.db.models import Avg, Count, Max, OuterRef, Q, Subquery
     from django.db.models.functions import Coalesce
     from django.core.paginator import Paginator
     from attempts.models import TestAttempt
+
+    try:
+        requested_page = int(request.query_params.get('page') or 1)
+    except (TypeError, ValueError):
+        requested_page = 1
+    cache_key = f'centers:ranking:v1:{requested_page}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
 
     # Attempt agregatlarini Subquery orqali olamiz — student_count (memberships)
     # bilan bir vaqtda relation JOIN qilinsa cross-join hosil bo'lib Avg/Count
@@ -1385,9 +1438,8 @@ def center_ranking(request):
     )
 
     paginator = Paginator(centers_qs, 50)
-    page_number = request.query_params.get('page') or 1
     try:
-        page = paginator.page(page_number)
+        page = paginator.page(requested_page)
     except Exception:
         page = paginator.page(1)
 
@@ -1408,12 +1460,17 @@ def center_ranking(request):
             'rank': start_rank + offset + 1,
         })
 
-    return Response({
+    payload = {
         'count': paginator.count,
         'num_pages': paginator.num_pages,
         'page': page.number,
         'results': rows,
-    })
+    }
+    # Faqat haqiqatan mavjud sahifa cache kalitini oladi — yaroqsiz `?page=`
+    # qiymatlari (1-sahifaga tushadi) cache'ni to'ldirmasin.
+    if page.number == requested_page:
+        cache.set(cache_key, payload, CENTER_RANKING_CACHE_SECONDS)
+    return Response(payload)
 
 
 @api_view(['GET'])
