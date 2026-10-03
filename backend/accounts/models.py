@@ -1092,6 +1092,9 @@ class AuditLog(models.Model):
         indexes = [
             models.Index(fields=['actor', '-created_at']),
             models.Index(fields=['action', '-created_at']),
+            # Admin audit ro'yxati filtrsiz `-created_at` bo'yicha sahifalanadi,
+            # jadval esa tozalanmaydi.
+            models.Index(fields=['-created_at']),
         ]
 
     def __str__(self):
