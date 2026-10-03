@@ -56,6 +56,14 @@ references from `Olympy.html`, concatenates them into `src/olympy-entry.jsx`,
 and rewrites `index.html` to load that entry as an ES module. The runtime
 behavior of the page is identical — UI/UX is preserved exactly.
 
+Heavy route-specific pages listed in `LAZY_PAGES` (dashboards, test, results,
+profile, leaderboard, analytics) are emitted as separate modules under
+`src/olympy-pages/` instead and are downloaded only when first rendered. Each
+one imports the names it uses from the entry (or from another lazy page).
+Eager code (`app.jsx`, `shared.jsx`, …) may reference a lazy page's exports
+only as JSX components (`<AdminDashboard />`); using one as a value makes the
+generator fail the build — move such helpers to `shared.jsx`.
+
 Use Vite (`npm run dev`) for the production-ready dev server.
 
 > **Olympy.html (legacy):** the Babel-standalone HTML at the repo root is

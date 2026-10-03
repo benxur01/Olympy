@@ -57,6 +57,7 @@ dist/
 
 # Generated entry — recreated by scripts/generate-vite-entry.mjs
 src/olympy-entry.jsx
+src/olympy-pages/
 index.html
 
 # ─── IDE / OS ─────────────────────────────────────────────────────────────
