@@ -1,3 +1,5 @@
+import copy
+
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
@@ -9,6 +11,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from accounts.models import AuditLog
 from accounts.permissions import TrustedOrigin
+from accounts.utils import delete_replaced_image_file
 from centers.models import CenterMembership
 from moderation.models import ModerationFlag
 
@@ -84,15 +87,20 @@ def _user_can_explain_question(user, question):
     - Markazning tasdiqlangan o'qituvchi/menejer/egasi (yoki platforma admini):
       savol yaratish/boshqarish huquqiga ega.
     - O'quvchi: shu savolni o'z ichiga olgan olimpiadani topshirgan bo'lsa
-      (mistakes review'da o'z xatosini tushunish uchun).
+      (mistakes review'da o'z xatosini tushunish uchun) va o'sha olimpiadaning
+      javob kaliti ochilgan bo'lsa — tushuntirish to'g'ri javobni aytadi.
     Boshqa foydalanuvchilar savol ID'sini taxmin qilib tushuntirish ololmaydi.
     """
     if _user_can_create_for_center(user, question.center_id):
         return True
-    from attempts.models import TestAttempt
-    return TestAttempt.objects.filter(
-        user=user, olympiad__questions=question,
-    ).exists()
+    from olympiads.models import Olympiad
+    from olympiads.services import olympiad_answers_released
+    olympiads = (
+        Olympiad.objects
+        .filter(questions=question, attempts__user=user)
+        .only('id', 'status', 'start_datetime', 'duration_minutes')
+    )
+    return any(olympiad_answers_released(o) for o in olympiads)
 
 
 def _user_can_manage_question(user, question):
@@ -397,17 +405,20 @@ def question_detail(request, question_id):
         return Response(status=http_status.HTTP_204_NO_CONTENT)
     # PATCH / PUT
     partial = request.method == 'PATCH'
-    data = request.data
     # center maydonini tahrirlashga ruxsat bermaymiz — savol bir markazga
-    # bog'liq bo'lib qoladi.
-    if hasattr(data, 'copy'):
-        data = data.copy()
-    else:
-        data = dict(data)
+    # bog'liq bo'lib qoladi. Nusxa ataylab YUZAKI (`copy.copy`):
+    # `QueryDict.copy()` deepcopy qiladi, 2.5 MB dan katta yuklama esa diskdagi
+    # `TemporaryUploadedFile` bo'lib keladi va uni nusxalab bo'lmaydi (500).
+    data = copy.copy(request.data)
     data.pop('center', None)
     serializer = QuestionSerializer(question, data=data, partial=partial, context={'request': request})
     serializer.is_valid(raise_exception=True)
+    # Almashtirilgan yoki o'chirilgan rasm storage'da yetim qolmasin: eski
+    # nomni save'dan OLDIN olamiz, o'chirishni esa save'dan KEYIN bajaramiz
+    # (save xato bersa eski rasm joyida qoladi).
+    old_image_name = question.image.name if question.image else ''
     serializer.save()
+    delete_replaced_image_file(question.image, old_image_name)
     return Response(QuestionSerializer(question, context={'request': request}).data)
 
 
@@ -1745,8 +1756,8 @@ def olympiad_questions(request, olympiad_id):
     # Celery worker bo'lmagan muhitda muddati o'tgan olimpiadani lazy yopish.
     # Status o'zgargan bo'lsa pastdagi tekshiruvlar to'g'ri ishlaydi.
     try:
-        maybe_finish_expired_olympiad(olympiad)
-        olympiad.refresh_from_db()
+        if maybe_finish_expired_olympiad(olympiad):
+            olympiad.refresh_from_db()
     except Exception:
         pass
     if olympiad.status != Olympiad.STATUS_ACTIVE:

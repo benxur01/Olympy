@@ -20,6 +20,7 @@ from olympiads.models import Olympiad
 from olympy_api.export_utils import spreadsheet_safe
 from olympiads.services import (
     maybe_finish_expired_olympiad,
+    olympiad_answers_released,
     user_can_manage_center_event,
     user_can_participate_in_event,
 )
@@ -433,15 +434,21 @@ def submit_attempt(request):
     serializer = SubmitAttemptSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
+    # Olimpiad qatorini lock qilmaymiz — bu butun olimpiada bo'yicha
+    # submit'larni navbatga qo'yardi (100+ student bir vaqtda submit
+    # qilsa katta latency). Yagona-attempt cheklovi va sessiya
+    # tutqichi (TestSession.select_for_update) yetarli.
+    olympiad = get_object_or_404(
+        Olympiad.objects,
+        pk=serializer.validated_data['olympiad'],
+    )
     # Celery worker Render free tier'da ishlamasligi mumkin — lazy ravishda
     # muddati o'tgan olimpiadalarni yopib qo'yamiz. Bu atomic transaction
     # dan TASHQARIDA bo'lishi kerak, aks holda ichkarida olingan olimpiad
     # qatori bilan to'qnashuv yuzaga keladi.
     try:
-        _peek_olympiad = Olympiad.objects.filter(
-            pk=serializer.validated_data['olympiad'],
-        ).first()
-        maybe_finish_expired_olympiad(_peek_olympiad)
+        if maybe_finish_expired_olympiad(olympiad):
+            olympiad.refresh_from_db()
     except Exception:
         import logging
         logging.getLogger(__name__).exception(
@@ -450,15 +457,6 @@ def submit_attempt(request):
         )
 
     with transaction.atomic():
-        # Olimpiad qatorini lock qilmaymiz — bu butun olimpiada bo'yicha
-        # submit'larni navbatga qo'yardi (100+ student bir vaqtda submit
-        # qilsa katta latency). Yagona-attempt cheklovi va sessiya
-        # tutqichi (TestSession.select_for_update) yetarli.
-        olympiad = get_object_or_404(
-            Olympiad.objects,
-            pk=serializer.validated_data['olympiad'],
-        )
-
         # Soft-delete qilingan olimpiadaga submit qabul qilinmaydi —
         # frontend'da ko'rinmasligi kerak, ammo URL'ni bilgan abuser
         # to'g'ridan-to'g'ri API'ga POST yuborishi mumkin. 404 — chunki
@@ -1090,10 +1088,12 @@ class ReportCheatingView(APIView):
         # rollback bo'lgan sessiyaga bog'lanmasin.
         capture_evidence_snapshot(session, EvidenceSnapshot.TRIGGER_FLAGGED)
 
+        # Telegram fan-out (owner + 3 manager) Celery'da — o'quvchining
+        # imtihon paytidagi so'rovi va gunicorn thread'i uni kutmasin.
         try:
-            from notifications.services import send_pending_review_notification
+            from .tasks import send_pending_review_notification_task
 
-            send_pending_review_notification(request.user, olympiad, olympiad.center, reason)
+            send_pending_review_notification_task.delay(request.user.id, olympiad.id, reason)
         except Exception:
             import logging
             logging.getLogger(__name__).exception('pending review notification failed')
@@ -1323,8 +1323,12 @@ def attempt_detail(request, attempt_id):
         )
     if not can_view:
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    hide_answer_key = (
+        is_owner and not is_admin and not olympiad_answers_released(attempt.olympiad)
+    )
 
     data = TestAttemptSerializer(attempt).data
+    data['answers_hidden'] = hide_answer_key
     # Olimpiada ma'lumotini ham qo'shamiz — frontend bittagina so'rov bilan
     # to'liq sahifani chizishi mumkin.
     olympiad = attempt.olympiad
@@ -1444,11 +1448,14 @@ def attempt_detail(request, attempt_id):
                     chosen_idx = int(chosen_val) if chosen_val is not None else None
                 except (TypeError, ValueError):
                     chosen_idx = None
-                review_item['correct_answer'] = q.correct_answer
                 review_item['chosen_answer'] = chosen_idx
-                review_item['is_correct'] = (
-                    chosen_idx is not None and chosen_idx == q.correct_answer
-                )
+                if hide_answer_key:
+                    review_item['is_correct'] = None
+                else:
+                    review_item['correct_answer'] = q.correct_answer
+                    review_item['is_correct'] = (
+                        chosen_idx is not None and chosen_idx == q.correct_answer
+                    )
             elif q_type == 'essay':
                 # Qo'lda baholanadi — natija sahifasida alohida ko'rsatiladi.
                 # Ustoz baho qo'ygan bo'lsa ball + izoh qaytariladi va
@@ -1487,8 +1494,12 @@ def attempt_detail(request, attempt_id):
                 # indekslari (correct_answer_set), fill_blank/fill_blanks →
                 # matn yoki {"1": "..."} dict (correct_text).
                 from questions.grading import _parse_correct_text
-                result = grade_answer(q, chosen_val)
                 review_item['chosen_answer'] = chosen_val
+                if hide_answer_key:
+                    review_item['is_correct'] = None
+                    questions_review.append(review_item)
+                    continue
+                result = grade_answer(q, chosen_val)
                 review_item['is_correct'] = (result == RESULT_CORRECT)
                 if q_type == 'multiple_select':
                     correct_raw = _parse_correct_text(getattr(q, 'correct_text', ''))
@@ -1686,6 +1697,12 @@ def attempt_ai_analysis(request, attempt_id):
             },
             status=http_status.HTTP_403_FORBIDDEN,
         )
+    # Tahlil xato savollarning to'g'ri javoblarini o'z ichiga oladi.
+    if (
+        is_owner and not request.user.is_platform_admin
+        and not olympiad_answers_released(attempt.olympiad)
+    ):
+        return Response({'status': 'pending', 'answers_hidden': True})
 
     analysis = AttemptAIAnalysis.objects.filter(attempt=attempt).first()
     if not analysis:
@@ -1726,7 +1743,7 @@ def my_results(request):
     qs = (
         TestAttempt.objects
         .filter(user=request.user, olympiad__is_deleted=False)
-        .select_related('olympiad')
+        .select_related('olympiad', 'user')
     )
     try:
         page = int(request.query_params.get('page') or 1)
@@ -2331,6 +2348,7 @@ def leaderboard(request):
         TestAttempt.objects
         .filter(olympiad__is_deleted=False)
         .select_related('user', 'olympiad', 'olympiad__center')
+        .defer('answers', 'section_scores')
         .order_by('-score', 'time_spent', 'submitted_at')
     )
     olympiad_id = request.query_params.get('olympiad')
@@ -2524,15 +2542,13 @@ def leaderboard(request):
     # eng ko'p kelgan olympiad nomi (frontend subtitle uchun).
     header = None
     if olympiad_id:
-        olym = Olympiad.objects.select_related('center').filter(pk=olympiad_id).first()
-        if olym:
-            header = {
-                'olympiad_id': olym.id,
-                'olympiad_title': olym.title,
-                'subject': olym.subject,
-                'status': olym.status,
-                'start_datetime': olym.start_datetime.isoformat() if olym.start_datetime else None,
-            }
+        header = {
+            'olympiad_id': olympiad.id,
+            'olympiad_title': olympiad.title,
+            'subject': olympiad.subject,
+            'status': olympiad.status,
+            'start_datetime': olympiad.start_datetime.isoformat() if olympiad.start_datetime else None,
+        }
     elif entries:
         # Eng yaqinda topshirilgan attemptdan olympiad nomini olamiz
         latest = entries[0]
@@ -2950,6 +2966,29 @@ def manager_live_proctoring_terminate(request, session_id):
     })
 
 
+def _answer_key_released_attempts(user):
+    """O'quvchining javob kaliti ochilgan olimpiadalardagi attempt'lari.
+
+    Xatolar ro'yxati va uning AI tahlili to'g'ri javobni ko'rsatadi — hali
+    davom etayotgan olimpiada (`olympiad_answers_released`) chiqarib tashlanadi.
+    """
+    now = timezone.now()
+    hidden_ids = [
+        o.id for o in (
+            Olympiad.objects
+            .filter(attempts__user=user)
+            .exclude(status=Olympiad.STATUS_FINISHED)
+            .only('id', 'status', 'start_datetime', 'duration_minutes')
+        )
+        if not olympiad_answers_released(o, now)
+    ]
+    return (
+        TestAttempt.objects
+        .filter(user=user, disqualified=False)
+        .exclude(olympiad_id__in=hidden_ids)
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([ScopedRateThrottle])
@@ -2958,14 +2997,12 @@ def get_mistakes_list(request):
     O'quvchining barcha o'tgan imtihonlardagi noto'g'ri berilgan javoblarini savollar kesimida yig'ib qaytaradi.
     """
     from questions.models import Question
-    from .models import TestAttempt
 
     # Faqat `answers` ustunini stream qilamiz (butun TestAttempt qatorlarini
     # xotiraga yuklamaymiz). `.iterator()` server-side kursor bilan ko'p
     # attempt'li foydalanuvchilarda xotirani bir tekis ushlab turadi.
     answers_stream = (
-        TestAttempt.objects
-        .filter(user=request.user, disqualified=False)
+        _answer_key_released_attempts(request.user)
         .values_list('answers', flat=True)
         .iterator()
     )
@@ -3032,7 +3069,6 @@ def explain_all_mistakes(request):
     """
     from questions.ai_task_status import start_ai_task
     from questions.models import Question
-    from .models import TestAttempt
     from .tasks import EXPLAIN_MISTAKES_TASK_PREFIX, explain_all_mistakes_task
 
     # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
@@ -3043,8 +3079,7 @@ def explain_all_mistakes(request):
     # foydalanuvchida xotirani to'ldirib qo'ymaslik uchun (xuddi
     # get_mistakes_list dagi kabi).
     answers_iter = (
-        TestAttempt.objects
-        .filter(user=request.user, disqualified=False)
+        _answer_key_released_attempts(request.user)
         .values_list('answers', flat=True)
         .iterator()
     )
