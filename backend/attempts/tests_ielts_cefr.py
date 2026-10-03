@@ -504,6 +504,23 @@ class QuestionAudioValidationTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn('audio', serializer.errors)
 
+    def test_html_extension_rejected_even_with_audio_content_type(self):
+        """`/media/` kengaytma bo'yicha Content-Type beradi — `.html` sahifa bo'lardi."""
+        upload = SimpleUploadedFile(
+            'a.html', b'<script>alert(1)</script>', content_type='audio/mpeg',
+        )
+        serializer = QuestionSerializer(data=self._payload(upload))
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('audio', serializer.errors)
+
+    def test_accepted_audio_gets_random_name(self):
+        audio = SimpleUploadedFile('lesson.MP3', b'fake-audio', content_type='audio/mpeg')
+        serializer = QuestionSerializer(data=self._payload(audio))
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        name = serializer.validated_data['audio'].name
+        self.assertTrue(name.endswith('.mp3'))
+        self.assertNotIn('lesson', name)
+
     @override_settings(QUESTION_AUDIO_MAX_BYTES=10)
     def test_oversized_audio_rejected(self):
         upload = SimpleUploadedFile(

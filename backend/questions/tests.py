@@ -173,6 +173,235 @@ class QuestionCreateApiTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class QuestionImageUploadTestCase(APITestCase):
+    """Savol rasmi: xavfsiz nom, hajm cheklovi va almashtirilgan faylni tozalash."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        from django.core.files.storage import default_storage
+        from django.test import override_settings
+
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+        overridden = override_settings(MEDIA_ROOT=self.media_root)
+        overridden.enable()
+        self.addCleanup(overridden.disable)
+        self.storage = default_storage
+        self.center = EducationCenter.objects.create(
+            name='Rasm Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901660001', password='StrongPass123', full_name="O'qituvchi",
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.client.force_authenticate(user=self.teacher)
+
+    def _image(self, name, fmt):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new('RGB', (4, 4)).save(buf, format=fmt)
+        return SimpleUploadedFile(name, buf.getvalue(), content_type='image/gif')
+
+    def _create(self, image):
+        return self.client.post(reverse('questions-list-create'), {
+            'center': self.center.id,
+            'subject': 'Fizika',
+            'text': 'Rasmli savol',
+            'question_type': Question.QUESTION_TYPE_YES_NO,
+            'correct_answer': 0,
+            'score': 3,
+            'image': image,
+        }, format='multipart')
+
+    def _question_with_image(self):
+        resp = self._create(self._image('a.png', 'PNG'))
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        question = Question.objects.get(pk=resp.data['id'])
+        self.assertTrue(self.storage.exists(question.image.name))
+        return question
+
+    def _patch_image(self, question, image):
+        return self.client.patch(
+            reverse('questions-detail', args=[question.id]),
+            {'image': image}, format='multipart',
+        )
+
+    def test_html_filename_is_not_stored(self):
+        # `.html` ni Django'ning `validate_image_file_extension` validatori o'zi
+        # rad etadi, lekin Pillow biladigan har qanday kengaytmani (`pdf`,
+        # `eps` ...) o'tkazadi — quyidagi testlar shu nomlar bilan.
+        resp = self._create(self._image('evil.html', 'GIF'))
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', resp.data)
+        self.assertFalse(Question.objects.exists())
+
+    def test_created_image_gets_detected_extension(self):
+        resp = self._create(self._image('evil.pdf', 'GIF'))
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        question = Question.objects.get(pk=resp.data['id'])
+        self.assertTrue(question.image.name.endswith('.gif'))
+        self.assertNotIn('evil', question.image.name)
+
+    def test_patched_image_gets_detected_extension(self):
+        question = Question.objects.create(
+            center=self.center, subject='Fizika', text='Rasmsiz savol',
+            options=['a', 'b'], correct_answer=0, score=3, created_by=self.teacher,
+        )
+        resp = self.client.patch(
+            reverse('questions-detail', args=[question.id]),
+            {'image': self._image('evil.eps', 'PNG')},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        question.refresh_from_db()
+        self.assertTrue(question.image.name.endswith('.png'))
+        self.assertNotIn('evil', question.image.name)
+
+    def test_unlisted_image_format_is_rejected(self):
+        resp = self._create(self._image('a.bmp', 'BMP'))
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', resp.data)
+        self.assertFalse(Question.objects.exists())
+
+    def test_oversized_image_is_rejected(self):
+        from django.test import override_settings
+
+        with override_settings(QUESTION_IMAGE_MAX_BYTES=10):
+            resp = self._create(self._image('a.png', 'PNG'))
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', resp.data)
+        self.assertFalse(Question.objects.exists())
+
+    def test_replaced_image_file_is_deleted(self):
+        question = self._question_with_image()
+        old_name = question.image.name
+        resp = self._patch_image(question, self._image('b.gif', 'GIF'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        question.refresh_from_db()
+        self.assertNotEqual(question.image.name, old_name)
+        self.assertTrue(self.storage.exists(question.image.name))
+        self.assertFalse(self.storage.exists(old_name))
+
+    def test_cleared_image_file_is_deleted(self):
+        question = self._question_with_image()
+        old_name = question.image.name
+        resp = self.client.patch(
+            reverse('questions-detail', args=[question.id]),
+            {'image': None}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        question.refresh_from_db()
+        self.assertFalse(question.image)
+        self.assertFalse(self.storage.exists(old_name))
+
+    def test_old_image_is_kept_when_save_fails(self):
+        from django.db import DatabaseError
+
+        question = self._question_with_image()
+        old_name = question.image.name
+        with patch.object(Question, 'save', side_effect=DatabaseError('save xatosi')):
+            with self.assertRaises(DatabaseError):
+                self._patch_image(question, self._image('b.gif', 'GIF'))
+        self.assertTrue(self.storage.exists(old_name))
+
+    def test_large_upload_patch_succeeds(self):
+        """Katta yuklama diskdagi `TemporaryUploadedFile` bo'lib keladi — uni
+        deepcopy qilib bo'lmaydi (`QueryDict.copy()` 500 berardi)."""
+        from django.test import override_settings
+
+        question = self._question_with_image()
+        with override_settings(FILE_UPLOAD_MAX_MEMORY_SIZE=1):
+            resp = self._patch_image(question, self._image('b.gif', 'GIF'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        question.refresh_from_db()
+        self.assertTrue(question.image.name.endswith('.gif'))
+
+
+class QuestionMultipartPayloadTestCase(APITestCase):
+    """Multipart'da (rasm bilan yuborishda) `options`/`test_cases` JSON string bo'lib keladi."""
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Multipart Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901660002', password='StrongPass123', full_name="O'qituvchi",
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.client.force_authenticate(user=self.teacher)
+        self.url = reverse('questions-list-create')
+
+    def test_multipart_create_with_options(self):
+        resp = self.client.post(self.url, {
+            'center': self.center.id,
+            'subject': 'Matematika',
+            'text': '2 + 2 = ?',
+            'options': json.dumps(['3', '4', '5']),
+            'correct_answer': 1,
+            'score': 3,
+        }, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        question = Question.objects.get(pk=resp.data['id'])
+        self.assertEqual(question.options, ['3', '4', '5'])
+        self.assertEqual(question.correct_answer, 1)
+
+    def test_multipart_patch_with_options(self):
+        question = Question.objects.create(
+            center=self.center, subject='Matematika', text='2 + 3 = ?',
+            options=['4', '6'], correct_answer=0, score=3, created_by=self.teacher,
+        )
+        resp = self.client.patch(
+            reverse('questions-detail', args=[question.id]),
+            {'options': json.dumps(['4', '5', '6']), 'correct_answer': 1},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        question.refresh_from_db()
+        self.assertEqual(question.options, ['4', '5', '6'])
+        self.assertEqual(question.correct_answer, 1)
+
+    def test_multipart_create_with_test_cases(self):
+        test_cases = [{'input': '5', 'expected_output': '25', 'is_hidden': False}]
+        resp = self.client.post(self.url, {
+            'center': self.center.id,
+            'subject': 'Dasturlash',
+            'text': 'Sonning kvadratini chiqaring',
+            'question_type': Question.QUESTION_TYPE_CODE,
+            'programming_language': 'python',
+            'test_cases': json.dumps(test_cases),
+        }, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Question.objects.get(pk=resp.data['id']).test_cases, test_cases)
+
+    def test_json_body_string_options_are_still_decoded(self):
+        resp = self.client.post(self.url, {
+            'center': self.center.id,
+            'subject': 'Matematika',
+            'text': '3 + 3 = ?',
+            'options': json.dumps(['5', '6']),
+            'correct_answer': 1,
+            'score': 3,
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Question.objects.get(pk=resp.data['id']).options, ['5', '6'])
+
+
 class SliderGradingTestCase(APITestCase):
     """`grade_answer` slayder savolini `correct_text` sozlamasi bo'yicha baholaydi.
 
@@ -1648,6 +1877,13 @@ class ExplainQuestionPermissionTestCase(APITestCase):
     @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
     def test_unrelated_student_forbidden(self, _mock):
         resp = self._explain(self.other_student)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
+    def test_student_forbidden_while_olympiad_is_running(self, _mock):
+        """Tushuntirish to'g'ri javobni aytadi — olimpiada tugaguncha yopiq."""
+        Olympiad.objects.filter(pk=self.olympiad.pk).update(status=Olympiad.STATUS_ACTIVE)
+        resp = self._explain(self.student)
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
     @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')

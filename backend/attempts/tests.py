@@ -371,15 +371,43 @@ class SliderAttemptTestCase(APITestCase):
     def test_review_payload_unwraps_slider_answer(self):
         """Natijalar sahifasi `{"value": N}` ni ochib ko'rsatadi (dict emas)."""
         attempt = self._submit(1990)
+        Olympiad.objects.filter(pk=self.olympiad.pk).update(status=Olympiad.STATUS_FINISHED)
         url = reverse('attempt-detail', args=[attempt.id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['answers_hidden'])
         item = next(
             r for r in response.data['questions_review']
             if r['id'] == self.slider_q.id
         )
         self.assertEqual(item['chosen_answer'], 1990)
         self.assertTrue(item['is_correct'])
+        self.assertIn('correct_text', item)
+
+    def test_review_hides_answer_key_while_olympiad_is_running(self):
+        """Erta topshirgan o'quvchi kalitni hali yechayotganlarga tarqata olmasin."""
+        attempt = self._submit(1990)
+        response = self.client.get(reverse('attempt-detail', args=[attempt.id]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['answers_hidden'])
+        item = next(
+            r for r in response.data['questions_review']
+            if r['id'] == self.slider_q.id
+        )
+        self.assertEqual(item['chosen_answer'], 1990)
+        self.assertIsNone(item['is_correct'])
+        self.assertNotIn('correct_text', item)
+        self.assertNotIn('1991', json.dumps(item))
+
+    def test_mistakes_list_excludes_running_olympiad(self):
+        self._submit(1950)
+        response = self.client.get(reverse('mistakes-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+        Olympiad.objects.filter(pk=self.olympiad.pk).update(status=Olympiad.STATUS_FINISHED)
+        response = self.client.get(reverse('mistakes-list'))
+        self.assertEqual([m['question_id'] for m in response.data], [self.slider_q.id])
 
 
 class EssayAIFeedbackTestCase(APITestCase):
