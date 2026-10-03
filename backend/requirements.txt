@@ -36,7 +36,7 @@ Pillow>=12.3.0
 qrcode>=7.4
 # >=6.14.2: maxsus tayyorlangan PDF cheksiz siklga / katta xotira sarfiga olib
 # keladigan bir nechta DoS. Sink pdfplumber bilan bir xil: PDF import.
-pypdf>=6.14.2
+pypdf>=6.19.0
 # >=0.11.10 MAJBURIY (>=0.10 emas): eski pin `pdfminer.six==20231228` ni
 # tortardi, unda `CMapDB._load_data()` ISHONCHSIZ `pickle.loads()` ishlatadi
 # (PYSEC-2026-1761/1762) — ya'ni maxsus tayyorlangan PDF kod ijrosiga olib
