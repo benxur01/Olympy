@@ -1912,7 +1912,7 @@ class PortfolioVerifyTestCase(APITestCase):
 GOOGLE_JWKS_PATCH = 'accounts.views._google_signing_key'
 
 
-@override_settings(GOOGLE_CLIENT_ID=None)
+@override_settings(GOOGLE_CLIENT_ID='olympy-test.apps.googleusercontent.com')
 class GoogleAuthTestCase(APITestCase):
     """POST /api/auth/google/ — Google Login tests.
 
@@ -2084,17 +2084,32 @@ class GoogleAuthTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data['detail'], "Google Client ID mos kelmadi.")
 
+    @override_settings(GOOGLE_CLIENT_ID=None)
     @patch(GOOGLE_JWKS_PATCH)
-    def test_google_login_without_client_id_skips_audience_check(self, mock_get_key):
-        """GOOGLE_CLIENT_ID sozlanmagan muhitda audience tekshiruvi o'tkazib
-        yuboriladi (eski tokeninfo-yondashuvidagi xatti-harakat saqlangan)."""
+    def test_google_login_without_client_id_is_disabled(self, mock_get_key):
+        """GOOGLE_CLIENT_ID sozlanmagan bo'lsa boshqa ilovaga berilgan token
+        bilan kirib bo'lmaydi — Google login umuman o'chiq (503)."""
         token = self._mock_token(
             mock_get_key, aud='some-other-client.apps.googleusercontent.com',
             sub='777000782', email='no-client-id@gmail.com',
         )
         url = reverse('google-login')
         response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(User.objects.filter(phone=self._google_phone('777000782')).exists())
+
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_unverified_email_is_not_stored(self, mock_get_key):
+        token = self._mock_token(
+            mock_get_key, sub='777000784', email='unverified@example.com',
+            email_verified=False, name='Unverified',
+        )
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(phone=self._google_phone('777000784'))
+        self.assertIsNone(user.email)
+        self.assertIsNone(user.email_verified_at)
 
     @patch(GOOGLE_JWKS_PATCH)
     def test_google_login_student_then_owner_rejected(self, mock_get_key):
@@ -2187,7 +2202,7 @@ class GoogleAuthTestCase(APITestCase):
         self.assertIn('teacher', user.roles)
 
 
-@override_settings(GOOGLE_CLIENT_ID=None)
+@override_settings(GOOGLE_CLIENT_ID='olympy-test.apps.googleusercontent.com')
 class GoogleJwksNetworkBudgetTestCase(APITestCase):
     """`/api/auth/google/` Google'ning JWKS'iga necha marta chiqadi?
 
@@ -2423,6 +2438,26 @@ class LiveQuizQuestionIsolationTestCase(APITestCase):
         )
         self.assertEqual(chosen_ids, {q.id for q in self.olympiad_questions})
         self.assertNotIn(self.live_quiz_question.id, chosen_ids)
+
+    def test_daily_question_generator_skips_unfinished_olympiad_questions(self):
+        """Kunlik savol javobi to'g'ri javobni ochadi — hali tugamagan
+        olimpiada savoli hammaga oldindan ko'rsatilmasligi kerak."""
+        from accounts.models import DailyQuestion
+        from accounts.tasks import generate_daily_questions
+        from olympiads.models import Olympiad
+
+        upcoming = Olympiad.objects.create(
+            center=self.center, title='Kelgusi', subject='Matematika',
+            status=Olympiad.STATUS_ACTIVE,
+        )
+        upcoming.questions.add(self.olympiad_questions[0])
+        generate_daily_questions(count=4)
+        chosen_ids = set(
+            DailyQuestion.objects
+            .filter(date=timezone.now().date())
+            .values_list('question_id', flat=True)
+        )
+        self.assertEqual(chosen_ids, {q.id for q in self.olympiad_questions[1:]})
 
 
 
@@ -4431,6 +4466,130 @@ class TrustedOriginPermissionTestCase(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
 
+class CookieAuthOriginCheckTestCase(APITestCase):
+    """Cookie'dagi JWT bilan kelgan state-changing so'rov faqat ishonchli
+    Origin'dan qabul qilinadi — tanasini o'qimaydigan POST view'lar JSON-only
+    parser himoyasiga tayana olmaydi (cross-site `<form>` ham yetib boradi)."""
+
+    def setUp(self):
+        from django.conf import settings
+
+        from accounts.views import _jwt_payload
+
+        self.user = User.objects.create_user(
+            phone='+998905551299', password='StrongPass123', full_name='Cookie',
+        )
+        self.token = _jwt_payload(self.user)['token']
+        self.client.cookies[settings.JWT_ACCESS_COOKIE_NAME] = self.token
+        self.url = reverse('start-telegram-account-link')
+
+    def test_cross_site_post_with_cookie_is_rejected(self):
+        resp = self.client.post(self.url, HTTP_ORIGIN='https://evil.example')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(
+            PhoneVerification.objects.filter(normalized_phone=self.user.normalized_phone).exists()
+        )
+
+    def test_trusted_origin_with_cookie_passes(self):
+        resp = self.client.post(self.url, HTTP_ORIGIN='https://prolymp.uz')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_cookie_without_origin_or_referer_passes(self):
+        resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_bearer_header_is_not_subject_to_origin_check(self):
+        self.client.cookies.clear()
+        resp = self.client.post(
+            self.url,
+            HTTP_ORIGIN='https://evil.example',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_safe_method_with_cookie_is_not_blocked(self):
+        resp = self.client.get(reverse('me'), HTTP_ORIGIN='https://evil.example')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+
+class AvatarUploadFilenameTestCase(APITestCase):
+    """Saqlangan nom mijoz nomidan emas, Pillow aniqlagan formatdan olinadi."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+        overridden = override_settings(MEDIA_ROOT=self.media_root)
+        overridden.enable()
+        self.addCleanup(overridden.disable)
+        self.user = User.objects.create_user(
+            phone='+998905551377', password='StrongPass123', full_name='Avatar',
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _image(self, name, fmt):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new('RGB', (4, 4)).save(buf, format=fmt)
+        return SimpleUploadedFile(name, buf.getvalue(), content_type='image/gif')
+
+    def test_html_filename_is_replaced_with_detected_extension(self):
+        resp = self.client.post(
+            reverse('update-my-avatar'),
+            {'avatar': self._image('evil.html', 'GIF')},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.avatar.name.endswith('.gif'))
+        self.assertNotIn('evil', self.user.avatar.name)
+
+    def test_unlisted_image_format_is_rejected(self):
+        resp = self.client.post(
+            reverse('update-my-avatar'),
+            {'avatar': self._image('a.bmp', 'BMP')},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.avatar)
+
+
+class RestoreAccountLockoutTestCase(APITestCase):
+    """`/api/auth/restore/` login bilan bir xil per-telefon lockout'ga bo'ysunadi."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(
+            phone='+998905557799', password='StrongPass123', full_name='Restore',
+        )
+        self.user.is_active = False
+        self.user.deleted_at = timezone.now()
+        self.user.save(update_fields=['is_active', 'deleted_at'])
+        self.url = reverse('restore-my-account')
+
+    def test_repeated_wrong_passwords_lock_restore(self):
+        for _ in range(5):
+            resp = self.client.post(self.url, {
+                'phone': '+998905557799', 'password': 'WrongPass999',
+            }, format='json')
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        resp = self.client.post(self.url, {
+            'phone': '+998905557799', 'password': 'StrongPass123',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.deleted_at)
+
+
 class AuditLogClientIpTestCase(APITestCase):
     """`AuditLog` X-Forwarded-For ning OXIRGI (spoof qilib bo'lmaydigan) elementini yozadi.
 
@@ -4533,6 +4692,38 @@ class TotpReplayTestCase(APITestCase):
         second = self.client.post(reverse('login'), payload, format='json')
         self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(second.data.get('requires_2fa'))
+
+    def _wrong_code(self):
+        import time as _time
+
+        now = int(_time.time())
+        valid = {self.totp.at(now + k * self.totp.interval) for k in (-1, 0, 1)}
+        return next(c for c in ('000000', '111111', '222222', '333333') if c not in valid)
+
+    def test_login_2fa_step_locks_after_repeated_wrong_codes(self):
+        """Parolni bilgan hujumchi 2FA kodini cheksiz taxmin qila olmaydi."""
+        from django.core.cache import cache
+
+        cache.clear()
+        payload = {
+            'phone': '+998905557788',
+            'password': 'StrongPass123',
+            'totp_code': self._wrong_code(),
+        }
+        for _ in range(5):
+            resp = self.client.post(reverse('login'), payload, format='json')
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        payload['totp_code'] = self.totp.now()
+        resp = self.client.post(reverse('login'), payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertNotIn('token', resp.data)
+
+    def test_setup_does_not_reveal_secret_when_already_enabled(self):
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(reverse('totp-setup'))
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn('secret', resp.data)
+        self.assertNotIn('uri', resp.data)
 
 
 class LoginTimingEnumerationTestCase(APITestCase):
