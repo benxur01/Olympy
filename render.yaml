@@ -186,6 +186,10 @@ services:
         sync: false
       - key: OLYMPY_CORS_ALLOWED_ORIGINS
         sync: false
+      # Google Login: ID Token `aud` tekshiruvi uchun MAJBURIY (bo'sh bo'lsa
+      # /api/auth/google/ 503 qaytaradi). VITE_GOOGLE_CLIENT_ID bilan bir xil.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY

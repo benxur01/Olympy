@@ -40,6 +40,43 @@ jobs:
           pip install -r requirements.txt
       - name: Run Django test suite
         run: python manage.py test
+      # ── Bog'liqliklar zaifligi auditi (pip-audit) ─────────────────────────
+      # Yuqorida o'rnatilgan `requirements.txt` (Render ham shu fayldan
+      # o'rnatadi) PyPI advisory bazasi bo'yicha tekshiriladi. Ma'lum zaiflik
+      # topilsa job yiqiladi va deploy job'lari (needs: test) boshlanmaydi.
+      #
+      # Tarmoq/servis xatosi (PyPI javob bermasa) build'ni TO'XTATMAYDI —
+      # faqat ogohlantirish. pip-audit ikkala holatda ham 1 bilan chiqadi;
+      # farqi shundaki `--output` hisobotini u faqat audit oxirigacha
+      # yetganda yozadi. Boshqa chiqish kodi (masalan 2 — noto'g'ri flag)
+      # xato hisoblanadi, aks holda audit jimgina ishlamay qolardi.
+      #
+      # Testlardan KEYIN turadi: pip-audit'ning o'z bog'liqliklari test
+      # muhitiga ta'sir qilmasin. Versiya action'lar kabi aniq pin qilingan.
+      - name: Audit Python dependencies (pip-audit)
+        run: |
+          if ! python -m pip install pip-audit==2.10.1; then
+            echo "::warning::pip-audit o'rnatilmadi (tarmoq xatosi?) — audit o'tkazib yuborildi."
+            exit 0
+          fi
+          report="$RUNNER_TEMP/pip-audit.txt"
+          status=0
+          python -m pip_audit -r requirements.txt --progress-spinner off --aliases on \
+            --output "$report" || status=$?
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$status" -eq 1 ] && [ ! -s "$report" ]; then
+            echo "::warning::pip-audit tekshiruvni yakunlay olmadi (tarmoq/servis xatosi) — build to'xtatilmadi."
+            exit 0
+          fi
+          if [ -s "$report" ]; then
+            cat "$report"
+            echo "::error::pip-audit requirements.txt da ma'lum zaifliklarni topdi (ro'yxat yuqorida)."
+          else
+            echo "::error::pip-audit kutilmagan xato bilan tugadi (chiqish kodi $status)."
+          fi
+          exit 1
 
   # Frontend build gate: `npm run build` avval CI'da chaqirilmasdi — Vite
   # build'ni buzadigan xato (masalan sintaksis xatosi, buzuq import) to'g'ridan

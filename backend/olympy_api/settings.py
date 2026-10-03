@@ -402,6 +402,7 @@ EVIDENCE_MEDIA_ROOT = os.environ.get(
 
 PROFILE_IMAGE_MAX_BYTES = int(os.environ.get('PROFILE_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 CENTER_IMAGE_MAX_BYTES = int(os.environ.get('CENTER_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
+QUESTION_IMAGE_MAX_BYTES = int(os.environ.get('QUESTION_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 # Listening savoliga o'qituvchi yuklaydigan audio (Question.audio) — bir necha
 # daqiqalik mp3 uchun 15 MB yetarli.
 QUESTION_AUDIO_MAX_BYTES = int(os.environ.get('QUESTION_AUDIO_MAX_BYTES', str(15 * 1024 * 1024)))
