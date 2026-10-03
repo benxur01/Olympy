@@ -225,9 +225,10 @@ def delete_storage_file_task(name):
 
     Celery chegarasidan storage obyekti emas, faqat fayl NOMI o'tkaziladi
     (loyihadagi "task'ga model emas, ID/nom beriladi" naqshi). Rasm maydonlari
-    (`User.avatar`, `EducationCenter.image`, `RewardProduct.image`) alohida
-    `storage=` bermaydi — hammasi default storage'da, shuning uchun
-    `default_storage` `field_file.storage` bilan bir xil obyekt.
+    (`User.avatar`, `EducationCenter.image`, `RewardProduct.image`,
+    `Question.image`) alohida `storage=` bermaydi — hammasi default
+    storage'da, shuning uchun `default_storage` `field_file.storage` bilan bir
+    xil obyekt.
     """
     from django.core.files.storage import default_storage
 
@@ -254,6 +255,7 @@ def generate_daily_questions(count=DAILY_QUESTION_COUNT):
     jadval skanini oldini olish uchun).
     """
     from accounts.models import DailyQuestion
+    from olympiads.models import Olympiad
     from questions.models import Question
 
     count = max(1, int(count or DAILY_QUESTION_COUNT))
@@ -270,11 +272,19 @@ def generate_daily_questions(count=DAILY_QUESTION_COUNT):
     )
     # Kunlik savol barcha o'quvchilarga ko'rsatiladi — shu sababli faqat umumiy
     # olimpiada bankidan olinadi. O'qituvchining shaxsiy Jonli Viktorina savoli
-    # bu yerga tushib qolmasligi kerak.
+    # bu yerga tushib qolmasligi kerak. Javob berilgach to'g'ri javob
+    # ko'rsatiladi, shuning uchun hali tugamagan olimpiada savollari chiqarib
+    # tashlanadi (aks holda ular oldindan hammaga oshkor bo'lardi).
+    unfinished = (
+        Olympiad.objects
+        .filter(is_deleted=False)
+        .exclude(status=Olympiad.STATUS_FINISHED)
+    )
     candidate_ids = list(
         Question.objects
         .filter(purpose=Question.QUESTION_PURPOSE_OLYMPIAD)
         .exclude(id__in=used_ids)
+        .exclude(olympiads__in=unfinished)
         .values_list('id', flat=True)
     )
     if not candidate_ids:

@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from centers.models import CenterMembership, EducationCenter
+from olympiads.models import Olympiad
 from questions.models import Question
 
 User = get_user_model()
@@ -80,3 +81,51 @@ class PracticeLiveQuizIsolationTestCase(APITestCase):
             [q['id'] for q in response.data['questions']],
             [self.olympiad_question.id],
         )
+
+
+class PracticeExcludesUnfinishedOlympiadQuestionsTestCase(APITestCase):
+    """Mashq javobi to'g'ri javobni qaytaradi — hali tugamagan olimpiadaga
+    biriktirilgan savol mashqqa tushmasligi kerak (kalit oldindan sizmasin)."""
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Practice Guard', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.student = User.objects.create_user(
+            phone='+998901660011', password='StrongPass123', full_name="O'quvchi",
+        )
+        CenterMembership.objects.create(
+            user=self.student, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Matematika',
+            text='Kelgusi olimpiada savoli', options=['1', '2'],
+            correct_answer=1, score=5,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Kelgusi', subject='Matematika',
+            status=Olympiad.STATUS_ACTIVE,
+        )
+        self.olympiad.questions.add(self.question)
+        self.client.force_authenticate(user=self.student)
+
+    def _start(self):
+        return self.client.post(
+            reverse('practice-start'),
+            {'center_id': self.center.id, 'subject': 'Matematika', 'question_count': 5},
+            format='json',
+        )
+
+    def test_question_of_running_olympiad_is_not_offered(self):
+        self.assertEqual(self._start().status_code, status.HTTP_404_NOT_FOUND)
+        subjects = self.client.get(reverse('practice-subjects'), {'center': self.center.id})
+        self.assertEqual(subjects.data, [])
+
+    def test_question_is_offered_after_olympiad_finishes(self):
+        Olympiad.objects.filter(pk=self.olympiad.pk).update(status=Olympiad.STATUS_FINISHED)
+        response = self._start()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([q['id'] for q in response.data['questions']], [self.question.id])

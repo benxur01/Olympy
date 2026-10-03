@@ -780,8 +780,14 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
           </div>
         </div>
 
+        {isApi && fetchedAttempt?.answers_hidden && (
+          <div className="glass rounded-2xl p-4 md:p-6 text-sm text-text-secondary flex items-center gap-2">
+            <Icon name="info" size={14} /> Javoblar tahlili olimpiada yakunlangach ochiladi.
+          </div>
+        )}
+
         {/* Javoblarni ko'rish — faqat backend rejimida va savollar mavjud bo'lsa */}
-        {isApi && Array.isArray(fetchedAttempt?.questions_review) && fetchedAttempt.questions_review.length > 0 && (
+        {isApi && !fetchedAttempt?.answers_hidden && Array.isArray(fetchedAttempt?.questions_review) && fetchedAttempt.questions_review.length > 0 && (
           <div className="glass rounded-2xl p-4 md:p-6">
             <div className="flex items-center justify-between gap-2 mb-3">
               <h3 className="font-display font-bold text-text-primary text-sm md:text-base uppercase tracking-widest">Javoblar tahlili</h3>

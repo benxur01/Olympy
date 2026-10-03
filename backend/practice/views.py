@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from attempts.models import TestAttempt
 from attempts.session_utils import _extract_chosen
 from centers.models import CenterMembership, EducationCenter
+from olympiads.models import Olympiad
 from questions.grading import (
     RESULT_CORRECT,
     RESULT_PENDING,
@@ -29,6 +30,26 @@ from questions.models import Question
 
 PRACTICE_CACHE_PREFIX = 'practice_session:'
 PRACTICE_CACHE_TTL = 60 * 60  # 1 soat
+
+
+def _practice_questions(**filters):
+    """Mashqqa beriladigan savollar.
+
+    `practice_submit` har savolning to'g'ri javobini qaytaradi, ya'ni hali
+    tugamagan (qoralama/rejalashtirilgan/davom etayotgan) olimpiadaga
+    biriktirilgan savol mashqqa tushsa, o'quvchi o'sha olimpiada savollari va
+    kalitini oldindan yig'ib olardi.
+    """
+    unfinished = (
+        Olympiad.objects
+        .filter(is_deleted=False)
+        .exclude(status=Olympiad.STATUS_FINISHED)
+    )
+    return (
+        Question.objects
+        .filter(purpose=Question.QUESTION_PURPOSE_OLYMPIAD, **filters)
+        .exclude(olympiads__in=unfinished)
+    )
 
 
 def _user_is_center_member(user, center_id):
@@ -83,8 +104,7 @@ def practice_subjects(request):
     # o'qituvchining shaxsiy Jonli Viktorina savollari bu ro'yxatga (va fan
     # sonlariga) qo'shilmaydi, aks holda mashqda o'quvchiga chiqib qolardi.
     rows = (
-        Question.objects
-        .filter(center_id=center_id, purpose=Question.QUESTION_PURPOSE_OLYMPIAD)
+        _practice_questions(center_id=center_id)
         .values('subject')
         .annotate(question_count=Count('id'))
         .order_by('-question_count')
@@ -132,12 +152,7 @@ def practice_start(request):
     # MySQL/Postgres'da sekin RANDOM() bilan saralashga majbur qiladi. Buning
     # o'rniga avval barcha ID'larni olib, Python darajasida random tanlaymiz.
     all_ids = list(
-        Question.objects
-        .filter(
-            center_id=center_id,
-            subject__iexact=subject,
-            purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
-        )
+        _practice_questions(center_id=center_id, subject__iexact=subject)
         .values_list('id', flat=True)
     )
     available = random.sample(all_ids, min(question_count, len(all_ids))) if all_ids else []
@@ -410,8 +425,7 @@ def wrong_answer_subjects(request):
         return Response([])
 
     rows = (
-        Question.objects
-        .filter(id__in=wrong_ids, purpose=Question.QUESTION_PURPOSE_OLYMPIAD)
+        _practice_questions(id__in=wrong_ids)
         .values('subject')
         .annotate(question_count=Count('id'))
         .order_by('-question_count')
@@ -460,12 +474,7 @@ def wrong_answer_start(request):
     # savollari — `purpose` filtri qo'shimcha himoya (Jonli Viktorina savoli
     # hech qanday yo'l bilan mashqqa tushmasin).
     all_ids = list(
-        Question.objects
-        .filter(
-            id__in=wrong_ids,
-            subject__iexact=subject,
-            purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
-        )
+        _practice_questions(id__in=wrong_ids, subject__iexact=subject)
         .values_list('id', flat=True)
     )
     available = random.sample(all_ids, min(question_count, len(all_ids))) if all_ids else []
