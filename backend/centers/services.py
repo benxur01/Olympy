@@ -27,13 +27,16 @@ def create_pending_center_for_owner(owner, center_data):
         role=CenterMembership.ROLE_OWNER,
         status=CenterMembership.STATUS_PENDING,
     )
-    from django.contrib.auth import get_user_model
-    from notifications.services import send_center_approval_request_notification
+    from .tasks import send_center_approval_request_notifications_task
 
-    User = get_user_model()
-    admins = User.objects.filter(is_platform_admin=True, is_active=True)
-    for admin in admins:
-        send_center_approval_request_notification(admin, owner, center)
+    # Chaqiruvchilar (markaz arizasi, tashkilot ro'yxati) buni tranzaksiya
+    # ichida chaqiradi — har admin uchun Telegram/push shu tranzaksiyani
+    # ushlab turmasin (decide_membership'dagi Y6 bilan bir xil sabab).
+    center_id = center.id
+    transaction.on_commit(
+        lambda: send_center_approval_request_notifications_task.delay(center_id),
+        robust=True,
+    )
     return center
 
 
@@ -322,14 +325,17 @@ def decide_membership(membership, actor, decision):
     # Y6: Telegram API transaction ichida emas, transaction.on_commit orqali
     # yuboriladi. Avval atomic blok ichida sinxron Telegram chaqirilardi —
     # API 3s kutsa DB lock'lar uzoq vaqt ushlanib qolardi. Endi commit'dan
-    # keyin yangi (auto-commit) connection'da yuboriladi.
-    captured_membership = membership
+    # keyin Celery task'ga beriladi — so'rov (jumladan join_center'dagi
+    # avto-tasdiq) Telegram javobini ham kutmaydi.
+    captured_membership_id = membership.id
     captured_approved = is_approved
 
     def _send_notification():
         try:
-            from notifications.services import send_membership_decision_notification
-            send_membership_decision_notification(captured_membership, captured_approved)
+            from .tasks import send_membership_decision_notification_task
+            send_membership_decision_notification_task.delay(
+                captured_membership_id, captured_approved,
+            )
         except Exception:
             logger.exception('membership decision notification failed')
 

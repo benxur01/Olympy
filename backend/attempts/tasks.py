@@ -2,6 +2,7 @@ from celery import shared_task
 import logging
 from datetime import timedelta
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 
@@ -76,6 +77,26 @@ def auto_disqualify_pending_reviews():
                 notify_cheating_confirmed(student, olympiad, reason)
         except Exception:
             logger.exception('auto_disqualify_pending_reviews failed session=%s', session_id)
+
+
+@shared_task
+def send_pending_review_notification_task(student_id, olympiad_id, reason=''):
+    """Cheating tekshiruvi kutilayotgani haqida menejer/owner'ni xabardor qiladi."""
+    from django.contrib.auth import get_user_model
+
+    from notifications.services import send_pending_review_notification
+    from olympiads.models import Olympiad
+
+    try:
+        student = get_user_model().objects.get(pk=student_id)
+        olympiad = Olympiad.objects.select_related('center__owner').get(pk=olympiad_id)
+    except ObjectDoesNotExist:
+        logger.warning(
+            'pending review notification skipped: student=%s olympiad=%s not found',
+            student_id, olympiad_id,
+        )
+        return
+    send_pending_review_notification(student, olympiad, olympiad.center, reason)
 
 
 @shared_task
