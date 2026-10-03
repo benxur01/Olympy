@@ -61,7 +61,7 @@ pyotp>=2.9
 # uzluksiz bo'lmagan bufer bilan buffer overflow. TOTP sirlarini Fernet bilan
 # shifrlashda (`accounts/utils.py`) va JWT'da ishlatiladi.
 cryptography>=46.0.7
-cloudinary>=1.36
+cloudinary>=1.46.2
 django-cloudinary-storage>=0.3
 sentry-sdk[django]>=1.40
 django-anymail[mailgun]>=10.0
