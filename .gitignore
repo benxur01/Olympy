@@ -74,3 +74,18 @@ Thumbs.db
 .codex
 backups/
 backend/.env.external
+
+# ─── Go (Golang) ───────────────────────────────────────────────────────────
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+olympy.db
+olympy.db-journal
+backend/olympy.db
+backend/olympy.db-journal
+backend/olympy-api.exe
+data/
