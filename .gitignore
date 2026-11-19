@@ -69,8 +69,6 @@ index.html
 .DS_Store
 Thumbs.db
 
-# Claude Code per-project state
-.claude/
 .codex
 backups/
 backend/.env.external

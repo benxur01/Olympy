@@ -32,7 +32,6 @@ __pycache__/
 .gitignore
 .idea/
 .vscode/
-.claude/
 .antigravitycli/
 .DS_Store
 *.swp
