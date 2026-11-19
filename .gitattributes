@@ -1,9 +1,31 @@
-# GitHub Linguist overrides
-*.go linguist-language=Go
+# Force GitHub Linguist to detect Go as the primary repository language
 backend/** linguist-language=Go
-*.js linguist-language=JavaScript
-*.jsx linguist-language=JavaScript
-*.css linguist-language=CSS
-*.html linguist-language=HTML
+*.go linguist-language=Go
 
-# cache-bust: 2026-11-19 13:54:55
+# Exclude Frontend and assets from repository language statistics
+pages/** linguist-vendored
+src/** linguist-vendored
+scripts/** linguist-vendored
+deploy/** linguist-vendored
+nginx/** linguist-vendored
+public/** linguist-vendored
+*.jsx linguist-vendored
+*.js linguist-vendored
+*.mjs linguist-vendored
+*.css linguist-vendored
+*.html linguist-vendored
+*.sh linguist-vendored
+*.bat linguist-vendored
+*.json linguist-vendored
+Dockerfile linguist-vendored
+
+# Ensure non-Go files do not count toward language bar
+pages/** linguist-detectable=false
+src/** linguist-detectable=false
+*.jsx linguist-detectable=false
+*.js linguist-detectable=false
+*.mjs linguist-detectable=false
+*.css linguist-detectable=false
+*.html linguist-detectable=false
+*.sh linguist-detectable=false
+*.bat linguist-detectable=false
