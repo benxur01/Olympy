@@ -135,7 +135,7 @@ services:
     name: olympy-api
     repo: https://github.com/benxur01/Olympy
     rootDir: backend
-    env: python
+    env: go
     region: ohio
     # DIQQAT: bu yerda "standard" deb yozilgan bo'lsa ham, Render blueprint
     # bu maydonni MAVJUD xizmatga avtomatik qo'llamaydi (reja o'zgarishi
@@ -260,7 +260,7 @@ services:
     name: olympy-celery
     repo: https://github.com/benxur01/Olympy
     rootDir: backend
-    env: python
+    env: go
     region: ohio
     plan: starter
     branch: main

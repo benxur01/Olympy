@@ -1,0 +1,7 @@
+# GitHub Linguist overrides
+*.go linguist-language=Go
+backend/** linguist-language=Go
+*.js linguist-language=JavaScript
+*.jsx linguist-language=JavaScript
+*.css linguist-language=CSS
+*.html linguist-language=HTML
