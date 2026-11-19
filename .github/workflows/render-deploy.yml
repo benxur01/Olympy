@@ -22,61 +22,19 @@ jobs:
       run:
         working-directory: backend
     env:
-      OLYMPY_SECRET_KEY: ci-test-secret-key-not-for-production
-      OLYMPY_DEBUG: '1'
+      JWT_SECRET: ci-test-secret-key-not-for-production
+      PORT: '8000'
     steps:
-      # Action'lar to'liq commit SHA bilan pin qilingan: `@v4` kabi major tag
-      # ko'chirilishi mumkin (repo egasi tag'ni boshqa commit'ga o'tkazsa CI
-      # jimgina boshqa kodni ishga tushiradi). Yangilash: git ls-remote --tags
-      # https://github.com/actions/<nom> bilan yangi SHA'ni oling va izohdagi
-      # versiyani ham yangilang.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Run Django test suite
-        run: python manage.py test
-      # ── Bog'liqliklar zaifligi auditi (pip-audit) ─────────────────────────
-      # Yuqorida o'rnatilgan `requirements.txt` (Render ham shu fayldan
-      # o'rnatadi) PyPI advisory bazasi bo'yicha tekshiriladi. Ma'lum zaiflik
-      # topilsa job yiqiladi va deploy job'lari (needs: test) boshlanmaydi.
-      #
-      # Tarmoq/servis xatosi (PyPI javob bermasa) build'ni TO'XTATMAYDI —
-      # faqat ogohlantirish. pip-audit ikkala holatda ham 1 bilan chiqadi;
-      # farqi shundaki `--output` hisobotini u faqat audit oxirigacha
-      # yetganda yozadi. Boshqa chiqish kodi (masalan 2 — noto'g'ri flag)
-      # xato hisoblanadi, aks holda audit jimgina ishlamay qolardi.
-      #
-      # Testlardan KEYIN turadi: pip-audit'ning o'z bog'liqliklari test
-      # muhitiga ta'sir qilmasin. Versiya action'lar kabi aniq pin qilingan.
-      - name: Audit Python dependencies (pip-audit)
-        run: |
-          if ! python -m pip install pip-audit==2.10.1; then
-            echo "::warning::pip-audit o'rnatilmadi (tarmoq xatosi?) — audit o'tkazib yuborildi."
-            exit 0
-          fi
-          report="$RUNNER_TEMP/pip-audit.txt"
-          status=0
-          python -m pip_audit -r requirements.txt --progress-spinner off --aliases on \
-            --output "$report" || status=$?
-          if [ "$status" -eq 0 ]; then
-            exit 0
-          fi
-          if [ "$status" -eq 1 ] && [ ! -s "$report" ]; then
-            echo "::warning::pip-audit tekshiruvni yakunlay olmadi (tarmoq/servis xatosi) — build to'xtatilmadi."
-            exit 0
-          fi
-          if [ -s "$report" ]; then
-            cat "$report"
-            echo "::error::pip-audit requirements.txt da ma'lum zaifliklarni topdi (ro'yxat yuqorida)."
-          else
-            echo "::error::pip-audit kutilmagan xato bilan tugadi (chiqish kodi $status)."
-          fi
-          exit 1
+          go-version: '1.22'
+      - name: Verify Go dependencies
+        run: go mod verify
+      - name: Run Go vet
+        run: go vet ./...
+      - name: Build Go binary
+        run: go build -v -o /dev/null ./cmd/api
 
   # Frontend build gate: `npm run build` avval CI'da chaqirilmasdi — Vite
   # build'ni buzadigan xato (masalan sintaksis xatosi, buzuq import) to'g'ridan
