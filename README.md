@@ -1,138 +1,107 @@
-# Olympy 🏆
+# Olympy
 
-> **High-Performance Online Olympiad & Educational Assessment Platform**  
-> Modern Full-Stack Architecture: **Go 1.22 (REST API)** + **React 18 (Vite & Tailwind CSS)** + **AI Anti-Cheat (TensorFlow.js)**.
-
----
-
-## 🌟 Key Features
-
-- **⚡ High-Performance Go Backend:** Clean Architecture using Go 1.22, Gin Web Framework, GORM ORM, and pure Go SQLite / PostgreSQL support.
-- **🛡️ Real-Time Anti-Cheat (AI Proctoring):** In-browser face-mesh & voice monitoring running in a dedicated Web Worker (`faceWorker.js`) without freezing the UI.
-- **🎯 Multimodal Testing:**
-  - Automated coding problem evaluation via **Judge0 API**.
-  - **Speaking** audio submission & scoring.
-  - **Listening** with single-play audio constraints.
-  - **Essay** submission and structured rubric grading.
-  - **CEFR (A1–C2)** and **IELTS (0–9)** standardized scoring scales.
-- **💳 Payment Gateways:** Native support for Uzbekistan's leading payment gateways:
-  - **Payme:** Full JSON-RPC 2.0 Webhook implementation.
-  - **Click:** Complete Prepare & Complete transaction cycle.
-- **🔐 Enterprise Security:**
-  - JWT Authentication + Bcrypt password hashing.
-  - 6-digit cryptographic SMS OTP verification (5-minute TTL).
-  - Two-Factor Authentication (**2FA TOTP RFC 6238**) with Google Authenticator.
-  - Token-bucket Rate Limiter per IP/route.
-- **📜 QR-Coded Certificates:** Instant PDF & HTML verifiable digital certificates with SHA-256 verification hashes.
-- **🔄 Goroutines Background Worker:** Lightweight asynchronous workers replacing Celery/Redis for test auto-submission, streak updates, and database maintenance.
-- **📚 Interactive API Docs:** Built-in Swagger UI available at `/api/docs/` and OpenAPI 3.0 specification at `/api/openapi.json`.
+> Online Olympiad & Educational Assessment Platform  
+> Full-Stack Architecture: **Go 1.22 (Gin + GORM + SQLite)** + **React (Vite + Tailwind CSS)** + **In-Browser AI Proctoring (TensorFlow.js)**
 
 ---
 
-## 🏛 Project Architecture
+## Key Features
+
+- **Go REST API (`backend/`):** Modular architecture with Gin, GORM, SQLite persistence, role-based access control (`student`, `teacher`, `manager`, `owner`, `admin`), and background maintenance goroutines (`worker.go`).
+- **Security & Auth:** JWT access/refresh token separation, Bcrypt password hashing, TOTP 2FA (`RFC 6238`), rate limiting, and webhook signature verification (Payme, Click, Telegram).
+- **Assessment & Scoring:** Automatic scoring engine with percentage, CEFR (`A1`–`C2`), IELTS band mapping, question pagination, duplicate-submission prevention, and verifiable HTML certificates (`/api/certificates/verify/:uuid/`).
+- **AI Proctoring (`src/proctoring/`):** Client-side face and voice monitoring running inside a dedicated Web Worker (`faceWorker.js`).
+- **API Documentation:** Interactive Swagger UI at `/api/docs/` and OpenAPI spec at `/api/openapi.json`.
+
+---
+
+## Project Architecture
 
 ```text
 Olympy/
-├── backend/                     # 100% Go (Golang) REST API
-│   ├── cmd/api/main.go          # Application entrypoint & routes definition
+├── backend/                     # Go 1.22 REST API
+│   ├── cmd/api/                 # Server entrypoint, router, and HTTP integration tests
 │   ├── internal/
-│   │   ├── config/              # Environment & config loader
-│   │   ├── database/            # GORM database connection & seed data
-│   │   ├── models/              # 25+ database models (User, Attempt, Question...)
-│   │   ├── handlers/            # REST API controllers (Auth, Payments, Tests...)
-│   │   ├── services/            # Scoring, OTP, PDF, Background Worker, Telegram
-│   │   ├── middleware/          # JWT, CORS, Rate Limiting, RBAC
-│   │   └── utils/               # Uzbek phone normalization, tokens, crypto
-│   ├── go.mod & go.sum          # Go modules
-│   └── Dockerfile               # Multi-stage lightweight Alpine build
-├── pages/                       # React user-facing dashboards & pages
-│   ├── AdminDashboard.jsx       # SuperAdmin management panel
-│   ├── OlympiadTest.jsx         # Live test taking engine with timer & anti-cheat
-│   ├── CodeEditor.jsx           # Online CodeMirror coding environment
-│   ├── QuestionCreator.jsx      # Advanced multimodal question editor
-│   ├── Results.jsx              # Score breakdown, CEFR/IELTS analytics
-│   └── ...                      # Student, Teacher, Owner dashboards
-├── src/                         # Frontend core & AI proctoring
-│   ├── proctoring/              # TensorFlow.js face/voice AI monitors & Web Worker
-│   ├── services/api.js          # Unified HTTP client with automatic JWT handling
-│   └── index.css                # Tailwind CSS design system
-├── public/                      # Static assets, PWA manifest & AI models
-├── nginx/                       # Production Nginx reverse proxy configuration
-├── deploy/                      # VPS hardening & Cloudflare sync scripts
-├── docker-compose.yml           # Complete containerized production stack
-└── start_local.bat              # One-click local start for Windows
+│   │   ├── config/              # Env config loader (fail-closed JWT check in release mode)
+│   │   ├── database/            # Auto-migration & initial demo seeding
+│   │   ├── models/              # Domain models (Users, Centers, Olympiads, Attempts, Billing)
+│   │   ├── handlers/            # REST endpoints, serializers, RBAC guards
+│   │   ├── middleware/          # Auth, CORS (credentials-safe), IP rate limiter
+│   │   ├── services/            # Scoring, OTP, Telegram, certificates, background worker
+│   │   └── utils/               # Phone normalization (+998), JWT, bcrypt
+│   ├── Dockerfile               # Pure Go static Alpine container build
+│   └── go.mod & go.sum
+├── pages/                       # React dashboards & exam views
+├── src/                         # API client, proctoring monitors, Tailwind styles
+├── nginx/                       # Production Nginx reverse proxy & security headers
+├── scripts/                     # Build & Playwright smoke scripts
+├── docker-compose.yml           # Full stack (Go backend + Nginx frontend)
+├── render.yaml                  # Render Blueprint (Go web service + static site)
+└── start_local.bat              # Windows local launcher
 ```
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start
 
 ### Prerequisites
 - **Go 1.22+**
-- **Node.js 18+** & npm
+- **Node.js 20+**
 
----
-
-### 1. Backend Setup (Go)
+### 1. Backend (Go)
 
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Copy environment variables
-cp .env.example .env
-
-# Run the server directly
-go run cmd/api/main.go
+go mod download
+go run ./cmd/api
 ```
-> The Go backend will start at: **http://localhost:8000**  
-> Database auto-migrates and seeds initial demo data automatically on first launch.
 
----
+- API base URL: `http://127.0.0.1:8000`
+- Swagger Docs: `http://127.0.0.1:8000/api/docs/`
+- On first startup, the SQLite database auto-migrates and seeds demo accounts (`+998901234567`/`admin123`, `+998902223344`/`owner123`, `+998901112233`/`teacher123`, `+998909998877`/`student123`).
 
-### 2. Frontend Setup (React / Vite)
+### 2. Frontend (Vite + React)
 
 ```bash
-# In the project root directory
 npm install
-
-# Start the development server
 npm run dev
 ```
-> The frontend application will run at: **http://localhost:5173**
+
+- Frontend URL: `http://localhost:5173`
+
+### Windows One-Click Launch
+Double-click `start_local.bat` in the repository root to start both backend and frontend.
 
 ---
 
-### ⚡ One-Click Start (Windows)
-Double-click `start_local.bat` in the project root to launch both the Go backend and React frontend simultaneously in separate terminals.
-
----
-
-## 📖 API Documentation (Swagger)
-
-When the backend is running, explore and test the 50+ REST API endpoints interactively:
-
-- **Swagger UI:** [http://localhost:8000/api/docs/](http://localhost:8000/api/docs/)
-- **OpenAPI JSON Spec:** [http://localhost:8000/api/openapi.json](http://localhost:8000/api/openapi.json)
-
----
-
-## 🐳 Production Deployment (Docker Compose)
-
-Deploy the entire stack with a single command:
+## Verification & Tests
 
 ```bash
-# Build and start all services in background
-docker compose up -d
-```
+# Backend static checks, unit & HTTP integration tests
+cd backend
+go vet ./...
+CGO_ENABLED=0 go test -race -v ./...
+CGO_ENABLED=0 go build -o /dev/null ./cmd/api
 
-Included containers:
-- `backend`: Go API container
-- `nginx`: High-performance static asset server & reverse proxy
-- `postgres`: Production relational database
-- `redis`: High-speed caching layer
+# Frontend production build
+cd ..
+npm ci
+npm run build
+```
 
 ---
 
-## 📄 License
+## Docker Compose Deployment
+
+```bash
+docker compose up -d --build
+```
+
+Services started:
+- `backend`: Statically compiled Go 1.22 API with persistent SQLite volume (`/app/data/olympy.db`)
+- `nginx`: Built React static bundle + reverse proxy (`/api/*` -> `backend:8000`)
+
+---
+
+## License
 Private proprietary software. All rights reserved.

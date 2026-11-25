@@ -92,3 +92,16 @@ func ResetFailedLogin(ip string) {
 		rec.lockedUntil = time.Time{}
 	}
 }
+
+// CleanupExpiredRateLimits prunes stale IP entries to prevent unbounded memory growth.
+func CleanupExpiredRateLimits() {
+	now := time.Now()
+	storeLock.Lock()
+	defer storeLock.Unlock()
+
+	for ip, rec := range ipStore {
+		if now.Sub(rec.windowStart) > 15*time.Minute && !rec.lockedUntil.After(now) {
+			delete(ipStore, ip)
+		}
+	}
+}

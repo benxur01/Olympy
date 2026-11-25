@@ -1,17 +1,18 @@
-version: '3.8'
-
 services:
   api:
     build: .
     container_name: olympy-backend-go
-    restart: always
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - PORT=8000
-      - OLYMPY_DB_ENGINE=sqlite
-      - OLYMPY_DB_NAME=olympy.db
-      - JWT_SECRET=olympy-go-super-secret-key-2025
-      - ALLOWED_ORIGINS=*
+      PORT: "8000"
+      OLYMPY_DB_ENGINE: "sqlite"
+      OLYMPY_DB_NAME: "/app/data/olympy.db"
+      JWT_SECRET: "${JWT_SECRET:-dev-only-change-in-production}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
     volumes:
-      - ./data:/app/data
+      - backend_data:/app/data
+
+volumes:
+  backend_data:

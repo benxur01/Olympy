@@ -80,11 +80,34 @@ func AdminRevenueAnalytics(c *gin.Context) {
 }
 
 func GetManagerStats(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Faqat markaz xodimlari uchun ruxsat berilgan")
+		return
+	}
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+
 	centerID := c.Query("center")
 	var attempts []models.TestAttempt
 	query := database.DB.Joins("JOIN olympiads ON olympiads.id = test_attempts.olympiad_id")
 	if centerID != "" && centerID != "null" {
-		query = query.Where("olympiads.center_id = ?", centerID)
+		if cid, ok := parseFlexUint(centerID); ok {
+			if !canManageCenter(c, cid, true) {
+				jsonError(c, http.StatusForbidden, "Ushbu markaz statistikasini ko'rish huquqingiz yo'q")
+				return
+			}
+			query = query.Where("olympiads.center_id = ?", cid)
+		}
+	} else if !currentUserIsAdmin(c) {
+		centerIDs := userManagedCenterIDs(userID, "owner", "manager", "teacher")
+		if len(centerIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"total_attempts": 0, "avg_score": 0, "highest_score": 0})
+			return
+		}
+		query = query.Where("olympiads.center_id IN ?", centerIDs)
 	}
 	query.Find(&attempts)
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type RegisterRequest struct {
@@ -103,9 +104,19 @@ func Register(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		role := strings.TrimSpace(req.Role)
-		if role == "" {
-			role = "student"
+		requestedRole := strings.ToLower(strings.TrimSpace(req.Role))
+		if requestedRole == "" {
+			requestedRole = "student"
+		}
+		if requestedRole != "student" && requestedRole != "teacher" && requestedRole != "parent" {
+			jsonError(c, http.StatusBadRequest, "Noto'g'ri rol tanlandi")
+			return
+		}
+
+		// Elevated center roles are only granted upon center approval; unapproved accounts stay student-scoped.
+		initialRole := requestedRole
+		if initialRole == "teacher" {
+			initialRole = "student"
 		}
 
 		parts := strings.Fields(strings.TrimSpace(req.FullName))
@@ -123,33 +134,41 @@ func Register(cfg *config.Config) gin.HandlerFunc {
 			Phone:               normPhone,
 			NormalizedPhone:     normPhone,
 			Password:            hashedPassword,
-			Roles:               models.StringArray{role},
+			Roles:               models.StringArray{initialRole},
 			IsActive:            true,
 			OnboardingCompleted: true,
 			Coins:               50,
 		}
 
-		if err := database.DB.Create(&user).Error; err != nil {
-			jsonError(c, http.StatusInternalServerError, "Foydalanuvchini saqlashda xatolik: "+err.Error())
-			return
-		}
+		if err := database.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&user).Error; err != nil {
+				return err
+			}
 
-		if centerID, ok := parseFlexUint(req.CenterID); ok {
-			joinRole := strings.TrimSpace(req.JoinRole)
-			if joinRole == "" {
-				joinRole = role
+			if centerID, ok := parseFlexUint(req.CenterID); ok {
+				joinRole := strings.ToLower(strings.TrimSpace(req.JoinRole))
+				if joinRole == "" {
+					joinRole = requestedRole
+				}
+				if joinRole != "student" && joinRole != "teacher" {
+					joinRole = "student"
+				}
+				status := "approved"
+				if joinRole == "teacher" {
+					status = "pending"
+				}
+				return tx.Create(&models.CenterMembership{
+					CenterID: centerID,
+					UserID:   user.ID,
+					Role:     joinRole,
+					Subject:  req.JoinSubject,
+					Status:   status,
+				}).Error
 			}
-			status := "approved"
-			if joinRole == "teacher" || joinRole == "manager" {
-				status = "pending"
-			}
-			database.DB.Create(&models.CenterMembership{
-				CenterID: centerID,
-				UserID:   user.ID,
-				Role:     joinRole,
-				Subject:  req.JoinSubject,
-				Status:   status,
-			})
+			return nil
+		}); err != nil {
+			jsonError(c, http.StatusInternalServerError, "Foydalanuvchini saqlashda xatolik")
+			return
 		}
 
 		access, refresh, err := utils.GenerateTokens(user.ID, user.Phone, user.Roles, user.IsPlatformAdmin, cfg.JWTSecret)
@@ -205,34 +224,36 @@ func RegisterOrganization(cfg *config.Config) gin.HandlerFunc {
 			OnboardingCompleted: true,
 			Coins:               100,
 		}
-		if err := database.DB.Create(&user).Error; err != nil {
-			jsonError(c, http.StatusInternalServerError, "Foydalanuvchini saqlashda xatolik")
+		var center models.EducationCenter
+		if err := database.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&user).Error; err != nil {
+				return err
+			}
+			center = models.EducationCenter{
+				Name:             req.Center.Name,
+				Slug:             slugify(req.Center.Name),
+				OrganizationType: req.Center.OrganizationType,
+				Country:          req.Center.Country,
+				Region:           req.Center.Region,
+				District:         req.Center.District,
+				City:             req.Center.City,
+				Subjects:         models.StringArray(req.Center.Subjects),
+				OwnerID:          user.ID,
+				Status:           "pending",
+			}
+			if err := tx.Create(&center).Error; err != nil {
+				return err
+			}
+			return tx.Create(&models.CenterMembership{
+				CenterID: center.ID,
+				UserID:   user.ID,
+				Role:     "owner",
+				Status:   "pending",
+			}).Error
+		}); err != nil {
+			jsonError(c, http.StatusInternalServerError, "Tashkilotni ro'yxatdan o'tkazishda xatolik")
 			return
 		}
-
-		center := models.EducationCenter{
-			Name:             req.Center.Name,
-			Slug:             slugify(req.Center.Name),
-			OrganizationType: req.Center.OrganizationType,
-			Country:          req.Center.Country,
-			Region:           req.Center.Region,
-			District:         req.Center.District,
-			City:             req.Center.City,
-			Subjects:         models.StringArray(req.Center.Subjects),
-			OwnerID:          user.ID,
-			Status:           "pending",
-		}
-		if err := database.DB.Create(&center).Error; err != nil {
-			jsonError(c, http.StatusInternalServerError, "Markazni saqlashda xatolik")
-			return
-		}
-
-		database.DB.Create(&models.CenterMembership{
-			CenterID: center.ID,
-			UserID:   user.ID,
-			Role:     "owner",
-			Status:   "pending",
-		})
 
 		access, refresh, err := utils.GenerateTokens(user.ID, user.Phone, user.Roles, user.IsPlatformAdmin, cfg.JWTSecret)
 		if err != nil {
@@ -329,7 +350,7 @@ func RefreshToken(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		claims, err := utils.ValidateToken(rawRefresh, cfg.JWTSecret)
-		if err != nil || claims.UserID == 0 {
+		if err != nil || claims.UserID == 0 || (claims.TokenType != "" && claims.TokenType != "refresh") {
 			jsonError(c, http.StatusUnauthorized, "Refresh token yaroqsiz yoki muddati tugagan")
 			return
 		}
@@ -337,6 +358,10 @@ func RefreshToken(cfg *config.Config) gin.HandlerFunc {
 		var user models.User
 		if err := database.DB.First(&user, claims.UserID).Error; err != nil {
 			jsonError(c, http.StatusUnauthorized, "Foydalanuvchi topilmadi")
+			return
+		}
+		if !user.IsActive {
+			jsonError(c, http.StatusForbidden, "Hisobingiz vaqtincha bloklangan")
 			return
 		}
 
@@ -373,16 +398,15 @@ func StartPhoneTelegramVerification(c *gin.Context) {
 		return
 	}
 
-	code, err := services.GenerateAndSaveOTP(normPhone, "phone_verify", "")
+	_, err := services.GenerateAndSaveOTP(normPhone, "phone_verify", "")
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "OTP generatsiyasida xatolik")
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "Tasdiqlash kodi Telegram botingizga yuborildi",
-		"phone":     normPhone,
-		"demo_code": code,
+		"message": "Tasdiqlash kodi Telegram botingizga yuborildi",
+		"phone":   normPhone,
 	})
 }
 
@@ -427,16 +451,15 @@ func StartPasswordReset(c *gin.Context) {
 		return
 	}
 
-	code, err := services.GenerateAndSaveOTP(normPhone, "password_reset", "")
+	_, err := services.GenerateAndSaveOTP(normPhone, "password_reset", "")
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "OTP yaratishda xatolik")
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "Parolni tiklash kodi Telegram botingizga yuborildi",
-		"phone":     normPhone,
-		"demo_code": code,
+		"message": "Parolni tiklash kodi Telegram botingizga yuborildi",
+		"phone":   normPhone,
 	})
 }
 
@@ -475,8 +498,11 @@ func ConfirmPasswordReset(c *gin.Context) {
 
 // StartEmailLink links email with OTP
 func StartEmailLink(c *gin.Context) {
-	userIDVal, _ := c.Get("userID")
-	userID := userIDVal.(uint)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 
 	var req LinkEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -485,13 +511,18 @@ func StartEmailLink(c *gin.Context) {
 	}
 
 	var user models.User
-	database.DB.First(&user, userID)
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		jsonError(c, http.StatusNotFound, "Foydalanuvchi topilmadi")
+		return
+	}
 
-	code, _ := services.GenerateAndSaveOTP(user.NormalizedPhone, "email_link", req.Email)
+	if _, err := services.GenerateAndSaveOTP(user.NormalizedPhone, "email_link", req.Email); err != nil {
+		jsonError(c, http.StatusInternalServerError, "OTP yaratishda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":   fmt.Sprintf("Tasdiqlash kodi %s manziliga yuborildi", req.Email),
-		"demo_code": code,
+		"message": fmt.Sprintf("Tasdiqlash kodi %s manziliga yuborildi", req.Email),
 	})
 }
 

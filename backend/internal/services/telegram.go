@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -24,7 +25,7 @@ func SendTelegramMessage(chatID string, text string) error {
 	}
 
 	if token == "" || chatID == "" {
-		log.Printf("[Telegram Mock] ChatID: %s | Xabar: %s", chatID, text)
+		log.Printf("[Telegram Skipped] missing token or chatID")
 		return nil
 	}
 
@@ -43,10 +44,23 @@ func SendTelegramMessage(chatID string, text string) error {
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Post(apiURL, "application/json", bytes.NewBuffer(body))
 	if err != nil {
-		log.Printf("[Telegram Error] Xabar yuborishda xatolik: %v", err)
+		log.Printf("[Telegram Error] request failed: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
+
+	respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram API status %d: %s", resp.StatusCode, string(respBytes))
+	}
+
+	var parsed struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(respBytes, &parsed); err == nil && !parsed.OK {
+		return fmt.Errorf("telegram API error: %s", parsed.Description)
+	}
 
 	return nil
 }

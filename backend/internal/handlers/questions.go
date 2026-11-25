@@ -27,6 +27,11 @@ type CreateQuestionRequest struct {
 }
 
 func ListQuestions(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Savollar bankiga faqat xodimlar kira oladi")
+		return
+	}
+
 	var questions []models.Question
 	query := database.DB
 
@@ -34,22 +39,42 @@ func ListQuestions(c *gin.Context) {
 		query = query.Where("olympiad_id = ?", olympiadID)
 	}
 	if centerID := c.Query("center"); centerID != "" && centerID != "null" && centerID != "undefined" {
+		if cid, ok := parseFlexUint(centerID); ok && !canManageCenter(c, cid, true) {
+			jsonError(c, http.StatusForbidden, "Ushbu markaz savollarini ko'rish huquqingiz yo'q")
+			return
+		}
 		query = query.Where("center_id = ?", centerID)
+	} else if !currentUserIsAdmin(c) {
+		if uid, ok := currentUserID(c); ok {
+			ids := userManagedCenterIDs(uid, "owner", "manager", "teacher")
+			if len(ids) > 0 {
+				query = query.Where("center_id IN ? OR center_id IS NULL", ids)
+			} else {
+				query = query.Where("center_id IS NULL")
+			}
+		}
 	}
 
-	query.Order("`order` ASC, id ASC").Find(&questions)
-	isStaff := userIsStaff(c)
+	if err := query.Order("`order` ASC, id ASC").Find(&questions).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Savollarni yuklashda xatolik")
+		return
+	}
 	out := make([]gin.H, 0, len(questions))
 	for _, q := range questions {
-		out = append(out, SerializeQuestion(q, isStaff))
+		out = append(out, SerializeQuestion(q, true))
 	}
 	c.JSON(http.StatusOK, out)
 }
 
 func CreateQuestion(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Savol yaratish uchun o'qituvchi yoki markaz boshqaruvchisi huquqi talab qilinadi")
+		return
+	}
+
 	var req CreateQuestionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, http.StatusBadRequest, "Savol matni majburiy: "+err.Error())
+		jsonError(c, http.StatusBadRequest, "Savol matni majburiy")
 		return
 	}
 
@@ -65,6 +90,24 @@ func CreateQuestion(c *gin.Context) {
 		centerPtr = &cid
 	} else if cid, ok := parseFlexUint(req.Center); ok {
 		centerPtr = &cid
+	}
+	if centerPtr != nil && !canManageCenter(c, *centerPtr, true) {
+		jsonError(c, http.StatusForbidden, "Ushbu markazga savol qo'shish huquqingiz yo'q")
+		return
+	}
+	if olympiadPtr != nil {
+		var ol models.Olympiad
+		if err := database.DB.First(&ol, *olympiadPtr).Error; err != nil {
+			jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
+			return
+		}
+		if ol.CenterID != nil && !canManageCenter(c, *ol.CenterID, true) {
+			jsonError(c, http.StatusForbidden, "Ushbu olimpiadaga savol qo'shish huquqingiz yo'q")
+			return
+		}
+		if centerPtr == nil {
+			centerPtr = ol.CenterID
+		}
 	}
 
 	points := req.Points
@@ -106,10 +149,19 @@ func CreateQuestion(c *gin.Context) {
 }
 
 func UpdateQuestion(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Savolni tahrirlash huquqingiz yo'q")
+		return
+	}
+
 	id := c.Param("id")
 	var q models.Question
 	if err := database.DB.First(&q, id).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Savol topilmadi")
+		return
+	}
+	if q.CenterID != nil && !canManageCenter(c, *q.CenterID, true) {
+		jsonError(c, http.StatusForbidden, "Ushbu savolni tahrirlash huquqingiz yo'q")
 		return
 	}
 
@@ -142,14 +194,33 @@ func UpdateQuestion(c *gin.Context) {
 	}
 
 	if len(updates) > 0 {
-		database.DB.Model(&q).Updates(updates)
+		if err := database.DB.Model(&q).Updates(updates).Error; err != nil {
+			jsonError(c, http.StatusInternalServerError, "Savolni yangilashda xatolik")
+			return
+		}
 		database.DB.First(&q, id)
 	}
 	c.JSON(http.StatusOK, SerializeQuestion(q, true))
 }
 
 func DeleteQuestion(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Savolni o'chirish huquqingiz yo'q")
+		return
+	}
 	id := c.Param("id")
-	database.DB.Delete(&models.Question{}, id)
+	var q models.Question
+	if err := database.DB.First(&q, id).Error; err != nil {
+		jsonError(c, http.StatusNotFound, "Savol topilmadi")
+		return
+	}
+	if q.CenterID != nil && !canManageCenter(c, *q.CenterID, true) {
+		jsonError(c, http.StatusForbidden, "Ushbu savolni o'chirish huquqingiz yo'q")
+		return
+	}
+	if err := database.DB.Delete(&q).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Savolni o'chirishda xatolik")
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
 }

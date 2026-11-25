@@ -2,16 +2,21 @@ package services
 
 import (
 	"fmt"
+	"html"
 	"olympy-backend-go/internal/models"
 	"time"
 )
 
-// GenerateCertificateHTML generates an official, beautiful print-ready certificate document
+// GenerateCertificateHTML generates an official, print-ready certificate document with escaped text.
 func GenerateCertificateHTML(attempt models.TestAttempt, studentName string, olympiadTitle string, certUUID string) string {
 	dateStr := time.Now().Format("02.01.2006")
 	if attempt.SubmittedAt != nil {
 		dateStr = attempt.SubmittedAt.Format("02.01.2006")
 	}
+
+	safeName := html.EscapeString(studentName)
+	safeTitle := html.EscapeString(olympiadTitle)
+	safeUUID := html.EscapeString(certUUID)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="uz">
@@ -130,5 +135,5 @@ func GenerateCertificateHTML(attempt models.TestAttempt, studentName string, oly
     </div>
   </div>
 </body>
-</html>`, studentName, olympiadTitle, attempt.Score, attempt.MaxScore, attempt.Percentage, dateStr, certUUID, certUUID)
+</html>`, safeName, safeTitle, attempt.Score, attempt.MaxScore, attempt.Percentage, dateStr, safeUUID, safeUUID)
 }

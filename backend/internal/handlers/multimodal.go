@@ -30,10 +30,34 @@ type SubmitSpeakingRequest struct {
 	Duration   int    `json:"duration"`
 }
 
+func verifyAttemptOwner(c *gin.Context, attemptID uint) bool {
+	if attemptID == 0 {
+		return true
+	}
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return false
+	}
+	var attempt models.TestAttempt
+	if err := database.DB.Select("id, user_id").First(&attempt, attemptID).Error; err != nil {
+		jsonError(c, http.StatusNotFound, "Test urinishi topilmadi")
+		return false
+	}
+	if attempt.UserID != userID && !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Ushbu urinishga javob yuborish huquqingiz yo'q")
+		return false
+	}
+	return true
+}
+
 func SubmitCode(c *gin.Context) {
 	var req SubmitCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "Dasturlash tili va kod kiritilishi shart")
+		return
+	}
+	if !verifyAttemptOwner(c, req.AttemptID) {
 		return
 	}
 
@@ -66,6 +90,9 @@ func SubmitEssay(c *gin.Context) {
 		jsonError(c, http.StatusBadRequest, "Insho matni kiritilishi shart")
 		return
 	}
+	if !verifyAttemptOwner(c, req.AttemptID) {
+		return
+	}
 
 	wordCount := len(req.Text) / 5
 	score := 85
@@ -81,7 +108,10 @@ func SubmitEssay(c *gin.Context) {
 		CreatedAt:  time.Now(),
 	}
 
-	database.DB.Create(&grade)
+	if err := database.DB.Create(&grade).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Inshoni saqlashda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":  "Insho AI tomonidan tekshirildi va baholandi!",
@@ -93,8 +123,10 @@ func SubmitEssay(c *gin.Context) {
 
 func SubmitSpeaking(c *gin.Context) {
 	var req SubmitSpeakingRequest
-	if err := c.ShouldBind(&req); err != nil {
-		// Accept multipart upload from browser speaking recorder seamlessly
+	_ = c.ShouldBind(&req)
+
+	if !verifyAttemptOwner(c, req.AttemptID) {
+		return
 	}
 
 	qID := req.QuestionID
@@ -118,7 +150,10 @@ func SubmitSpeaking(c *gin.Context) {
 		CreatedAt:  time.Now(),
 	}
 
-	database.DB.Create(&speaking)
+	if err := database.DB.Create(&speaking).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Nutq javobini saqlashda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"saved":      true,

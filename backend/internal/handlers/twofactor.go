@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
@@ -20,14 +21,17 @@ import (
 // GenerateRandomBase32 generates a 16-character base32 secret
 func GenerateRandomBase32() string {
 	bytes := make([]byte, 10)
-	_, _ = rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		return ""
+	}
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(bytes)
 }
 
 // ValidateTOTPCode validates a 6-digit TOTP code according to RFC 6238
 func ValidateTOTPCode(secret string, code string) bool {
 	secret = strings.ToUpper(strings.TrimSpace(secret))
-	if secret == "" || code == "" {
+	cleanCode := strings.TrimSpace(code)
+	if secret == "" || cleanCode == "" {
 		return false
 	}
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
@@ -48,7 +52,7 @@ func ValidateTOTPCode(secret string, code string) bool {
 		truncated := binary.BigEndian.Uint32(h[offset:offset+4]) & 0x7fffffff
 		expectedCode := fmt.Sprintf("%06d", truncated%1000000)
 
-		if expectedCode == strings.TrimSpace(code) {
+		if subtle.ConstantTimeCompare([]byte(expectedCode), []byte(cleanCode)) == 1 {
 			return true
 		}
 	}

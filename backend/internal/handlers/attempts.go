@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"olympy-backend-go/internal/database"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type SubmitAnswerItem struct {
@@ -84,12 +86,11 @@ func answerMatchesCorrect(raw interface{}, selectedText string, q models.Questio
 }
 
 func SubmitAttempt(c *gin.Context) {
-	userIDVal, exists := c.Get("userID")
+	userID, exists := currentUserID(c)
 	if !exists {
 		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
 		return
 	}
-	userID := userIDVal.(uint)
 
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -107,9 +108,9 @@ func SubmitAttempt(c *gin.Context) {
 	}
 
 	timeSpent := 0
-	if ts, ok := body["time_spent_seconds"].(float64); ok {
+	if ts, ok := body["time_spent_seconds"].(float64); ok && ts > 0 {
 		timeSpent = int(ts)
-	} else if ts, ok := body["time_spent"].(float64); ok {
+	} else if ts, ok := body["time_spent"].(float64); ok && ts > 0 {
 		timeSpent = int(ts)
 	}
 
@@ -117,6 +118,18 @@ func SubmitAttempt(c *gin.Context) {
 	if err := database.DB.Preload("Questions").First(&olympiad, olympiadID).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
 		return
+	}
+	if olympiad.Status != "active" && olympiad.Status != "published" {
+		jsonError(c, http.StatusBadRequest, "Ushbu olimpiada hozirda faol emas")
+		return
+	}
+
+	var activeSession models.TestSession
+	if err := database.DB.Where("user_id = ? AND olympiad_id = ?", userID, olympiad.ID).First(&activeSession).Error; err == nil {
+		if activeSession.Status == "disqualified" || activeSession.Status == "removed" {
+			jsonError(c, http.StatusForbidden, "Siz imtihondan chetlatilgansiz")
+			return
+		}
 	}
 
 	questionsMap := make(map[uint]models.Question)
@@ -224,23 +237,51 @@ func SubmitAttempt(c *gin.Context) {
 		TimeSpentSeconds: timeSpent,
 	}
 
-	if err := database.DB.Create(&attempt).Error; err != nil {
+	errDuplicateAttempt := errors.New("duplicate attempt")
+	txErr := database.DB.Transaction(func(tx *gorm.DB) error {
+		var existingCount int64
+		if err := tx.Model(&models.TestAttempt{}).
+			Where("user_id = ? AND olympiad_id = ? AND status = ?", userID, olympiad.ID, "submitted").
+			Count(&existingCount).Error; err != nil {
+			return err
+		}
+		if existingCount > 0 {
+			return errDuplicateAttempt
+		}
+
+		if err := tx.Create(&attempt).Error; err != nil {
+			return err
+		}
+
+		for i := range testAnswers {
+			testAnswers[i].AttemptID = attempt.ID
+			if err := tx.Create(&testAnswers[i]).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Model(&models.TestSession{}).
+			Where("user_id = ? AND olympiad_id = ?", userID, olympiad.ID).
+			Update("status", "completed").Error; err != nil {
+			return err
+		}
+
+		if isPassed {
+			if err := tx.Model(&models.User{}).
+				Where("id = ?", userID).
+				Update("coins", gorm.Expr("coins + ?", 20)).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if txErr != nil {
+		if errors.Is(txErr, errDuplicateAttempt) {
+			jsonError(c, http.StatusConflict, "Siz ushbu olimpiadani allaqachon topshirgansiz")
+			return
+		}
 		jsonError(c, http.StatusInternalServerError, "Natijani saqlashda xatolik")
 		return
-	}
-
-	for i := range testAnswers {
-		testAnswers[i].AttemptID = attempt.ID
-		database.DB.Create(&testAnswers[i])
-	}
-
-	// Mark active test session as completed
-	database.DB.Model(&models.TestSession{}).
-		Where("user_id = ? AND olympiad_id = ?", userID, olympiad.ID).
-		Update("status", "completed")
-
-	if isPassed {
-		database.DB.Model(&models.User{}).Where("id = ?", userID).Update("coins", database.DB.Raw("coins + ?", 20))
 	}
 
 	// Compute live rank among submitted attempts for this olympiad
@@ -376,10 +417,19 @@ func GetAttemptRouter(c *gin.Context) {
 }
 
 func GetAttemptDetail(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 	id := c.Param("id")
 	var attempt models.TestAttempt
 	if err := database.DB.Preload("Olympiad").Preload("Answers.Question").First(&attempt, id).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Natija topilmadi")
+		return
+	}
+	if attempt.UserID != userID && !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Ushbu natijani ko'rish huquqingiz yo'q")
 		return
 	}
 

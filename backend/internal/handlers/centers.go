@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type CreateCenterRequest struct {
@@ -46,19 +47,29 @@ func serializeCenters(centers []models.EducationCenter) []gin.H {
 func ListCenters(c *gin.Context) {
 	var centers []models.EducationCenter
 	query := database.DB.Preload("Owner")
-	if status := c.Query("status"); status != "" && status != "all" {
-		query = query.Where("status = ?", status)
-	} else if c.Query("all") != "true" && c.Request.URL.Path != "/api/admin/centers/" {
+	isAdminRoute := c.Request.URL.Path == "/api/admin/centers/"
+
+	if isAdminRoute || currentUserIsAdmin(c) {
+		if status := c.Query("status"); status != "" && status != "all" {
+			query = query.Where("status = ?", status)
+		}
+	} else {
 		query = query.Where("status = ?", "approved")
 	}
-	query.Order("id DESC").Find(&centers)
 
+	if err := query.Order("id DESC").Find(&centers).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Markazlarni yuklashda xatolik")
+		return
+	}
 	c.JSON(http.StatusOK, serializeCenters(centers))
 }
 
 func GetMyCenters(c *gin.Context) {
-	userIDVal, _ := c.Get("userID")
-	userID := userIDVal.(uint)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 
 	var memberships []models.CenterMembership
 	database.DB.Where("user_id = ?", userID).Find(&memberships)
@@ -69,7 +80,7 @@ func GetMyCenters(c *gin.Context) {
 	}
 
 	var owned []models.EducationCenter
-	database.DB.Preload("Owner").Where("owner_id = ?", userID).Find(&owned)
+	database.DB.Where("owner_id = ?", userID).Find(&owned)
 	for _, oc := range owned {
 		centerIDMap[oc.ID] = true
 	}
@@ -105,11 +116,12 @@ func GetCenterRouter(cfg *config.Config) gin.HandlerFunc {
 				return
 			}
 			claims, err := utils.ValidateToken(parts[1], cfg.JWTSecret)
-			if err != nil {
+			if err != nil || (claims.TokenType != "" && claims.TokenType != "access") {
 				jsonError(c, http.StatusUnauthorized, "Yaroqsiz yoki muddati o'tgan token")
 				return
 			}
 			c.Set("userID", claims.UserID)
+			c.Set("isAdmin", claims.IsAdmin)
 			GetMyCenters(c)
 		default:
 			GetCenter(c)
@@ -128,8 +140,11 @@ func GetCenter(c *gin.Context) {
 }
 
 func CreateCenter(c *gin.Context) {
-	userIDVal, _ := c.Get("userID")
-	userID := userIDVal.(uint)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 
 	var req CreateCenterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -162,26 +177,39 @@ func CreateCenter(c *gin.Context) {
 		Status:           "pending",
 	}
 
-	if err := database.DB.Create(&center).Error; err != nil {
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&center).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.CenterMembership{
+			CenterID: center.ID,
+			UserID:   userID,
+			Role:     "owner",
+			Status:   "pending",
+		}).Error
+	})
+	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "Markazni saqlashda xatolik")
 		return
 	}
-
-	database.DB.Create(&models.CenterMembership{
-		CenterID: center.ID,
-		UserID:   userID,
-		Role:     "owner",
-		Status:   "pending",
-	})
 	database.DB.Preload("Owner").First(&center, center.ID)
 
 	c.JSON(http.StatusCreated, SerializeCenter(center))
 }
 
 func UpdateCenter(c *gin.Context) {
-	id := c.Param("id")
+	cid, ok := parseFlexUint(c.Param("id"))
+	if !ok {
+		jsonError(c, http.StatusBadRequest, "Markaz ID noto'g'ri")
+		return
+	}
+	if !canManageCenter(c, cid, false) {
+		jsonError(c, http.StatusForbidden, "Ushbu markazni tahrirlash huquqingiz yo'q")
+		return
+	}
+
 	var center models.EducationCenter
-	if err := database.DB.Preload("Owner").First(&center, id).Error; err != nil {
+	if err := database.DB.Preload("Owner").First(&center, cid).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Markaz topilmadi")
 		return
 	}
@@ -192,32 +220,53 @@ func UpdateCenter(c *gin.Context) {
 		return
 	}
 
+	allowedKeys := []string{"name", "description", "organization_type", "country", "region", "district", "city", "address", "phone", "logo_url"}
+	if currentUserIsAdmin(c) {
+		allowedKeys = append(allowedKeys, "is_premium", "status")
+	}
+
 	allowed := map[string]interface{}{}
-	for _, key := range []string{"name", "description", "organization_type", "country", "region", "district", "city", "address", "phone", "is_premium", "logo_url", "status"} {
+	for _, key := range allowedKeys {
 		if v, ok := updates[key]; ok {
 			allowed[key] = v
 		}
 	}
 	if len(allowed) > 0 {
-		database.DB.Model(&center).Updates(allowed)
-		database.DB.Preload("Owner").First(&center, id)
+		if err := database.DB.Model(&center).Updates(allowed).Error; err != nil {
+			jsonError(c, http.StatusInternalServerError, "Markazni yangilashda xatolik")
+			return
+		}
+		database.DB.Preload("Owner").First(&center, cid)
 	}
 	c.JSON(http.StatusOK, SerializeCenter(center))
 }
 
 func JoinCenter(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 	centerID := c.Param("id")
 
 	var req JoinCenterRequest
 	_ = c.ShouldBindJSON(&req)
-	if req.Role == "" {
-		req.Role = "student"
+	role := strings.ToLower(strings.TrimSpace(req.Role))
+	if role == "" {
+		role = "student"
+	}
+	if role != "student" && role != "teacher" {
+		jsonError(c, http.StatusBadRequest, "Faqat 'student' yoki 'teacher' sifatida qo'shilish mumkin")
+		return
 	}
 
 	var center models.EducationCenter
 	if err := database.DB.First(&center, centerID).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Markaz topilmadi")
+		return
+	}
+	if center.Status != "approved" {
+		jsonError(c, http.StatusBadRequest, "Tasdiqlanmagan markazga qo'shilib bo'lmaydi")
 		return
 	}
 
@@ -232,13 +281,16 @@ func JoinCenter(c *gin.Context) {
 
 	membership := models.CenterMembership{
 		CenterID: center.ID,
-		UserID:   userID.(uint),
-		Role:     req.Role,
+		UserID:   userID,
+		Role:     role,
 		Subject:  req.Subject,
 		Status:   "pending",
 	}
 
-	database.DB.Create(&membership)
+	if err := database.DB.Create(&membership).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "A'zolik so'rovini saqlashda xatolik")
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{
 		"message":    "A'zolik so'rovi muvaffaqiyatli yuborildi",
 		"membership": membership,
@@ -253,8 +305,18 @@ func setCenterStatus(c *gin.Context, status string, msgFmt string) {
 		return
 	}
 
-	database.DB.Model(&center).Update("status", status)
-	database.DB.Model(&models.CenterMembership{}).Where("center_id = ? AND role = 'owner'", center.ID).Update("status", status)
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&center).Update("status", status).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.CenterMembership{}).
+			Where("center_id = ? AND role = 'owner'", center.ID).
+			Update("status", status).Error
+	})
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "Markaz holatini saqlashda xatolik")
+		return
+	}
 	database.DB.Preload("Owner").First(&center, center.ID)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -271,7 +333,7 @@ func RejectCenter(c *gin.Context) {
 	setCenterStatus(c, "rejected", "Markaz '%s' rad etildi")
 }
 
-func resolveMembership(centerID string, req MemberActionRequest, role string) (*models.CenterMembership, error) {
+func resolveMembership(centerID uint, req MemberActionRequest, role string) (*models.CenterMembership, error) {
 	var membership models.CenterMembership
 	if mID, ok := parseFlexUint(req.MembershipID); ok {
 		err := database.DB.Where("id = ? AND center_id = ?", mID, centerID).First(&membership).Error
@@ -289,24 +351,38 @@ func resolveMembership(centerID string, req MemberActionRequest, role string) (*
 }
 
 func approveMembershipRole(c *gin.Context, role string, msg string) {
-	centerID := c.Param("id")
+	cid, ok := parseFlexUint(c.Param("id"))
+	if !ok {
+		jsonError(c, http.StatusBadRequest, "Markaz ID noto'g'ri")
+		return
+	}
+	if !canManageCenter(c, cid, false) {
+		jsonError(c, http.StatusForbidden, "Ushbu markaz a'zolarini tasdiqlash huquqingiz yo'q")
+		return
+	}
+
 	var req MemberActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "User ID majburiy")
 		return
 	}
 
-	membership, err := resolveMembership(centerID, req, role)
+	membership, err := resolveMembership(cid, req, role)
 	if err != nil {
 		jsonError(c, http.StatusNotFound, "A'zolik so'rovi topilmadi")
 		return
 	}
 
-	membership.Status = "approved"
-	database.DB.Save(membership)
+	err = database.DB.Transaction(func(tx *gorm.DB) error {
+		membership.Status = "approved"
+		if err := tx.Save(membership).Error; err != nil {
+			return err
+		}
 
-	var user models.User
-	if err := database.DB.First(&user, membership.UserID).Error; err == nil {
+		var user models.User
+		if err := tx.First(&user, membership.UserID).Error; err != nil {
+			return err
+		}
 		hasRole := false
 		for _, r := range user.Roles {
 			if r == role {
@@ -316,8 +392,13 @@ func approveMembershipRole(c *gin.Context, role string, msg string) {
 		}
 		if !hasRole {
 			user.Roles = append(user.Roles, role)
-			database.DB.Save(&user)
+			return tx.Save(&user).Error
 		}
+		return nil
+	})
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "A'zolikni tasdiqlashda xatolik")
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": msg, "membership": membership})
@@ -336,21 +417,33 @@ func ApproveManager(c *gin.Context) {
 }
 
 func RejectMember(c *gin.Context) {
-	centerID := c.Param("id")
+	cid, ok := parseFlexUint(c.Param("id"))
+	if !ok {
+		jsonError(c, http.StatusBadRequest, "Markaz ID noto'g'ri")
+		return
+	}
+	if !canManageCenter(c, cid, false) {
+		jsonError(c, http.StatusForbidden, "Ushbu markaz a'zolarini rad etish huquqingiz yo'q")
+		return
+	}
+
 	var req MemberActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "User ID majburiy")
 		return
 	}
 
-	membership, err := resolveMembership(centerID, req, "")
+	membership, err := resolveMembership(cid, req, "")
 	if err != nil {
 		jsonError(c, http.StatusNotFound, "A'zolik topilmadi")
 		return
 	}
 
 	membership.Status = "rejected"
-	database.DB.Save(membership)
+	if err := database.DB.Save(membership).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "A'zolikni rad etishda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "A'zolik so'rovi rad etildi", "membership": membership})
 }
@@ -376,10 +469,26 @@ func serializeMemberships(members []models.CenterMembership) []gin.H {
 	return out
 }
 
+func requireCenterRosterAccess(c *gin.Context) (uint, bool) {
+	cid, ok := parseFlexUint(c.Param("id"))
+	if !ok {
+		jsonError(c, http.StatusBadRequest, "Markaz ID noto'g'ri")
+		return 0, false
+	}
+	if !canManageCenter(c, cid, true) {
+		jsonError(c, http.StatusForbidden, "Ushbu markaz a'zolarini ko'rish huquqingiz yo'q")
+		return 0, false
+	}
+	return cid, true
+}
+
 func ListCenterMembers(c *gin.Context) {
-	centerID := c.Param("id")
+	cid, ok := requireCenterRosterAccess(c)
+	if !ok {
+		return
+	}
 	var members []models.CenterMembership
-	query := database.DB.Preload("User").Preload("Center").Where("center_id = ?", centerID)
+	query := database.DB.Preload("User").Preload("Center").Where("center_id = ?", cid)
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", role)
 	}
@@ -391,9 +500,12 @@ func ListCenterMembers(c *gin.Context) {
 }
 
 func GetPendingMemberships(c *gin.Context) {
-	centerID := c.Param("id")
+	cid, ok := requireCenterRosterAccess(c)
+	if !ok {
+		return
+	}
 	var members []models.CenterMembership
-	query := database.DB.Preload("User").Preload("Center").Where("center_id = ? AND status = 'pending'", centerID)
+	query := database.DB.Preload("User").Preload("Center").Where("center_id = ? AND status = 'pending'", cid)
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", role)
 	}
@@ -402,9 +514,12 @@ func GetPendingMemberships(c *gin.Context) {
 }
 
 func GetStaffMemberships(c *gin.Context) {
-	centerID := c.Param("id")
+	cid, ok := requireCenterRosterAccess(c)
+	if !ok {
+		return
+	}
 	var members []models.CenterMembership
-	query := database.DB.Preload("User").Preload("Center").Where("center_id = ? AND role IN ?", centerID, []string{"teacher", "manager"})
+	query := database.DB.Preload("User").Preload("Center").Where("center_id = ? AND role IN ?", cid, []string{"teacher", "manager"})
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", role)
 	}
@@ -413,9 +528,12 @@ func GetStaffMemberships(c *gin.Context) {
 }
 
 func GetStudentMemberships(c *gin.Context) {
-	centerID := c.Param("id")
+	cid, ok := requireCenterRosterAccess(c)
+	if !ok {
+		return
+	}
 	var members []models.CenterMembership
-	query := database.DB.Preload("User").Preload("Center").Where("center_id = ? AND role = 'student'", centerID)
+	query := database.DB.Preload("User").Preload("Center").Where("center_id = ? AND role = 'student'", cid)
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}

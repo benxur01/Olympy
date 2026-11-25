@@ -13,18 +13,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func main() {
-	cfg := config.LoadConfig()
+func securityHeadersMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Next()
+	}
+}
 
-	// Initialize Database and Seed Data
-	database.InitDB(cfg)
-
-	// Start Background Worker (Celery Replacement)
-	services.StartBackgroundWorker()
-
+// SetupRouter builds and configures all public, authenticated, and admin routes.
+func SetupRouter(cfg *config.Config) *gin.Engine {
 	r := gin.Default()
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
 
 	// Global Middlewares
+	r.Use(securityHeadersMiddleware())
 	r.Use(middleware.CORSMiddleware(cfg))
 	r.Use(middleware.RateLimiterMiddleware())
 	r.Use(gin.Recovery())
@@ -209,17 +213,25 @@ func main() {
 			adminGroup.GET("/rewards/products/", handlers.ListRewardProducts)
 			adminGroup.GET("/rewards/redemptions/", handlers.EmptyPagedResponse)
 		}
-		api.GET("/billing/admin/revenue/", handlers.AdminRevenueAnalytics)
-		api.GET("/billing/admin/promocodes/", handlers.EmptyPagedResponse)
+
+		// Admin-only billing analytics routes (kept at legacy paths)
+		api.GET("/billing/admin/revenue/", middleware.RequireAdmin(), handlers.AdminRevenueAnalytics)
+		api.GET("/billing/admin/promocodes/", middleware.RequireAdmin(), handlers.EmptyPagedResponse)
 	}
 
+	return r
+}
+
+func main() {
+	cfg := config.LoadConfig()
+
+	database.InitDB(cfg)
+	services.StartBackgroundWorker()
+
+	r := SetupRouter(cfg)
+
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	log.Printf("==================================================")
-	log.Printf("Olympy Go Backend API Ready")
-	log.Printf("Server URL:   http://localhost%s", addr)
-	log.Printf("Health check: http://localhost%s/api/health/", addr)
-	log.Printf("Swagger Docs: http://localhost%s/api/docs/", addr)
-	log.Printf("==================================================")
+	log.Printf("Olympy Go Backend API Ready on http://localhost%s", addr)
 
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Server ishga tushishida xatolik: %v", err)

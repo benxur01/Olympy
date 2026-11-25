@@ -1,9 +1,7 @@
 name: DB Backup (Haftalik)
 
 on:
-  schedule:
-    - cron: '0 2 * * 1'  # Har dushanba soat 02:00 UTC
-  workflow_dispatch:       # Qo'lda ham ishga tushirish mumkin
+  workflow_dispatch:       # Qo'lda ishga tushirish (ixtiyoriy PostgreSQL backup)
 
 # Bu workflow repo kodini umuman o'qimaydi (checkout ham yo'q) — eng kichik
 # huquq. upload-artifact@v4 GITHUB_TOKEN emas, alohida runtime token ishlatadi,

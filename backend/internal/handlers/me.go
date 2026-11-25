@@ -11,8 +11,8 @@ import (
 )
 
 func GetMe(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
+	userID, ok := currentUserID(c)
+	if !ok {
 		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
 		return
 	}
@@ -27,7 +27,12 @@ func GetMe(c *gin.Context) {
 }
 
 func UpdateMe(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+
 	var user models.User
 	if err := database.DB.First(&user, userID).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Foydalanuvchi topilmadi")
@@ -66,15 +71,26 @@ func UpdateMe(c *gin.Context) {
 	}
 
 	if len(updates) > 0 {
-		database.DB.Model(&user).Updates(updates)
-		database.DB.First(&user, userID)
+		if err := database.DB.Model(&user).Updates(updates).Error; err != nil {
+			jsonError(c, http.StatusConflict, "Foydalanuvchi nomi yoki email band")
+			return
+		}
+		if err := database.DB.First(&user, userID).Error; err != nil {
+			jsonError(c, http.StatusInternalServerError, "Profilni yuklashda xatolik")
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, SerializeUser(user))
 }
 
 func ChangePassword(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+
 	var req struct {
 		OldPassword     string `json:"old_password"`
 		CurrentPassword string `json:"current_password"`
@@ -95,7 +111,7 @@ func ChangePassword(c *gin.Context) {
 	if oldPass == "" {
 		oldPass = req.CurrentPassword
 	}
-	if oldPass != "" && !utils.CheckPasswordHash(oldPass, user.Password) {
+	if user.Password != "" && (oldPass == "" || !utils.CheckPasswordHash(oldPass, user.Password)) {
 		jsonError(c, http.StatusBadRequest, "Joriy parol noto'g'ri")
 		return
 	}
@@ -105,19 +121,32 @@ func ChangePassword(c *gin.Context) {
 		jsonError(c, http.StatusInternalServerError, "Parolni saqlashda xatolik")
 		return
 	}
-	database.DB.Model(&user).Update("password", hashed)
+	if err := database.DB.Model(&user).Update("password", hashed).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Parolni yangilashda xatolik")
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Parol muvaffaqiyatli o'zgartirildi"})
 }
 
 func CompleteOnboardingFlag(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	database.DB.Model(&models.User{}).Where("id = ?", userID).Update("onboarding_completed", true)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+	if err := database.DB.Model(&models.User{}).Where("id = ?", userID).Update("onboarding_completed", true).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Yangilashda xatolik")
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "onboarding_completed": true})
 }
 
 func GetActivityLeaderboard(c *gin.Context) {
 	var users []models.User
-	database.DB.Order("coins DESC, streak_count DESC").Limit(20).Find(&users)
+	if err := database.DB.Where("is_active = ?", true).Order("coins DESC, streak_count DESC").Limit(20).Find(&users).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Reytingni yuklashda xatolik")
+		return
+	}
 	res := make([]gin.H, 0, len(users))
 	for i, u := range users {
 		res = append(res, gin.H{
@@ -146,9 +175,16 @@ func GetMyPredictions(c *gin.Context) {
 }
 
 func GetMyRewards(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 	var user models.User
-	database.DB.First(&user, userID)
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		jsonError(c, http.StatusNotFound, "Foydalanuvchi topilmadi")
+		return
+	}
 
 	var products []models.RewardProduct
 	database.DB.Where("is_active = ?", true).Find(&products)
@@ -160,15 +196,42 @@ func GetMyRewards(c *gin.Context) {
 }
 
 func GetMyRedemptions(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 	var redemptions []models.RewardRedemption
-	database.DB.Preload("Product").Where("user_id = ?", userID).Order("id DESC").Find(&redemptions)
+	if err := database.DB.Preload("Product").Where("user_id = ?", userID).Order("id DESC").Find(&redemptions).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Xaridlar tarixini yuklashda xatolik")
+		return
+	}
 	c.JSON(http.StatusOK, redemptions)
 }
 
 func GetTeacherStudents(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Faqat o'qituvchi va markaz xodimlari uchun")
+		return
+	}
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+
 	var members []models.CenterMembership
-	database.DB.Preload("User").Where("role = 'student' AND status = 'approved'").Find(&members)
+	query := database.DB.Preload("User").Where("role = 'student' AND status = 'approved'")
+	if !currentUserIsAdmin(c) {
+		centerIDs := userManagedCenterIDs(userID, "owner", "manager", "teacher")
+		if len(centerIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"results": []gin.H{}})
+			return
+		}
+		query = query.Where("center_id IN ?", centerIDs)
+	}
+	query.Find(&members)
+
 	results := make([]gin.H, 0, len(members))
 	for _, m := range members {
 		results = append(results, gin.H{
@@ -183,8 +246,28 @@ func GetTeacherStudents(c *gin.Context) {
 }
 
 func GetTeacherOlympiads(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Faqat o'qituvchi va markaz xodimlari uchun")
+		return
+	}
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+
 	var olympiads []models.Olympiad
-	database.DB.Order("id DESC").Find(&olympiads)
+	query := database.DB.Order("id DESC")
+	if !currentUserIsAdmin(c) {
+		centerIDs := userManagedCenterIDs(userID, "owner", "manager", "teacher")
+		if len(centerIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"results": []gin.H{}})
+			return
+		}
+		query = query.Where("center_id IN ?", centerIDs)
+	}
+	query.Find(&olympiads)
+
 	results := make([]gin.H, 0, len(olympiads))
 	for _, o := range olympiads {
 		var count int64

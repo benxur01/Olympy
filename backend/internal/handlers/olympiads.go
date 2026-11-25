@@ -69,42 +69,28 @@ func GetOlympiad(c *gin.Context) {
 	c.JSON(http.StatusOK, SerializeOlympiad(olympiad))
 }
 
-func userIsStaff(c *gin.Context) bool {
-	if isAdmin, ok := c.Get("isAdmin"); ok && isAdmin.(bool) {
-		return true
-	}
-	rolesVal, ok := c.Get("roles")
-	if !ok {
-		return false
-	}
-	roles, _ := rolesVal.([]string)
-	for _, r := range roles {
-		if r == "admin" || r == "owner" || r == "manager" || r == "teacher" {
-			return true
-		}
-	}
-	return false
-}
-
-// GetOlympiadQuestions returns per-index or full exam questions and initializes/returns the TestSession.
 func GetOlympiadQuestions(c *gin.Context) {
 	olympiadID := c.Param("id")
 	var olympiad models.Olympiad
-	if err := database.DB.Preload("Questions").First(&olympiad, olympiadID).Error; err != nil {
+	if err := database.DB.First(&olympiad, olympiadID).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
+		return
+	}
+
+	isStaff := userIsStaff(c)
+	if olympiad.Status == "draft" && !isStaff {
+		jsonError(c, http.StatusForbidden, "Ushbu olimpiada hali faollashtirilmagan")
 		return
 	}
 
 	var questions []models.Question
 	database.DB.Where("olympiad_id = ?", olympiad.ID).Order("`order` ASC, id ASC").Find(&questions)
 
-	isStaff := userIsStaff(c)
 	now := time.Now().UTC()
 
 	// Ensure a TestSession exists when an authenticated user loads exam questions
 	var sessionResp gin.H
-	if userIDVal, exists := c.Get("userID"); exists {
-		userID := userIDVal.(uint)
+	if userID, exists := currentUserID(c); exists {
 		var session models.TestSession
 		err := database.DB.Where("user_id = ? AND olympiad_id = ?", userID, olympiad.ID).First(&session).Error
 		if err != nil {
@@ -185,6 +171,11 @@ func GetOlympiadQuestions(c *gin.Context) {
 }
 
 func CreateOlympiad(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Olimpiada yaratish uchun o'qituvchi yoki markaz boshqaruvchisi huquqi talab qilinadi")
+		return
+	}
+
 	var req CreateOlympiadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "Nom majburiy")
@@ -196,6 +187,18 @@ func CreateOlympiad(c *gin.Context) {
 		centerPtr = &cid
 	} else if cid, ok := parseFlexUint(req.Center); ok {
 		centerPtr = &cid
+	}
+	if centerPtr != nil && !canManageCenter(c, *centerPtr, true) {
+		jsonError(c, http.StatusForbidden, "Ushbu markazda olimpiada yaratish huquqingiz yo'q")
+		return
+	}
+	if centerPtr == nil && !currentUserIsAdmin(c) {
+		if uid, ok := currentUserID(c); ok {
+			ids := userManagedCenterIDs(uid, "owner", "manager", "teacher")
+			if len(ids) > 0 {
+				centerPtr = &ids[0]
+			}
+		}
 	}
 
 	var subjectPtr *uint
@@ -270,11 +273,29 @@ func CreateOlympiad(c *gin.Context) {
 	c.JSON(http.StatusCreated, SerializeOlympiad(olympiad))
 }
 
+func canManageOlympiad(c *gin.Context, olympiad models.Olympiad) bool {
+	if currentUserIsAdmin(c) {
+		return true
+	}
+	if olympiad.CenterID != nil {
+		return canManageCenter(c, *olympiad.CenterID, true)
+	}
+	return userIsStaff(c)
+}
+
 func UpdateOlympiad(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Ruxsat berilmagan")
+		return
+	}
 	id := c.Param("id")
 	var olympiad models.Olympiad
 	if err := database.DB.First(&olympiad, id).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
+		return
+	}
+	if !canManageOlympiad(c, olympiad) {
+		jsonError(c, http.StatusForbidden, "Ushbu olimpiadani tahrirlash huquqingiz yo'q")
 		return
 	}
 
@@ -316,20 +337,47 @@ func UpdateOlympiad(c *gin.Context) {
 }
 
 func DeleteOlympiad(c *gin.Context) {
-	id := c.Param("id")
-	database.DB.Delete(&models.Olympiad{}, id)
-	c.JSON(http.StatusNoContent, nil)
-}
-
-func setOlympiadStatus(c *gin.Context, status string, msg string) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Ruxsat berilmagan")
+		return
+	}
 	id := c.Param("id")
 	var olympiad models.Olympiad
 	if err := database.DB.First(&olympiad, id).Error; err != nil {
 		jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
 		return
 	}
+	if !canManageOlympiad(c, olympiad) {
+		jsonError(c, http.StatusForbidden, "Ushbu olimpiadani o'chirish huquqingiz yo'q")
+		return
+	}
+	if err := database.DB.Delete(&olympiad).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Olimpiadani o'chirishda xatolik")
+		return
+	}
+	c.JSON(http.StatusNoContent, nil)
+}
+
+func setOlympiadStatus(c *gin.Context, status string, msg string) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Ruxsat berilmagan")
+		return
+	}
+	id := c.Param("id")
+	var olympiad models.Olympiad
+	if err := database.DB.First(&olympiad, id).Error; err != nil {
+		jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
+		return
+	}
+	if !canManageOlympiad(c, olympiad) {
+		jsonError(c, http.StatusForbidden, "Ushbu olimpiada holatini o'zgartirish huquqingiz yo'q")
+		return
+	}
 	olympiad.Status = status
-	database.DB.Save(&olympiad)
+	if err := database.DB.Save(&olympiad).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Holatni saqlashda xatolik")
+		return
+	}
 	database.DB.Preload("Center").Preload("Subject").First(&olympiad, id)
 	c.JSON(http.StatusOK, gin.H{"message": msg, "olympiad": SerializeOlympiad(olympiad)})
 }
@@ -353,6 +401,10 @@ func ListSubjects(c *gin.Context) {
 }
 
 func CreateSubject(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Fan qo'shish uchun xodim huquqi talab qilinadi")
+		return
+	}
 	var req CreateSubjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "Fan nomi majburiy")

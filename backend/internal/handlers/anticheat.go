@@ -40,8 +40,11 @@ type TerminateSessionRequest struct {
 }
 
 func StartTestSession(c *gin.Context) {
-	userIDVal, _ := c.Get("userID")
-	userID := userIDVal.(uint)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 
 	var req StartSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,6 +61,10 @@ func StartTestSession(c *gin.Context) {
 	var session models.TestSession
 	err := database.DB.Where("user_id = ? AND olympiad_id = ?", userID, olympiad.ID).First(&session).Error
 	if err == nil {
+		if session.Status == "disqualified" || session.Status == "removed" {
+			jsonError(c, http.StatusForbidden, "Siz ushbu imtihondan chetlatilgansiz")
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Sessiya mavjud",
 			"session": session,
@@ -84,7 +91,7 @@ func StartTestSession(c *gin.Context) {
 	}
 
 	if err := database.DB.Create(&session).Error; err != nil {
-		jsonError(c, http.StatusInternalServerError, "Sessiya ochishda xatolik: "+err.Error())
+		jsonError(c, http.StatusInternalServerError, "Sessiya ochishda xatolik")
 		return
 	}
 
@@ -95,8 +102,11 @@ func StartTestSession(c *gin.Context) {
 }
 
 func PingTestSession(c *gin.Context) {
-	userIDVal, _ := c.Get("userID")
-	userID := userIDVal.(uint)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 
 	var req PingSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -107,7 +117,14 @@ func PingTestSession(c *gin.Context) {
 	var session models.TestSession
 	var err error
 	if req.SessionID > 0 {
-		err = database.DB.First(&session, req.SessionID).Error
+		err = database.DB.Where("id = ? AND user_id = ?", req.SessionID, userID).First(&session).Error
+		if err != nil {
+			var other models.TestSession
+			if database.DB.First(&other, req.SessionID).Error == nil {
+				jsonError(c, http.StatusForbidden, "Sessiya sizga tegishli emas")
+				return
+			}
+		}
 	} else {
 		oid, ok := parseFlexUint(req.Olympiad)
 		if !ok {
@@ -131,7 +148,10 @@ func PingTestSession(c *gin.Context) {
 			session.Status = "disqualified"
 			session.CheatingReason = "Bir vaqtning o'zida ikkita qurilmadan kirish aniqlandi!"
 			session.DisqualifiedAt = &now
-			database.DB.Save(&session)
+			if saveErr := database.DB.Save(&session).Error; saveErr != nil {
+				jsonError(c, http.StatusInternalServerError, "Sessiya holatini saqlashda xatolik")
+				return
+			}
 
 			c.JSON(http.StatusForbidden, gin.H{
 				"status": "disqualified",
@@ -145,15 +165,34 @@ func PingTestSession(c *gin.Context) {
 		session.LastDeviceID = req.DeviceID
 	}
 	session.LastPingAt = &now
-	database.DB.Save(&session)
+	if err := database.DB.Save(&session).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Sessiya yangilashda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": session.Status})
 }
 
 func RecordEvidence(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
+
 	var req EvidenceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "Ma'lumotlar to'liq emas")
+		return
+	}
+
+	var session models.TestSession
+	if err := database.DB.First(&session, req.SessionID).Error; err != nil {
+		jsonError(c, http.StatusNotFound, "Sessiya topilmadi")
+		return
+	}
+	if session.UserID != userID && !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Ushbu sessiyaga dalil yozish huquqingiz yo'q")
 		return
 	}
 
@@ -165,7 +204,10 @@ func RecordEvidence(c *gin.Context) {
 		Metadata:   req.Metadata,
 		CreatedAt:  time.Now(),
 	}
-	database.DB.Create(&evidence)
+	if err := database.DB.Create(&evidence).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Dalilni saqlashda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":  "Dalil muvaffaqiyatli qayd etildi",
@@ -174,8 +216,11 @@ func RecordEvidence(c *gin.Context) {
 }
 
 func ReportCheating(c *gin.Context) {
-	userIDVal, _ := c.Get("userID")
-	userID := userIDVal.(uint)
+	userID, ok := currentUserID(c)
+	if !ok {
+		jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+		return
+	}
 
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -194,11 +239,11 @@ func ReportCheating(c *gin.Context) {
 
 	var session models.TestSession
 	if oid > 0 && database.DB.Where("user_id = ? AND olympiad_id = ?", userID, oid).First(&session).Error == nil {
-		database.DB.Create(&models.EvidenceSnapshot{
+		_ = database.DB.Create(&models.EvidenceSnapshot{
 			SessionID: session.ID,
 			Reason:    reason,
 			CreatedAt: time.Now(),
-		})
+		}).Error
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -209,8 +254,11 @@ func ReportCheating(c *gin.Context) {
 
 func RecordProctorConsent(kind string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userIDVal, _ := c.Get("userID")
-		userID := userIDVal.(uint)
+		userID, ok := currentUserID(c)
+		if !ok {
+			jsonError(c, http.StatusUnauthorized, "Foydalanuvchi aniqlanmadi")
+			return
+		}
 
 		var body map[string]interface{}
 		_ = c.ShouldBindJSON(&body)
@@ -221,10 +269,13 @@ func RecordProctorConsent(kind string) gin.HandlerFunc {
 		if oid > 0 {
 			var session models.TestSession
 			if database.DB.Where("user_id = ? AND olympiad_id = ?", userID, oid).First(&session).Error == nil {
+				col := "microphone_consent_given"
 				if kind == "camera" {
-					database.DB.Model(&session).Update("camera_consent_given", true)
-				} else {
-					database.DB.Model(&session).Update("microphone_consent_given", true)
+					col = "camera_consent_given"
+				}
+				if err := database.DB.Model(&session).Update(col, true).Error; err != nil {
+					jsonError(c, http.StatusInternalServerError, "Ruxsat holatini saqlashda xatolik")
+					return
 				}
 			}
 		}
@@ -233,6 +284,11 @@ func RecordProctorConsent(kind string) gin.HandlerFunc {
 }
 
 func TerminateSession(c *gin.Context) {
+	if !userIsStaff(c) {
+		jsonError(c, http.StatusForbidden, "Sessiyani to'xtatish uchun proktor yoki admin huquqi talab qilinadi")
+		return
+	}
+
 	var req TerminateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, http.StatusBadRequest, "Sabab ko'rsatilishi shart")
@@ -249,7 +305,10 @@ func TerminateSession(c *gin.Context) {
 	session.Status = "removed"
 	session.CheatingReason = req.Reason
 	session.DisqualifiedAt = &now
-	database.DB.Save(&session)
+	if err := database.DB.Save(&session).Error; err != nil {
+		jsonError(c, http.StatusInternalServerError, "Sessiyani yangilashda xatolik")
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Imtihonchi sessiyadan chetlatildi",
