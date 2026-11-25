@@ -11,11 +11,33 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func CertificateRouter(c *gin.Context) {
+	p1 := c.Param("param1")
+	p2 := c.Param("param2")
+
+	if p1 == "verify" {
+		verifyCertificateByUUID(c, p2)
+		return
+	}
+	if p2 == "download" {
+		downloadCertificateByID(c, p1)
+		return
+	}
+
+	jsonError(c, http.StatusNotFound, "Sertifikat marshruti topilmadi")
+}
+
 func VerifyCertificate(c *gin.Context) {
-	certUUID := c.Param("uuid")
+	verifyCertificateByUUID(c, c.Param("uuid"))
+}
+
+func verifyCertificateByUUID(c *gin.Context, certUUID string) {
 
 	var attempt models.TestAttempt
-	err := database.DB.Preload("User").Preload("Olympiad").Where("id = ? OR score >= 60", 1).First(&attempt).Error
+	err := database.DB.Preload("User").Preload("Olympiad").Where("certificate_uuid = ?", certUUID).First(&attempt).Error
+	if err != nil {
+		err = database.DB.Preload("User").Preload("Olympiad").Where("id = ?", certUUID).First(&attempt).Error
+	}
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -39,17 +61,22 @@ func VerifyCertificate(c *gin.Context) {
 	})
 }
 
-// DownloadCertificate renders the certificate
 func DownloadCertificate(c *gin.Context) {
-	attemptID := c.Param("id")
+	downloadCertificateByID(c, c.Param("id"))
+}
+
+func downloadCertificateByID(c *gin.Context, attemptID string) {
 
 	var attempt models.TestAttempt
 	if err := database.DB.Preload("User").Preload("Olympiad").First(&attempt, attemptID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Natija topilmadi"})
+		jsonError(c, http.StatusNotFound, "Natija topilmadi")
 		return
 	}
 
-	certUUID := fmt.Sprintf("CERT-%d-%d", attempt.ID, attempt.UserID)
+	certUUID := attempt.CertificateUUID
+	if certUUID == "" {
+		certUUID = fmt.Sprintf("CERT-%d-%d", attempt.ID, attempt.UserID)
+	}
 	html := services.GenerateCertificateHTML(attempt, attempt.User.FullName, attempt.Olympiad.Title, certUUID)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")

@@ -18,6 +18,14 @@ func ListNotifications(c *gin.Context) {
 	c.JSON(http.StatusOK, notifs)
 }
 
+func NotificationRouterPOST(c *gin.Context) {
+	if c.Param("id") == "read-all" {
+		MarkAllNotificationsRead(c)
+		return
+	}
+	jsonError(c, http.StatusNotFound, "Bildirishnoma marshruti topilmadi")
+}
+
 func MarkNotificationRead(c *gin.Context) {
 	id := c.Param("id")
 	userIDVal, _ := c.Get("userID")

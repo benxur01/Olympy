@@ -14,30 +14,42 @@ type PracticeSubmitRequest struct {
 	SelectedAnswer string `json:"selected_answer" binding:"required"`
 }
 
-// GetPracticeQuestions returns questions for free unranked practice
 func GetPracticeQuestions(c *gin.Context) {
 	var questions []models.Question
 	query := database.DB.Limit(20)
 
-	if subjectID := c.Query("subject"); subjectID != "" {
-		query = query.Where("subject_id = ?", subjectID)
+	if subject := strings.TrimSpace(c.Query("subject")); subject != "" {
+		query = query.Where("subject = ?", subject)
 	}
 
 	query.Find(&questions)
-	c.JSON(http.StatusOK, questions)
+	out := make([]gin.H, 0, len(questions))
+	for _, q := range questions {
+		out = append(out, SerializeQuestion(q, true))
+	}
+	c.JSON(http.StatusOK, out)
 }
 
-// SubmitPracticeAnswer verifies answer instantly without affecting official ranking
+func StartPractice(c *gin.Context) {
+	var questions []models.Question
+	database.DB.Limit(10).Find(&questions)
+	out := make([]gin.H, 0, len(questions))
+	for _, q := range questions {
+		out = append(out, SerializeQuestion(q, false))
+	}
+	c.JSON(http.StatusOK, gin.H{"questions": out})
+}
+
 func SubmitPracticeAnswer(c *gin.Context) {
 	var req PracticeSubmitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Savol va javob tanlanishi shart"})
+		jsonError(c, http.StatusBadRequest, "Savol va javob tanlanishi shart")
 		return
 	}
 
 	var q models.Question
 	if err := database.DB.First(&q, req.QuestionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Savol topilmadi"})
+		jsonError(c, http.StatusNotFound, "Savol topilmadi")
 		return
 	}
 

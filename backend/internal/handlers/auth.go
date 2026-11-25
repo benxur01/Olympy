@@ -5,31 +5,48 @@ import (
 	"net/http"
 	"olympy-backend-go/internal/config"
 	"olympy-backend-go/internal/database"
+	"olympy-backend-go/internal/middleware"
 	"olympy-backend-go/internal/models"
 	"olympy-backend-go/internal/services"
 	"olympy-backend-go/internal/utils"
-	"time"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type RegisterRequest struct {
+	FullName    string      `json:"full_name" binding:"required"`
+	Phone       string      `json:"phone" binding:"required"`
+	Password    string      `json:"password" binding:"required,min=6"`
+	Role        string      `json:"role"`
+	CenterID    interface{} `json:"center_id"`
+	JoinRole    string      `json:"join_role"`
+	JoinSubject string      `json:"join_subject"`
+}
+
+type RegisterOrganizationRequest struct {
 	FullName string `json:"full_name" binding:"required"`
 	Phone    string `json:"phone" binding:"required"`
 	Password string `json:"password" binding:"required,min=6"`
-	Role     string `json:"role"` // default: student
+	Center   struct {
+		Name             string   `json:"name" binding:"required"`
+		OrganizationType string   `json:"organization_type"`
+		Country          string   `json:"country"`
+		Region           string   `json:"region"`
+		District         string   `json:"district"`
+		City             string   `json:"city"`
+		Subjects         []string `json:"subjects"`
+	} `json:"center" binding:"required"`
 }
 
 type LoginRequest struct {
 	Phone    string `json:"phone" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	TOTPCode string `json:"totp_code"`
 }
 
-type AuthResponse struct {
-	Token        string      `json:"token"`
-	AccessToken  string      `json:"access"`
-	RefreshToken string      `json:"refresh"`
-	User         models.User `json:"user"`
+type RefreshTokenRequest struct {
+	Refresh string `json:"refresh"`
 }
 
 type StartPhoneOTPRequest struct {
@@ -64,59 +81,172 @@ func Register(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req RegisterRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Barcha maydonlarni to'g'ri to'ldiring: " + err.Error()})
+			jsonError(c, http.StatusBadRequest, "Barcha maydonlarni to'g'ri to'ldiring: "+err.Error())
 			return
 		}
 
 		normPhone := utils.NormalizePhone(req.Phone)
 		if normPhone == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Telefon raqam formati noto'g'ri (+998901234567)"})
+			jsonError(c, http.StatusBadRequest, "Telefon raqam formati noto'g'ri (+998901234567)")
 			return
 		}
 
 		var existingUser models.User
 		if err := database.DB.Where("normalized_phone = ?", normPhone).First(&existingUser).Error; err == nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "Bu telefon raqam avval ro'yxatdan o'tgan"})
+			jsonError(c, http.StatusConflict, "Bu telefon raqam avval ro'yxatdan o'tgan")
 			return
 		}
 
 		hashedPassword, err := utils.HashPassword(req.Password)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Parolni shifrlashda xatolik"})
+			jsonError(c, http.StatusInternalServerError, "Parolni shifrlashda xatolik")
 			return
 		}
 
-		role := req.Role
+		role := strings.TrimSpace(req.Role)
 		if role == "" {
 			role = "student"
 		}
 
+		parts := strings.Fields(strings.TrimSpace(req.FullName))
+		firstName := req.FullName
+		lastName := ""
+		if len(parts) > 1 {
+			firstName = parts[0]
+			lastName = strings.Join(parts[1:], " ")
+		}
+
 		user := models.User{
-			FullName:        req.FullName,
-			Phone:           normPhone,
-			NormalizedPhone: normPhone,
-			Password:        hashedPassword,
-			Roles:           []string{role},
-			IsPremium:       false,
-			Coins:           50, // bonus coins
+			FullName:            req.FullName,
+			FirstName:           firstName,
+			LastName:            lastName,
+			Phone:               normPhone,
+			NormalizedPhone:     normPhone,
+			Password:            hashedPassword,
+			Roles:               models.StringArray{role},
+			IsActive:            true,
+			OnboardingCompleted: true,
+			Coins:               50,
 		}
 
 		if err := database.DB.Create(&user).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Foydalanuvchini saqlashda xatolik: " + err.Error()})
+			jsonError(c, http.StatusInternalServerError, "Foydalanuvchini saqlashda xatolik: "+err.Error())
 			return
+		}
+
+		if centerID, ok := parseFlexUint(req.CenterID); ok {
+			joinRole := strings.TrimSpace(req.JoinRole)
+			if joinRole == "" {
+				joinRole = role
+			}
+			status := "approved"
+			if joinRole == "teacher" || joinRole == "manager" {
+				status = "pending"
+			}
+			database.DB.Create(&models.CenterMembership{
+				CenterID: centerID,
+				UserID:   user.ID,
+				Role:     joinRole,
+				Subject:  req.JoinSubject,
+				Status:   status,
+			})
 		}
 
 		access, refresh, err := utils.GenerateTokens(user.ID, user.Phone, user.Roles, user.IsPlatformAdmin, cfg.JWTSecret)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generatsiya qilishda xatolik"})
+			jsonError(c, http.StatusInternalServerError, "Token generatsiya qilishda xatolik")
 			return
 		}
 
-		c.JSON(http.StatusCreated, AuthResponse{
-			Token:        access,
-			AccessToken:  access,
-			RefreshToken: refresh,
-			User:         user,
+		c.JSON(http.StatusCreated, gin.H{
+			"token":       access,
+			"access":      access,
+			"refresh":     refresh,
+			"cookie_auth": false,
+			"user":        SerializeUser(user),
+		})
+	}
+}
+
+func RegisterOrganization(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req RegisterOrganizationRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			jsonError(c, http.StatusBadRequest, "Tashkilot va foydalanuvchi ma'lumotlarini to'liq kiriting: "+err.Error())
+			return
+		}
+
+		normPhone := utils.NormalizePhone(req.Phone)
+		if normPhone == "" {
+			jsonError(c, http.StatusBadRequest, "Telefon raqam formati noto'g'ri (+998901234567)")
+			return
+		}
+
+		var existingUser models.User
+		if err := database.DB.Where("normalized_phone = ?", normPhone).First(&existingUser).Error; err == nil {
+			jsonError(c, http.StatusConflict, "Bu telefon raqam avval ro'yxatdan o'tgan")
+			return
+		}
+
+		hashedPassword, err := utils.HashPassword(req.Password)
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "Parolni shifrlashda xatolik")
+			return
+		}
+
+		user := models.User{
+			FullName:            req.FullName,
+			FirstName:           req.FullName,
+			Phone:               normPhone,
+			NormalizedPhone:     normPhone,
+			Password:            hashedPassword,
+			Roles:               models.StringArray{"owner"},
+			IsActive:            true,
+			OnboardingCompleted: true,
+			Coins:               100,
+		}
+		if err := database.DB.Create(&user).Error; err != nil {
+			jsonError(c, http.StatusInternalServerError, "Foydalanuvchini saqlashda xatolik")
+			return
+		}
+
+		center := models.EducationCenter{
+			Name:             req.Center.Name,
+			Slug:             slugify(req.Center.Name),
+			OrganizationType: req.Center.OrganizationType,
+			Country:          req.Center.Country,
+			Region:           req.Center.Region,
+			District:         req.Center.District,
+			City:             req.Center.City,
+			Subjects:         models.StringArray(req.Center.Subjects),
+			OwnerID:          user.ID,
+			Status:           "pending",
+		}
+		if err := database.DB.Create(&center).Error; err != nil {
+			jsonError(c, http.StatusInternalServerError, "Markazni saqlashda xatolik")
+			return
+		}
+
+		database.DB.Create(&models.CenterMembership{
+			CenterID: center.ID,
+			UserID:   user.ID,
+			Role:     "owner",
+			Status:   "pending",
+		})
+
+		access, refresh, err := utils.GenerateTokens(user.ID, user.Phone, user.Roles, user.IsPlatformAdmin, cfg.JWTSecret)
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "Token generatsiya qilishda xatolik")
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"token":       access,
+			"access":      access,
+			"refresh":     refresh,
+			"cookie_auth": false,
+			"user":        SerializeUser(user),
+			"center":      SerializeCenter(center),
 		})
 	}
 }
@@ -125,7 +255,7 @@ func Login(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Telefon raqam va parolni kiriting"})
+			jsonError(c, http.StatusBadRequest, "Telefon raqam va parolni kiriting")
 			return
 		}
 
@@ -136,55 +266,123 @@ func Login(cfg *config.Config) gin.HandlerFunc {
 
 		var user models.User
 		if err := database.DB.Where("normalized_phone = ? OR phone = ?", normPhone, req.Phone).First(&user).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Telefon raqam yoki parol noto'g'ri"})
+			middleware.RecordFailedLogin(c.ClientIP())
+			jsonError(c, http.StatusUnauthorized, "Telefon raqam yoki parol noto'g'ri")
+			return
+		}
+
+		if !user.IsActive {
+			jsonError(c, http.StatusForbidden, "Hisobingiz vaqtincha bloklangan")
 			return
 		}
 
 		if !utils.CheckPasswordHash(req.Password, user.Password) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Telefon raqam yoki parol noto'g'ri"})
+			middleware.RecordFailedLogin(c.ClientIP())
+			jsonError(c, http.StatusUnauthorized, "Telefon raqam yoki parol noto'g'ri")
+			return
+		}
+
+		if user.TOTPEnabled && user.TOTPSecret != "" {
+			if strings.TrimSpace(req.TOTPCode) == "" {
+				c.JSON(http.StatusOK, gin.H{
+					"requires_2fa": true,
+					"message":      "2FA kodini kiriting",
+				})
+				return
+			}
+			if !ValidateTOTPCode(user.TOTPSecret, strings.TrimSpace(req.TOTPCode)) {
+				c.JSON(http.StatusOK, gin.H{
+					"requires_2fa": true,
+					"detail":       "Noto'g'ri 2FA kod",
+				})
+				return
+			}
+		}
+
+		middleware.ResetFailedLogin(c.ClientIP())
+
+		access, refresh, err := utils.GenerateTokens(user.ID, user.Phone, user.Roles, user.IsPlatformAdmin, cfg.JWTSecret)
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "Token generatsiya qilishda xatolik")
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"token":       access,
+			"access":      access,
+			"refresh":     refresh,
+			"cookie_auth": false,
+			"user":        SerializeUser(user),
+		})
+	}
+}
+
+func RefreshToken(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req RefreshTokenRequest
+		_ = c.ShouldBindJSON(&req)
+
+		rawRefresh := strings.TrimSpace(req.Refresh)
+		if rawRefresh == "" {
+			jsonError(c, http.StatusUnauthorized, "Refresh token talab qilinadi")
+			return
+		}
+
+		claims, err := utils.ValidateToken(rawRefresh, cfg.JWTSecret)
+		if err != nil || claims.UserID == 0 {
+			jsonError(c, http.StatusUnauthorized, "Refresh token yaroqsiz yoki muddati tugagan")
+			return
+		}
+
+		var user models.User
+		if err := database.DB.First(&user, claims.UserID).Error; err != nil {
+			jsonError(c, http.StatusUnauthorized, "Foydalanuvchi topilmadi")
 			return
 		}
 
 		access, refresh, err := utils.GenerateTokens(user.ID, user.Phone, user.Roles, user.IsPlatformAdmin, cfg.JWTSecret)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generatsiya qilishda xatolik"})
+			jsonError(c, http.StatusInternalServerError, "Token yangilashda xatolik")
 			return
 		}
 
-		c.JSON(http.StatusOK, AuthResponse{
-			Token:        access,
-			AccessToken:  access,
-			RefreshToken: refresh,
-			User:         user,
+		c.JSON(http.StatusOK, gin.H{
+			"token":       access,
+			"access":      access,
+			"refresh":     refresh,
+			"cookie_auth": false,
 		})
 	}
+}
+
+func Logout(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"detail": "Tizimdan chiqildi", "status": "ok"})
 }
 
 // StartPhoneTelegramVerification starts phone verification OTP
 func StartPhoneTelegramVerification(c *gin.Context) {
 	var req StartPhoneOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Telefon raqam kiritilishi shart"})
+		jsonError(c, http.StatusBadRequest, "Telefon raqam kiritilishi shart")
 		return
 	}
 
 	normPhone := utils.NormalizePhone(req.Phone)
 	if normPhone == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Telefon raqam formati noto'g'ri"})
+		jsonError(c, http.StatusBadRequest, "Telefon raqam formati noto'g'ri")
 		return
 	}
 
 	code, err := services.GenerateAndSaveOTP(normPhone, "phone_verify", "")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "OTP generatsiyasida xatolik"})
+		jsonError(c, http.StatusInternalServerError, "OTP generatsiyasida xatolik")
 		return
 	}
 
-	// In local/demo or connected bot, return code or send via Telegram bot
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "Tasdiqlash kodi Telegram botingizga yuborildi",
 		"phone":     normPhone,
-		"demo_code": code, // Provided for smooth testing and verification
+		"demo_code": code,
 	})
 }
 
@@ -192,20 +390,25 @@ func StartPhoneTelegramVerification(c *gin.Context) {
 func VerifyPhoneOTP(c *gin.Context) {
 	var req VerifyPhoneOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Telefon va kod kiritilishi shart"})
+		jsonError(c, http.StatusBadRequest, "Telefon va kod kiritilishi shart")
 		return
 	}
 
 	normPhone := utils.NormalizePhone(req.Phone)
 	ok, err := services.VerifyOTP(normPhone, "phone_verify", req.Code)
 	if !ok || err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		msg := "Kod noto'g'ri"
+		if err != nil {
+			msg = err.Error()
+		}
+		jsonError(c, http.StatusBadRequest, msg)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Telefon raqamingiz muvaffaqiyatli tasdiqlandi!",
-		"phone":   normPhone,
+		"message":  "Telefon raqamingiz muvaffaqiyatli tasdiqlandi!",
+		"verified": true,
+		"phone":    normPhone,
 	})
 }
 
@@ -213,20 +416,20 @@ func VerifyPhoneOTP(c *gin.Context) {
 func StartPasswordReset(c *gin.Context) {
 	var req StartPasswordResetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Telefon raqam majburiy"})
+		jsonError(c, http.StatusBadRequest, "Telefon raqam majburiy")
 		return
 	}
 
 	normPhone := utils.NormalizePhone(req.Phone)
 	var user models.User
 	if err := database.DB.Where("normalized_phone = ?", normPhone).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Bunday telefon raqamli foydalanuvchi topilmadi"})
+		jsonError(c, http.StatusNotFound, "Bunday telefon raqamli foydalanuvchi topilmadi")
 		return
 	}
 
 	code, err := services.GenerateAndSaveOTP(normPhone, "password_reset", "")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "OTP yaratishda xatolik"})
+		jsonError(c, http.StatusInternalServerError, "OTP yaratishda xatolik")
 		return
 	}
 
@@ -241,25 +444,29 @@ func StartPasswordReset(c *gin.Context) {
 func ConfirmPasswordReset(c *gin.Context) {
 	var req ConfirmPasswordResetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Barcha maydonlarni to'ldiring"})
+		jsonError(c, http.StatusBadRequest, "Barcha maydonlarni to'ldiring")
 		return
 	}
 
 	normPhone := utils.NormalizePhone(req.Phone)
 	ok, err := services.VerifyOTP(normPhone, "password_reset", req.Code)
 	if !ok || err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		msg := "Kod noto'g'ri"
+		if err != nil {
+			msg = err.Error()
+		}
+		jsonError(c, http.StatusBadRequest, msg)
 		return
 	}
 
 	hashed, err := utils.HashPassword(req.NewPassword)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Parolni shifrlashda xatolik"})
+		jsonError(c, http.StatusInternalServerError, "Parolni shifrlashda xatolik")
 		return
 	}
 
 	if err := database.DB.Model(&models.User{}).Where("normalized_phone = ?", normPhone).Update("password", hashed).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Parolni yangilashda xatolik"})
+		jsonError(c, http.StatusInternalServerError, "Parolni yangilashda xatolik")
 		return
 	}
 
@@ -273,7 +480,7 @@ func StartEmailLink(c *gin.Context) {
 
 	var req LinkEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Email noto'g'ri kiritildi"})
+		jsonError(c, http.StatusBadRequest, "Email noto'g'ri kiritildi")
 		return
 	}
 
@@ -295,7 +502,7 @@ func ConfirmEmailLink(c *gin.Context) {
 
 	var req ConfirmEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Email va kod majburiy"})
+		jsonError(c, http.StatusBadRequest, "Email va kod majburiy")
 		return
 	}
 
@@ -304,16 +511,23 @@ func ConfirmEmailLink(c *gin.Context) {
 
 	ok, err := services.VerifyOTP(user.NormalizedPhone, "email_link", req.Code)
 	if !ok || err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		msg := "Kod noto'g'ri"
+		if err != nil {
+			msg = err.Error()
+		}
+		jsonError(c, http.StatusBadRequest, msg)
 		return
 	}
 
-	now := time.Now()
 	emailStr := req.Email
 	database.DB.Model(&user).Updates(map[string]interface{}{
-		"email":             &emailStr,
-		"email_verified_at": &now,
+		"email":          &emailStr,
+		"email_verified": true,
 	})
+	database.DB.First(&user, userID)
 
-	c.JSON(http.StatusOK, gin.H{"message": "Emailingiz muvaffaqiyatli tasdiqlandi va hisobingizga ulandi!"})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Emailingiz muvaffaqiyatli tasdiqlandi va hisobingizga ulandi!",
+		"user":    SerializeUser(user),
+	})
 }

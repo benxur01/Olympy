@@ -11,20 +11,24 @@ import (
 )
 
 type StartSessionRequest struct {
-	OlympiadID       uint   `json:"olympiad_id" binding:"required"`
+	OlympiadID        uint   `json:"olympiad_id" binding:"required"`
 	CameraConsent     bool   `json:"camera_consent"`
 	MicrophoneConsent bool   `json:"microphone_consent"`
 	DeviceID          string `json:"device_id"`
 }
 
 type PingSessionRequest struct {
-	SessionID uint   `json:"session_id" binding:"required"`
-	DeviceID  string `json:"device_id" binding:"required"`
+	SessionID     uint        `json:"session_id"`
+	Olympiad      interface{} `json:"olympiad"`
+	OlympiadID    interface{} `json:"olympiad_id"`
+	AnsweredCount int         `json:"answered_count"`
+	TabEscapes    int         `json:"tab_escapes"`
+	DeviceID      string      `json:"device_id"`
 }
 
 type EvidenceRequest struct {
 	SessionID  uint    `json:"session_id" binding:"required"`
-	Reason     string  `json:"reason" binding:"required"` // tab_switch, fullscreen_exit, no_face
+	Reason     string  `json:"reason" binding:"required"`
 	Confidence float64 `json:"confidence"`
 	ImageURL   string  `json:"image_url"`
 	Metadata   string  `json:"metadata"`
@@ -41,17 +45,16 @@ func StartTestSession(c *gin.Context) {
 
 	var req StartSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Olimpiada ID majburiy"})
+		jsonError(c, http.StatusBadRequest, "Olimpiada ID majburiy")
 		return
 	}
 
 	var olympiad models.Olympiad
 	if err := database.DB.Preload("Questions").First(&olympiad, req.OlympiadID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Olimpiada topilmadi"})
+		jsonError(c, http.StatusNotFound, "Olimpiada topilmadi")
 		return
 	}
 
-	// Fetch or create session
 	var session models.TestSession
 	err := database.DB.Where("user_id = ? AND olympiad_id = ?", userID, olympiad.ID).First(&session).Error
 	if err == nil {
@@ -62,8 +65,7 @@ func StartTestSession(c *gin.Context) {
 		return
 	}
 
-	// Randomize questions
-	var qOrder []string
+	var qOrder models.StringArray
 	for _, q := range olympiad.Questions {
 		qOrder = append(qOrder, fmt.Sprintf("%d", q.ID))
 	}
@@ -82,7 +84,7 @@ func StartTestSession(c *gin.Context) {
 	}
 
 	if err := database.DB.Create(&session).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Sessiya ochishda xatolik: " + err.Error()})
+		jsonError(c, http.StatusInternalServerError, "Sessiya ochishda xatolik: "+err.Error())
 		return
 	}
 
@@ -93,23 +95,39 @@ func StartTestSession(c *gin.Context) {
 }
 
 func PingTestSession(c *gin.Context) {
+	userIDVal, _ := c.Get("userID")
+	userID := userIDVal.(uint)
+
 	var req PingSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "SessionID va DeviceID majburiy"})
+		jsonError(c, http.StatusBadRequest, "Session yoki Olimpiada ID majburiy")
 		return
 	}
 
 	var session models.TestSession
-	if err := database.DB.First(&session, req.SessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Sessiya topilmadi"})
+	var err error
+	if req.SessionID > 0 {
+		err = database.DB.First(&session, req.SessionID).Error
+	} else {
+		oid, ok := parseFlexUint(req.Olympiad)
+		if !ok {
+			oid, ok = parseFlexUint(req.OlympiadID)
+		}
+		if !ok {
+			jsonError(c, http.StatusBadRequest, "Olympiad ID majburiy")
+			return
+		}
+		err = database.DB.Where("user_id = ? AND olympiad_id = ?", userID, oid).First(&session).Error
+	}
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": "active"})
 		return
 	}
 
 	now := time.Now()
-	// Parallel device login check
-	if session.LastDeviceID != "" && session.LastDeviceID != req.DeviceID {
+	if req.DeviceID != "" && session.LastDeviceID != "" && session.LastDeviceID != req.DeviceID {
 		if session.LastPingAt != nil && now.Sub(*session.LastPingAt) < 30*time.Second {
-			// Disqualify for dual device cheating!
 			session.Status = "disqualified"
 			session.CheatingReason = "Bir vaqtning o'zida ikkita qurilmadan kirish aniqlandi!"
 			session.DisqualifiedAt = &now
@@ -123,7 +141,9 @@ func PingTestSession(c *gin.Context) {
 		}
 	}
 
-	session.LastDeviceID = req.DeviceID
+	if req.DeviceID != "" {
+		session.LastDeviceID = req.DeviceID
+	}
 	session.LastPingAt = &now
 	database.DB.Save(&session)
 
@@ -133,7 +153,7 @@ func PingTestSession(c *gin.Context) {
 func RecordEvidence(c *gin.Context) {
 	var req EvidenceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ma'lumotlar to'liq emas"})
+		jsonError(c, http.StatusBadRequest, "Ma'lumotlar to'liq emas")
 		return
 	}
 
@@ -153,16 +173,75 @@ func RecordEvidence(c *gin.Context) {
 	})
 }
 
+func ReportCheating(c *gin.Context) {
+	userIDVal, _ := c.Get("userID")
+	userID := userIDVal.(uint)
+
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusOK, gin.H{"recorded": true})
+		return
+	}
+
+	oid, ok := parseFlexUint(body["olympiad"])
+	if !ok {
+		oid, _ = parseFlexUint(body["olympiad_id"])
+	}
+	reason, _ := body["reason"].(string)
+	if reason == "" {
+		reason = "cheating_detected"
+	}
+
+	var session models.TestSession
+	if oid > 0 && database.DB.Where("user_id = ? AND olympiad_id = ?", userID, oid).First(&session).Error == nil {
+		database.DB.Create(&models.EvidenceSnapshot{
+			SessionID: session.ID,
+			Reason:    reason,
+			CreatedAt: time.Now(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"recorded": true,
+		"reason":   reason,
+	})
+}
+
+func RecordProctorConsent(kind string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDVal, _ := c.Get("userID")
+		userID := userIDVal.(uint)
+
+		var body map[string]interface{}
+		_ = c.ShouldBindJSON(&body)
+		oid, ok := parseFlexUint(body["olympiad"])
+		if !ok {
+			oid, _ = parseFlexUint(body["olympiad_id"])
+		}
+		if oid > 0 {
+			var session models.TestSession
+			if database.DB.Where("user_id = ? AND olympiad_id = ?", userID, oid).First(&session).Error == nil {
+				if kind == "camera" {
+					database.DB.Model(&session).Update("camera_consent_given", true)
+				} else {
+					database.DB.Model(&session).Update("microphone_consent_given", true)
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"consent": true, "kind": kind})
+	}
+}
+
 func TerminateSession(c *gin.Context) {
 	var req TerminateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Sabab ko'rsatilishi shart"})
+		jsonError(c, http.StatusBadRequest, "Sabab ko'rsatilishi shart")
 		return
 	}
 
 	var session models.TestSession
 	if err := database.DB.First(&session, req.SessionID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Sessiya topilmadi"})
+		jsonError(c, http.StatusNotFound, "Sessiya topilmadi")
 		return
 	}
 

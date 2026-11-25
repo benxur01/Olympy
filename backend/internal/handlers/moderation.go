@@ -77,6 +77,14 @@ func DismissFlag(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Bayroq rad etildi", "flag": flag})
 }
 
+func ModerationRouterPOST(c *gin.Context) {
+	if c.Param("id") == "block-ip" {
+		BlockIP(c)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "Moderatsiya marshruti topilmadi"})
+}
+
 func BlockIP(c *gin.Context) {
 	userIDVal, _ := c.Get("userID")
 	userID := userIDVal.(uint)

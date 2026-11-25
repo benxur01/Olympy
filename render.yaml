@@ -130,64 +130,28 @@ services:
         name: Content-Security-Policy
         value: "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: https:; connect-src 'self' https://api.prolymp.uz https://*.onrender.com https://*.sentry.io https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'"
 
-  # ── Backend API (Django + Gunicorn) ────────────────────────────────────────
+  # ── Backend API (Go + Gin) ────────────────────────────────────────────────
   - type: web_service
     name: olympy-api
     repo: https://github.com/benxur01/Olympy
     rootDir: backend
     env: go
     region: ohio
-    # DIQQAT: bu yerda "standard" deb yozilgan bo'lsa ham, Render blueprint
-    # bu maydonni MAVJUD xizmatga avtomatik qo'llamaydi (reja o'zgarishi
-    # dashboard'da qo'lda tasdiqlanishi kerak). 2026-07-29 holatiga ko'ra
-    # Render'dagi haqiqiy olympy-api hali `starter` (512MB) rejada edi — shu
-    # nomuvofiqlik gunicorn worker sonini oshirgan 2166ef7 bilan birga OOM'ga
-    # olib keldi (qarang: backend/render_start.sh). Reja shu yerda "starter"
-    # qilib ko'rsatilgan — haqiqatan standard'ga o'tkazilsa, buni ikkalasini
-    # ham (shu qatorni va GUNICORN_WORKERS'ni) mos ravishda yangilang.
     plan: starter
     branch: main
-    buildCommand: ./render_build.sh
-    startCommand: ./render_start.sh
-    # Media fayllar Cloudinary'ga ko'chirildi (CLOUDINARY_* env var'lar) —
-    # endi disk dependency'si yo'q va servis horizontal scale qilinishi
-    # mumkin. numInstances'ni 2+ ga oshirish uchun disk bo'limi olib
-    # tashlandi. DIQQAT: disk olib tashlangach, eski (Cloudinary'gacha
-    # yuklangan) media fayllar Render diskidan yo'qoladi — yangi yuklamalar
-    # Cloudinary'da saqlanadi.
+    buildCommand: go mod download && go build -o olympy-api ./cmd/api
+    startCommand: ./olympy-api
     numInstances: 1
     healthCheckPath: /api/health/
-    # Uptime monitoring: UptimeRobot (uptimerobot.com) da bepul monitor yarating
-    # URL: https://prolymp.uz/api/health/ — 5 daqiqada bir tekshiradi
-    # Alert: Telegram yoki email orqali xabar beradi
     envVars:
-      # "1" — Celery web konteynerdan tashqarida, alohida `olympy-celery`
-      # worker service'da ishlaydi (quyida). Avval "0" edi: worker + beat aynan
-      # shu web konteynerda ishlab, HTTP so'rovlar bilan BITTA CPU yadroni
-      # bo'lishardi (numInstances: 1, gunicorn --workers 1) — fon task'lari
-      # login'ning parol hash'lash CPU narxini va umuman javob vaqtini
-      # yomonlashtirardi. Endi web faqat Gunicorn ishga tushiradi
-      # (render_start.sh shu o'zgaruvchini tekshiradi).
-      # SHART: `olympy-celery` service Render'da create qilingan bo'lishi kerak,
-      # aks holda hech bir fon task'i (OTP, AI tahlil, beat jadvali) bajarilmaydi.
-      - key: CELERY_EXTERNAL_WORKER
-        value: "1"
-      - key: REDIS_URL
-        sync: false
-      - key: CELERY_BROKER_URL
-        sync: false
-      - key: CELERY_RESULT_BACKEND_URL
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: OLYMPY_SECRET_KEY
-        sync: false
-      - key: OLYMPY_ALLOWED_HOSTS
-        sync: false
-      - key: OLYMPY_CORS_ALLOWED_ORIGINS
-        sync: false
-      # Google Login: ID Token `aud` tekshiruvi uchun MAJBURIY (bo'sh bo'lsa
-      # /api/auth/google/ 503 qaytaradi). VITE_GOOGLE_CLIENT_ID bilan bir xil.
+      - key: OLYMPY_DB_ENGINE
+        value: "sqlite"
+      - key: OLYMPY_DB_NAME
+        value: "olympy.db"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: "https://prolymp.uz,https://www.prolymp.uz,https://olympy.onrender.com,http://localhost:5173,http://127.0.0.1:5173"
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: CLOUDINARY_CLOUD_NAME
@@ -200,42 +164,16 @@ services:
         sync: false
       - key: TELEGRAM_MANAGER_BOT_TOKEN
         sync: false
-      # Telegram webhook maxfiy tokenlari — kelgan webhook'larni tasdiqlash
-      # uchun (accounts/views.py). Production'da o'rnatilishi shart, aks holda
-      # webhook 403 qaytaradi. Auth bot va manager bot uchun alohida.
       - key: TELEGRAM_AUTH_WEBHOOK_SECRET
         sync: false
       - key: TELEGRAM_MANAGER_WEBHOOK_SECRET
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      # Judge0 kod runner ("Ishga tushirish"). JUDGE0_URL bo'sh bo'lsa public CE
-      # API (ce.judge0.com) ishlatiladi; JUDGE0_API_KEY berilsa RapidAPI Judge0
-      # CE (ko'proq limit). Ikkalasi ham ixtiyoriy.
       - key: JUDGE0_URL
         sync: false
       - key: JUDGE0_API_KEY
         sync: false
-      # Sentry backend DSN — bo'sh bo'lsa monitoring o'chiq qoladi.
-      - key: SENTRY_DSN
-        sync: false
-      # Web Push — bo'sh bo'lsa push o'chiq (private key repoda bo'lmasin).
-      - key: VAPID_PUBLIC_KEY
-        sync: false
-      - key: VAPID_PRIVATE_KEY
-        sync: false
-      # Email — MAILGUN_API_KEY o'rnatilsa Mailgun backend yoqiladi, aks holda
-      # console backend (email yuborilmaydi). Barchasi ixtiyoriy.
-      - key: EMAIL_BACKEND
-        sync: false
-      - key: MAILGUN_API_KEY
-        sync: false
-      - key: MAILGUN_SENDER_DOMAIN
-        sync: false
-      - key: DEFAULT_FROM_EMAIL
-        sync: false
-      # To'lov provayderlari (Click va Payme) — webhook'lar shu web service'da
-      # qayta ishlanadi. Qiymatlar maxfiy, Render dashboard'da qo'lda kiritiladi.
       - key: CLICK_SERVICE_ID
         sync: false
       - key: CLICK_MERCHANT_ID
@@ -247,85 +185,6 @@ services:
       - key: PAYME_SECRET_KEY
         sync: false
 
-  # ── Celery worker + Beat (MAJBURIY) ────────────────────────────────────────
-  # olympy-api'da CELERY_EXTERNAL_WORKER=1 bo'lgani uchun bu service endi
-  # ixtiyoriy EMAS — Render'da create qilinishi shart. Web konteyner endi
-  # Celery'ni umuman ishga tushirmaydi, ya'ni barcha fon task'lari va davriy
-  # (beat) jadval faqat shu yerda bajariladi.
-  #
-  # startCommand'dagi `-B` — embedded Beat. Beat aynan bitta joyda ishlashi
-  # kerak (aks holda davriy task'lar ikki marta ishlaydi), shuning uchun bu
-  # service bitta instansiyada qolsin.
-  - type: worker
-    name: olympy-celery
-    repo: https://github.com/benxur01/Olympy
-    rootDir: backend
-    env: go
-    region: ohio
-    plan: starter
-    branch: main
-    buildCommand: ./render_build.sh
-    startCommand: celery -A olympy_api worker -B -l info -c 1 --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    envVars:
-      - key: REDIS_URL
-        sync: false
-      - key: CELERY_BROKER_URL
-        sync: false
-      - key: CELERY_RESULT_BACKEND_URL
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: OLYMPY_SECRET_KEY
-        sync: false
-      - key: OLYMPY_ALLOWED_HOSTS
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: TELEGRAM_AUTH_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_MANAGER_BOT_TOKEN
-        sync: false
-      - key: SENTRY_DSN
-        sync: false
-      - key: CLOUDINARY_CLOUD_NAME
-        sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
-      # ── Quyidagilar CELERY_EXTERNAL_WORKER=1 bilan birga qo'shildi ──────────
-      # Bu env'lar avval faqat olympy-api'da bor edi va task'lar o'sha
-      # konteynerda ishlagani uchun yetarli edi. Endi task'lar shu worker'da
-      # bajariladi, shuning uchun bu yerda ham bo'lishi SHART — aks holda
-      # settings.py ularni "sozlanmagan" deb hisoblab JIMGINA no-op'ga tushadi
-      # (xato bermaydi, shunchaki xabar ketmaydi).
-      #
-      # Web Push — bo'sh bo'lsa notifications/services.py `[webpush-skip]`
-      # yozib qaytadi. `send_starting_soon_reminders` beat task'i (har daqiqa)
-      # aynan shu funksiyani chaqiradi.
-      - key: VAPID_PUBLIC_KEY
-        sync: false
-      - key: VAPID_PRIVATE_KEY
-        sync: false
-      # Email — MAILGUN_API_KEY bo'sh bo'lsa EMAIL_BACKEND console'ga tushadi
-      # va `send_olympiad_results_email_task` natijalarni hech kimga
-      # yubormaydi (faqat log'ga chiqaradi).
-      - key: EMAIL_BACKEND
-        sync: false
-      - key: MAILGUN_API_KEY
-        sync: false
-      - key: MAILGUN_SENDER_DOMAIN
-        sync: false
-      - key: DEFAULT_FROM_EMAIL
-        sync: false
-      # Judge0 kod runner — `run_code_async_task` shu worker'da ishlaydi.
-      # Bo'sh bo'lsa public CE API'ga tushadi (limitlar qattiq).
-      - key: JUDGE0_URL
-        sync: false
-      - key: JUDGE0_API_KEY
-        sync: false
-
-# Database va Redis allaqachon Render dashboard'da yaratilgan.
-# render.yaml faqat service konfiguratsiyasini tavsiflab beradi —
-# mavjud resurslar saqlanib qoladi, qayta yaratilmaydi.
+# Fon vazifalari (worker) endi Go backend ichida goroutine'lar orqali
+# ishlaydi (backend/internal/services/worker.go) — alohida Celery xizmati shart emas.
 

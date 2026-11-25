@@ -9,10 +9,11 @@ import (
 )
 
 type JWTClaims struct {
-	UserID   uint     `json:"user_id"`
-	Phone    string   `json:"phone"`
-	Roles    []string `json:"roles"`
-	IsAdmin  bool     `json:"is_platform_admin"`
+	UserID    uint     `json:"user_id"`
+	Phone     string   `json:"phone"`
+	Roles     []string `json:"roles"`
+	IsAdmin   bool     `json:"is_platform_admin"`
+	TokenType string   `json:"token_type,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -27,12 +28,13 @@ func CheckPasswordHash(password, hash string) bool {
 }
 
 func GenerateTokens(userID uint, phone string, roles []string, isAdmin bool, secret string) (string, string, error) {
-	// Access token (1 day)
+	// Access token (24 hours)
 	claims := JWTClaims{
-		UserID:  userID,
-		Phone:   phone,
-		Roles:   roles,
-		IsAdmin: isAdmin,
+		UserID:    userID,
+		Phone:     phone,
+		Roles:     roles,
+		IsAdmin:   isAdmin,
+		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -45,10 +47,17 @@ func GenerateTokens(userID uint, phone string, roles []string, isAdmin bool, sec
 		return "", "", err
 	}
 
-	// Refresh token (7 days)
-	refreshClaims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
+	// Refresh token (30 days) carrying user identity claims for stateless refresh
+	refreshClaims := JWTClaims{
+		UserID:    userID,
+		Phone:     phone,
+		Roles:     roles,
+		IsAdmin:   isAdmin,
+		TokenType: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
 	}
 	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshToken, err := refreshTokenObj.SignedString([]byte(secret))

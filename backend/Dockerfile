@@ -2,18 +2,16 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcc musl-dev
-
 COPY go.mod go.sum* ./
-RUN go mod download || true
+RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux go build -o /olympy-api cmd/api/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /olympy-api ./cmd/api
 
 FROM alpine:latest
 
 WORKDIR /app
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl tzdata
 
 COPY --from=builder /olympy-api /app/olympy-api
 
