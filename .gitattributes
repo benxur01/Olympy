@@ -1,11 +1,34 @@
-# GitHub Linguist classification
+# Language classification
 backend/** linguist-language=Go
 *.go linguist-language=Go
 
-public/models/** linguist-vendored
-dist/** linguist-vendored
 pages/** linguist-vendored
 src/** linguist-vendored
 scripts/** linguist-vendored
 deploy/** linguist-vendored
 nginx/** linguist-vendored
+public/** linguist-vendored
+dist/** linguist-vendored
+*.jsx linguist-vendored
+*.js linguist-vendored
+*.mjs linguist-vendored
+*.css linguist-vendored
+*.html linguist-vendored
+*.sh linguist-vendored
+*.bat linguist-vendored
+Dockerfile linguist-vendored
+
+pages/** linguist-detectable=false
+src/** linguist-detectable=false
+scripts/** linguist-detectable=false
+deploy/** linguist-detectable=false
+nginx/** linguist-detectable=false
+public/** linguist-detectable=false
+*.jsx linguist-detectable=false
+*.js linguist-detectable=false
+*.mjs linguist-detectable=false
+*.css linguist-detectable=false
+*.html linguist-detectable=false
+*.sh linguist-detectable=false
+*.bat linguist-detectable=false
+Dockerfile linguist-detectable=false
